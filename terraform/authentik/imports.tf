@@ -19,6 +19,11 @@ import {
   id = "12"
 }
 
+import {
+  to = authentik_user.jkvedaras
+  id = "13"
+}
+
 # Groups
 import {
   to = authentik_group.audiobookshelf_admins
