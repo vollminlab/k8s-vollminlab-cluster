@@ -33,6 +33,17 @@ resource "authentik_user" "gkroner" {
   }
 }
 
+resource "authentik_user" "jkvedaras" {
+  username  = "jkvedaras"
+  name      = "jkvedaras"
+  email     = "jokvedaras@gmail.com"
+  is_active = true
+
+  lifecycle {
+    ignore_changes = [password, groups]
+  }
+}
+
 resource "authentik_user" "chavelock" {
   username  = "chavelock"
   name      = "chavelock"
