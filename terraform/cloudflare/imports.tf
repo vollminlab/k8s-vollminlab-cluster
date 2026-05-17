@@ -40,3 +40,10 @@ import {
   to = cloudflare_dns_record.vpn
   id = "30033aeb9194c2b67af71e7d0869da02/124db74a65a26978edc60aeee07c7232"
 }
+
+# Tunnel CNAME records (pre-existing, imported once — content updated by TF to new tunnel IDs)
+
+import {
+  to = cloudflare_dns_record.filebrowser
+  id = "30033aeb9194c2b67af71e7d0869da02/b20c2b016137ed0ad163535869a2c47b"
+}
