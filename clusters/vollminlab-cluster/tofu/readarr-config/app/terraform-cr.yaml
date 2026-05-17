@@ -1,0 +1,36 @@
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: readarr-config
+  namespace: tofu
+  labels:
+    app: tofu-controller
+    env: production
+    category: core
+spec:
+  interval: 10m
+  approvePlan: auto
+  path: ./terraform/readarr
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  backendConfig:
+    customConfiguration: |
+      backend "s3" {
+        bucket                      = "terraform-state"
+        key                         = "readarr/terraform.tfstate"
+        region                      = "us-east-1"
+        endpoint                    = "http://minio.minio.svc.cluster.local:9000"
+        force_path_style            = true
+        skip_credentials_validation = true
+        skip_metadata_api_check     = true
+        skip_region_validation      = true
+      }
+  backendConfigsFrom:
+    - kind: Secret
+      name: tofu-minio-credentials
+  varsFrom:
+    - kind: Secret
+      name: readarr-tf-credentials
