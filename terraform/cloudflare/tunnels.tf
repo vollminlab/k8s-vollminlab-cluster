@@ -55,7 +55,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "authentik" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.authentik.id
 
   config = {
-    ingress_rule = [
+    ingress = [
       {
         hostname = "authentik.vollminlab.com"
         service  = "http://authentik-server.authentik.svc.cluster.local:80"
@@ -72,7 +72,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "audiobookshelf" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.audiobookshelf.id
 
   config = {
-    ingress_rule = [
+    ingress = [
       {
         hostname = "audiobookshelf.vollminlab.com"
         service  = "http://audiobookshelf.mediastack.svc.cluster.local:10223"
@@ -89,7 +89,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "jellyfin" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.jellyfin.id
 
   config = {
-    ingress_rule = [
+    ingress = [
       {
         hostname = "jellyfin.vollminlab.com"
         service  = "http://jellyfin.mediastack.svc.cluster.local:8096"
@@ -106,7 +106,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "nginx" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.nginx.id
 
   config = {
-    ingress_rule = [
+    ingress = [
       {
         hostname = "filebrowser.vollminlab.com"
         service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
