@@ -1,57 +1,49 @@
 # ---------------------------------------------------------------------------
 # Import blocks for pre-existing Cloudflare resources
 #
-# Tunnel + tunnel config import ID format: <account_id>/<tunnel_uuid>
-# DNS record import ID format:             <zone_id>/<record_id>
+# Tunnel resources are TF-created from scratch — no tunnel imports needed.
+# DNS records that existed before TF management are imported here once.
+# After the first successful `tofu apply`, these blocks are inert but harmless.
 #
-# Account ID:          9013108406ddceed8abc1a3e2e21907d
-# Zone ID (vollminlab.com): 30033aeb9194c2b67af71e7d0869da02
+# Format: "<zone_id>/<record_id>"
+# Zone ID: 30033aeb9194c2b67af71e7d0869da02
 # ---------------------------------------------------------------------------
 
-# Tunnel resources
+# DDNS anchor and DDNS-relative CNAMEs (pre-existing records, imported once)
+
 import {
-  to = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_authentik
-  id = "9013108406ddceed8abc1a3e2e21907d/d5a68ca0-0460-47f0-b17b-a4043f9fe69c"
+  to = cloudflare_dns_record.dynamic
+  id = "30033aeb9194c2b67af71e7d0869da02/9cb712524cbd23acaf91b48ed27b57bb"
 }
 
 import {
-  to = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_audiobookshelf
-  id = "9013108406ddceed8abc1a3e2e21907d/01ca47d0-b545-4ee4-9fb0-2ae1f74c0e9c"
+  to = cloudflare_dns_record.apex
+  id = "30033aeb9194c2b67af71e7d0869da02/30efec053133ce79bdf5a37328b7ee9d"
 }
 
 import {
-  to = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_jellyfin
-  id = "9013108406ddceed8abc1a3e2e21907d/51eeb142-e2fe-4153-8ed2-585d3c5ac018"
-}
-
-# Tunnel configurations
-import {
-  to = cloudflare_zero_trust_tunnel_cloudflared_config.vollminlab_authentik
-  id = "9013108406ddceed8abc1a3e2e21907d/d5a68ca0-0460-47f0-b17b-a4043f9fe69c"
+  to = cloudflare_dns_record.bluemap
+  id = "30033aeb9194c2b67af71e7d0869da02/909e558da87da5410dff73bff2e0979e"
 }
 
 import {
-  to = cloudflare_zero_trust_tunnel_cloudflared_config.vollminlab_audiobookshelf
-  id = "9013108406ddceed8abc1a3e2e21907d/01ca47d0-b545-4ee4-9fb0-2ae1f74c0e9c"
+  to = cloudflare_dns_record.mastersleague
+  id = "30033aeb9194c2b67af71e7d0869da02/33b3fd2a51bf12a6375770e9e493dd45"
 }
 
 import {
-  to = cloudflare_zero_trust_tunnel_cloudflared_config.vollminlab_jellyfin
-  id = "9013108406ddceed8abc1a3e2e21907d/51eeb142-e2fe-4153-8ed2-585d3c5ac018"
-}
-
-# DNS CNAME records
-import {
-  to = cloudflare_dns_record.authentik
-  id = "30033aeb9194c2b67af71e7d0869da02/c71fa309423d523e718940f184d3fea0"
+  to = cloudflare_dns_record.minecraft
+  id = "30033aeb9194c2b67af71e7d0869da02/7cbe0a9f3ada42cca2c189c748a1d01f"
 }
 
 import {
-  to = cloudflare_dns_record.audiobookshelf
-  id = "30033aeb9194c2b67af71e7d0869da02/e2a8dca4a841cb6d674568525db72c37"
+  to = cloudflare_dns_record.vpn
+  id = "30033aeb9194c2b67af71e7d0869da02/124db74a65a26978edc60aeee07c7232"
 }
 
+# Tunnel CNAME records (pre-existing, imported once — content updated by TF to new tunnel IDs)
+
 import {
-  to = cloudflare_dns_record.jellyfin
-  id = "30033aeb9194c2b67af71e7d0869da02/e1f3d0c051364c8f8c686af7bf167d60"
+  to = cloudflare_dns_record.filebrowser
+  id = "30033aeb9194c2b67af71e7d0869da02/b20c2b016137ed0ad163535869a2c47b"
 }

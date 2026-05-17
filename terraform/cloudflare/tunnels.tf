@@ -1,42 +1,58 @@
 # ---------------------------------------------------------------------------
-# Cloudflare Zero Trust Tunnels (cloudflared)
-# All tunnels are pre-existing; tokens are stored in cluster SealedSecrets.
-# Do NOT set secret = on any tunnel resource — it would rotate the tunnel token
-# and invalidate the credentials sealed in the cluster.
+# Cloudflare Zero Trust Tunnels
+#
+# All tunnels are TF-created and fully config-managed. The provider generates
+# the tunnel secret automatically; tunnel_token is a computed output written
+# to a K8s Secret via writeOutputsToSecret on the workspace CR, then sealed
+# into a SealedSecret for each cloudflared deployment.
+#
+# lifecycle.prevent_destroy guards against accidental tunnel deletion that
+# would invalidate the sealed token and require manual re-sealing.
 # ---------------------------------------------------------------------------
 
-resource "cloudflare_zero_trust_tunnel_cloudflared" "vollminlab_authentik" {
+# ---------------------------------------------------------------------------
+# Tunnels
+# ---------------------------------------------------------------------------
+
+resource "cloudflare_zero_trust_tunnel_cloudflared" "authentik" {
   account_id = var.cloudflare_account_id
   name       = "vollminlab-Authentik"
-  lifecycle { ignore_changes = all }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-resource "cloudflare_zero_trust_tunnel_cloudflared" "vollminlab_audiobookshelf" {
+resource "cloudflare_zero_trust_tunnel_cloudflared" "audiobookshelf" {
   account_id = var.cloudflare_account_id
   name       = "vollminlab-Audiobookshelf"
-  lifecycle { ignore_changes = all }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-resource "cloudflare_zero_trust_tunnel_cloudflared" "vollminlab_filebrowser" {
-  account_id = var.cloudflare_account_id
-  name       = "vollminlab-FileBrowser"
-  lifecycle { ignore_changes = all }
-}
-
-resource "cloudflare_zero_trust_tunnel_cloudflared" "vollminlab_jellyfin" {
+resource "cloudflare_zero_trust_tunnel_cloudflared" "jellyfin" {
   account_id = var.cloudflare_account_id
   name       = "vollminlab-Jellyfin"
-  lifecycle { ignore_changes = all }
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared" "nginx" {
+  account_id = var.cloudflare_account_id
+  name       = "vollminlab-ClusterNginx"
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # ---------------------------------------------------------------------------
-# Tunnel ingress configurations
+# Tunnel ingress configurations (fully TF-managed, no lifecycle workarounds)
 # ---------------------------------------------------------------------------
 
-resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_authentik" {
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "authentik" {
   account_id = var.cloudflare_account_id
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_authentik.id
-  lifecycle { ignore_changes = all }
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.authentik.id
 
   config = {
     ingress_rule = [
@@ -51,10 +67,9 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_authentik
   }
 }
 
-resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_audiobookshelf" {
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "audiobookshelf" {
   account_id = var.cloudflare_account_id
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_audiobookshelf.id
-  lifecycle { ignore_changes = all }
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.audiobookshelf.id
 
   config = {
     ingress_rule = [
@@ -69,28 +84,9 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_audiobook
   }
 }
 
-resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_filebrowser" {
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "jellyfin" {
   account_id = var.cloudflare_account_id
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_filebrowser.id
-  lifecycle { ignore_changes = all }
-
-  config = {
-    ingress_rule = [
-      {
-        hostname = "filebrowser.vollminlab.com"
-        service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
-      },
-      {
-        service = "http_status:404"
-      },
-    ]
-  }
-}
-
-resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_jellyfin" {
-  account_id = var.cloudflare_account_id
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.vollminlab_jellyfin.id
-  lifecycle { ignore_changes = all }
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.jellyfin.id
 
   config = {
     ingress_rule = [
@@ -105,3 +101,19 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "vollminlab_jellyfin"
   }
 }
 
+resource "cloudflare_zero_trust_tunnel_cloudflared_config" "nginx" {
+  account_id = var.cloudflare_account_id
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.nginx.id
+
+  config = {
+    ingress_rule = [
+      {
+        hostname = "filebrowser.vollminlab.com"
+        service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
+      },
+      {
+        service = "http_status:404"
+      },
+    ]
+  }
+}
