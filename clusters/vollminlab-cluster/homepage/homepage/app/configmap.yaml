@@ -75,6 +75,16 @@ data:
                   type: radarr
                   url: http://radarr.mediastack.svc.cluster.local:7878
                   key: "{{HOMEPAGE_VAR_RADARR_API_KEY}}"
+            - Readarr:
+                description: Book and audiobook manager
+                href: https://readarr.vollminlab.com
+                icon: readarr.png
+                namespace: mediastack
+                app: readarr
+                widget:
+                  type: readarr
+                  url: http://readarr.mediastack.svc.cluster.local:8787
+                  key: "{{HOMEPAGE_VAR_READARR_API_KEY}}"
             - Prowlarr:
                 description: Indexer manager
                 href: https://prowlarr.vollminlab.com
@@ -441,6 +451,11 @@ data:
           secretKeyRef:
             name: homepage-env-vars
             key: RADARR_API_KEY
+      - name: HOMEPAGE_VAR_READARR_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: homepage-env-vars
+            key: READARR_API_KEY
       - name: HOMEPAGE_VAR_PROWLARR_API_KEY
         valueFrom:
           secretKeyRef:

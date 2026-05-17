@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: readarr-values
+  namespace: mediastack
+  labels:
+    app: readarr
+    env: production
+    category: media
+data:
+  values.yaml: |
+    persistence:
+      config:
+        enabled: true
+        existingClaim: pvc-readarr-config
+        mountPath: /config
+      downloads:
+        enabled: true
+        existingClaim: pvc-completed-downloads
+        mountPath: /downloads
+      audiobooks:
+        enabled: true
+        existingClaim: pvc-audiobooks
+        mountPath: /audiobooks
+      books:
+        enabled: true
+        existingClaim: pvc-books
+        mountPath: /books
+    terminationGracePeriodSeconds: 60
+    lifecycle:
+      preStop:
+        exec:
+          command: ["/bin/sh", "-c", "sleep 10"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    podLabels:
+      app: readarr
+      env: production
+      category: media
+    env:
+      READARR__AUTH__METHOD: "External"
+    securityContext:
+      runAsUser: 568
+      runAsGroup: 568
+    podSecurityContext:
+      fsGroup: 568
+      fsGroupChangePolicy: "OnRootMismatch"

@@ -35,6 +35,7 @@ resources:
   - prometheus-community-helmrepository.yaml
   - prowlarr-ocirepository.yaml
   - radarr-ocirepository.yaml
+  - readarr-ocirepository.yaml
   - renovate-ocirepository.yaml
   - sabnzbd-ocirepository.yaml
   - seerr-ocirepository.yaml

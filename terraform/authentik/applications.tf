@@ -158,6 +158,13 @@ resource "authentik_application" "radarr" {
   open_in_new_tab = false
 }
 
+resource "authentik_application" "readarr" {
+  name            = "Readarr"
+  slug            = "readarr"
+  meta_launch_url = "https://readarr.vollminlab.com"
+  open_in_new_tab = false
+}
+
 resource "authentik_application" "sabnzbd" {
   name            = "SABnzbd"
   slug            = "sabnzbd"

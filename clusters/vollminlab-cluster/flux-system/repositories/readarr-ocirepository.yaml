@@ -1,0 +1,14 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: readarr-repo
+  namespace: flux-system
+  labels:
+    app: readarr
+    env: production
+    category: media
+spec:
+  url: oci://oci.trueforge.org/truecharts/readarr
+  interval: 5m
+  ref:
+    tag: 26.1.5
