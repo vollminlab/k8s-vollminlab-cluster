@@ -4,7 +4,7 @@ metadata:
   name: authentik-ingress
   namespace: authentik
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
     shlink.vollminlab.com/slug: authentik
   labels:

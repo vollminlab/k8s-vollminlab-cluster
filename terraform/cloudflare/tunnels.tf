@@ -58,7 +58,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "authentik" {
     ingress = [
       {
         hostname = "authentik.vollminlab.com"
-        service  = "http://authentik-server.authentik.svc.cluster.local:80"
+        service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
       },
       {
         service = "http_status:404"
