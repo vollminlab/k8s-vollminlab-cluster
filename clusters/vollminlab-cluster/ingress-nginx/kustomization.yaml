@@ -5,3 +5,4 @@ metadata:
 resources:
   - namespace.yaml
   - ./ingress-nginx/app
+  - ./cloudflared-nginx/app
