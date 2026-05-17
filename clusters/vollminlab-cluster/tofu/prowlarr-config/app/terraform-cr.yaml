@@ -34,3 +34,5 @@ spec:
   varsFrom:
     - kind: Secret
       name: prowlarr-tf-credentials
+    - kind: Secret
+      name: readarr-tf-credentials

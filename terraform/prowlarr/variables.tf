@@ -22,6 +22,12 @@ variable "radarr_api_key" {
   sensitive   = true
 }
 
+variable "readarr_api_key" {
+  description = "Readarr API key for application sync connection"
+  type        = string
+  sensitive   = true
+}
+
 variable "sonarr_api_key" {
   description = "Sonarr API key for application sync connection"
   type        = string
