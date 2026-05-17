@@ -35,4 +35,4 @@ spec:
     - kind: Secret
       name: cloudflare-tf-credentials
   writeOutputsToSecret:
-    name: cloudflare-tunnel-tokens
+    name: cloudflare-tunnel-ids

@@ -1,27 +1,28 @@
 # ---------------------------------------------------------------------------
-# Tunnel token outputs
+# Tunnel ID outputs
 #
 # The workspace CR writes these to a K8s Secret via writeOutputsToSecret.
-# Seal that Secret with kubeseal to produce the SealedSecrets used by each
-# cloudflared deployment. Delete the plain Secret after sealing.
+# Use the IDs to fetch the actual tunnel tokens via the CF API post-apply:
+#
+#   curl -H "Authorization: Bearer $CF_TOKEN" \
+#     "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/token"
+#
+# The response `result.token` value is what gets sealed into each cloudflared
+# deployment's SealedSecret.
 # ---------------------------------------------------------------------------
 
-output "authentik_tunnel_token" {
-  value     = cloudflare_zero_trust_tunnel_cloudflared.authentik.tunnel_token
-  sensitive = true
+output "authentik_tunnel_id" {
+  value = cloudflare_zero_trust_tunnel_cloudflared.authentik.id
 }
 
-output "audiobookshelf_tunnel_token" {
-  value     = cloudflare_zero_trust_tunnel_cloudflared.audiobookshelf.tunnel_token
-  sensitive = true
+output "audiobookshelf_tunnel_id" {
+  value = cloudflare_zero_trust_tunnel_cloudflared.audiobookshelf.id
 }
 
-output "jellyfin_tunnel_token" {
-  value     = cloudflare_zero_trust_tunnel_cloudflared.jellyfin.tunnel_token
-  sensitive = true
+output "jellyfin_tunnel_id" {
+  value = cloudflare_zero_trust_tunnel_cloudflared.jellyfin.id
 }
 
-output "nginx_tunnel_token" {
-  value     = cloudflare_zero_trust_tunnel_cloudflared.nginx.tunnel_token
-  sensitive = true
+output "nginx_tunnel_id" {
+  value = cloudflare_zero_trust_tunnel_cloudflared.nginx.id
 }
