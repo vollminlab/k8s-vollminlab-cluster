@@ -18,6 +18,10 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # Secrets - create/delete for CI test namespace pre-seeding (e.g. Harbor pull credentials)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "delete"]
   # Service accounts - read only
   - apiGroups: [""]
     resources: ["serviceaccounts"]
