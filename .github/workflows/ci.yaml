@@ -401,21 +401,24 @@ jobs:
 
       - name: Create test namespace
         if: needs.validate-changes.outputs.changed == 'true'
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           set -euo pipefail
           TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
           echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
-          
+
           kubectl create namespace "$TEST_NAMESPACE" || true
           echo "✅ Created test namespace: $TEST_NAMESPACE"
 
-          # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate
+          # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate.
+          # Secrets passed via env: to avoid shell expanding $ in the robot username.
           kubectl create secret docker-registry harbor-vollminlab-pull \
             -n "$TEST_NAMESPACE" \
             --docker-server=harbor.vollminlab.com \
-            --docker-username="${{ secrets.HARBOR_USERNAME }}" \
-            --docker-password="${{ secrets.HARBOR_PASSWORD }}" \
-            --dry-run=client -o yaml | kubectl apply -f -
+            --docker-username="$HARBOR_USERNAME" \
+            --docker-password="$HARBOR_PASSWORD"
           echo "✅ Created harbor-vollminlab-pull secret in $TEST_NAMESPACE"
 
       - name: Check Flux CRDs
