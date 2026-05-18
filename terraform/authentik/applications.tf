@@ -198,6 +198,7 @@ resource "authentik_application" "truenas" {
   name            = "TrueNAS"
   slug            = "truenas"
   meta_launch_url = "https://truenas.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/truenas-scale.svg"
   open_in_new_tab = false
 }
 
