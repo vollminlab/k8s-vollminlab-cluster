@@ -43,11 +43,20 @@ data:
       env: production
       category: media
     image:
-      repository: ghcr.io/home-operations/readarr
-      tag: 0.4.18.2805@sha256:8f7551205fbdccd526db23a38a6fba18b0f40726e63bb89be0fb2333ff4ee4cd
+      repository: ghcr.io/pennydreadful/bookshelf
+      tag: hardcover-v0.4.20.129@sha256:388eecc94362580eae31ee0a454be6af516f8a311f8432a521c202fb475f4359
     securityContext:
       runAsUser: 568
       runAsGroup: 568
     podSecurityContext:
       fsGroup: 568
       fsGroupChangePolicy: "OnRootMismatch"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: kubernetes.io/hostname
+                  operator: NotIn
+                  values:
+                    - k8sworker03
