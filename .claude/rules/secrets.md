@@ -51,6 +51,29 @@ op item get "Readarr API Key" --vault Homelab --format json | python3 -c \
   "import json,sys; d=json.load(sys.stdin); print(next(f['value'] for f in d['fields'] if f['label']=='api_key'))"
 ```
 
+## Prefer API keys over local logins
+
+When a service supports API key authentication, use it — never rely on username/password form login unless no API key exists.
+
+**Hard rule: service-to-service connections always use API keys**, not UI credentials. This applies to:
+
+| Connection | Use |
+|-----------|-----|
+| Prowlarr → Radarr/Sonarr/Readarr | API key (configured via Terraform `prowlarr_application_*`) |
+| Readarr/Radarr/Sonarr → SABnzbd | API key (configured via Terraform `download_client_sabnzbd`) |
+| Homepage widgets | API key via `homepage-env-vars` SealedSecret |
+| Terraform providers | API key (never username/password if both are offered) |
+| Monitoring exporters (Exportarr, etc.) | API key |
+| Claude sessions accessing apps | API key via `op` CLI — never interactive login |
+
+**When adding a new service:**
+1. Generate or locate the API key
+2. Save it to 1Password (see above)
+3. Wire it into the relevant Terraform module or SealedSecret
+4. Never hardcode it, never use the UI login as a substitute
+
+If a service does not expose an API key, use the minimum-privilege local account and store credentials in 1Password.
+
 ## Creating a sealed secret
 
 ```bash
