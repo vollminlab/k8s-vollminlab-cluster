@@ -48,6 +48,7 @@ data:
     env:
       PUID: "568"
       PGID: "568"
+      LSIO_NON_ROOT_USER: "true"
     podSecurityContext:
       fsGroup: 568
       fsGroupChangePolicy: "OnRootMismatch"
