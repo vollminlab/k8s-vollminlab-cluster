@@ -8,7 +8,7 @@ metadata:
     env: production
     category: storage
 spec:
-  schedule: "15 1 * * *"
+  schedule: "0 15 1 * * *"
   backupOwnerReference: self
   cluster:
     name: harbor-db
