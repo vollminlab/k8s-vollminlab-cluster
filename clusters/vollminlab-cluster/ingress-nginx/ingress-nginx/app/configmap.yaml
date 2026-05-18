@@ -13,5 +13,6 @@ data:
       config:
         allow-snippet-annotations: "true"
         annotations-risk-level: Critical
+        use-forwarded-headers: "true"
       extraArgs:
         default-ssl-certificate: cert-manager/wildcard-tls
