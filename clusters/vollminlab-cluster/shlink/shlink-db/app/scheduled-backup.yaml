@@ -8,7 +8,7 @@ metadata:
     env: production
     category: apps
 spec:
-  schedule: "30 1 * * *"
+  schedule: "0 30 1 * * *"
   backupOwnerReference: self
   cluster:
     name: shlink-db
