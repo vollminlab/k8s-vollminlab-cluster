@@ -24,6 +24,7 @@ resource "authentik_application" "filebrowser" {
   name            = "FileBrowser"
   slug            = "filebrowser"
   meta_launch_url = "https://filebrowser.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/filebrowser.svg"
   open_in_new_tab = false
 }
 
@@ -45,6 +46,7 @@ resource "authentik_application" "haproxy" {
   name            = "HAProxy"
   slug            = "haproxy"
   meta_launch_url = "https://haproxy.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/haproxy.svg"
   open_in_new_tab = false
 }
 
@@ -52,6 +54,7 @@ resource "authentik_application" "haproxydmz" {
   name            = "HAProxy DMZ"
   slug            = "haproxydmz"
   meta_launch_url = "https://haproxydmz.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/haproxy.svg"
   open_in_new_tab = false
 }
 
@@ -112,6 +115,7 @@ resource "authentik_application" "npm" {
   name            = "Nginx Proxy Manager"
   slug            = "npm"
   meta_launch_url = "https://npm.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/nginx-proxy-manager.svg"
   open_in_new_tab = false
 }
 
@@ -119,6 +123,7 @@ resource "authentik_application" "pihole" {
   name            = "Pi-hole"
   slug            = "pihole"
   meta_launch_url = "https://pihole.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/pi-hole.svg"
   open_in_new_tab = false
 }
 
