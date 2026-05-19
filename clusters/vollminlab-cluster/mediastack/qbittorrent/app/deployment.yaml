@@ -9,6 +9,8 @@ metadata:
     category: media
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: qbittorrent
@@ -16,6 +18,7 @@ spec:
     metadata:
       labels:
         app: qbittorrent
+        app.kubernetes.io/name: qbittorrent
         env: production
         category: media
     spec:

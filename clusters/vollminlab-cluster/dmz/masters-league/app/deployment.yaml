@@ -26,6 +26,8 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      imagePullSecrets:
+        - name: harbor-vollminlab-pull
       containers:
         - name: masters-league
           image: harbor.vollminlab.com/vollminlab/masters-league:v1.1.1
