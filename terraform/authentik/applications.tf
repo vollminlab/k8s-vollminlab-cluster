@@ -156,6 +156,13 @@ resource "authentik_application" "prowlarr" {
   open_in_new_tab = false
 }
 
+resource "authentik_application" "qbittorrent" {
+  name            = "qBittorrent"
+  slug            = "qbittorrent"
+  meta_launch_url = "https://qbittorrent.vollminlab.com"
+  open_in_new_tab = false
+}
+
 resource "authentik_application" "radarr" {
   name            = "Radarr"
   slug            = "radarr"

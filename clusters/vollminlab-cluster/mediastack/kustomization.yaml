@@ -17,6 +17,7 @@ resources:
   - ./jellystat-db/app
   - ./jellystat/app
   - ./prowlarr/app
+  - ./qbittorrent/app
   - ./readarr/app
   - ./radarr/app
   - ./sabnzbd/app
