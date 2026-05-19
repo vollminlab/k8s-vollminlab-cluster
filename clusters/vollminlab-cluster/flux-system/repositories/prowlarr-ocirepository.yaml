@@ -11,4 +11,4 @@ spec:
   url: oci://oci.trueforge.org/truecharts/prowlarr
   interval: 5m
   ref:
-    tag: 18.23.0
+    tag: 22.3.0
