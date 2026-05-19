@@ -10,6 +10,8 @@ metadata:
     app.kubernetes.io/name: filebrowser
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: filebrowser
@@ -33,6 +35,10 @@ spec:
               value: proxy
             - name: FB_AUTH_HEADER
               value: X-authentik-username
+            - name: FB_TUS_CHUNKSIZE
+              value: "52428800"
+            - name: FB_TUS_RETRYCOUNT
+              value: "2"
           ports:
             - containerPort: 8080
           volumeMounts:

@@ -45,9 +45,13 @@ data:
     image:
       repository: ghcr.io/pennydreadful/bookshelf
       tag: hardcover-v0.4.20.129@sha256:388eecc94362580eae31ee0a454be6af516f8a311f8432a521c202fb475f4359
-    securityContext:
-      runAsUser: 568
-      runAsGroup: 568
+    workload:
+      main:
+        podSpec:
+          containers:
+            main:
+              env:
+                LSIO_NON_ROOT_USER: "true"
     podSecurityContext:
       fsGroup: 568
       fsGroupChangePolicy: "OnRootMismatch"
