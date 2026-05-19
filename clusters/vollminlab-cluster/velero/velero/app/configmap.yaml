@@ -39,6 +39,16 @@ data:
     credentials:
       useSecret: false
 
+    repositoryMaintenanceJob:
+      repositoryConfigData:
+        global:
+          keepLatestMaintenanceJobs: 3
+          podResources:
+            cpuRequest: "50m"
+            cpuLimit: "200m"
+            memoryRequest: "128Mi"
+            memoryLimit: "256Mi"
+
     configuration:
       # Use kopia file-system backup for PVC data
       defaultVolumesToFsBackup: true
