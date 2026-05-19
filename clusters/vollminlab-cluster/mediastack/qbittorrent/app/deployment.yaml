@@ -78,6 +78,8 @@ spec:
               value: "CA Montreal"
             - name: VPN_PORT_FORWARDING
               value: "on"
+            - name: FIREWALL_INPUT_PORTS
+              value: "8080"
           envFrom:
             - secretRef:
                 name: qbittorrent-pia-credentials
