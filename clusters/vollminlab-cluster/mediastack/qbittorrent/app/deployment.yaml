@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: mediastack
+  labels:
+    app: qbittorrent
+    env: production
+    category: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+        env: production
+        category: media
+    spec:
+      securityContext:
+        fsGroup: 568
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: pvc-qbittorrent-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: pvc-completed-downloads
+      containers:
+        - name: qbittorrent
+          image: ghcr.io/linuxserver/qbittorrent:5.2.0@sha256:4e665d7a597acf308aa01d84d7a378abd285982cd793785042c2f4110280b620
+          env:
+            - name: PUID
+              value: "568"
+            - name: PGID
+              value: "568"
+            - name: LSIO_NON_ROOT_USER
+              value: "true"
+            - name: WEBUI_PORT
+              value: "8080"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          ports:
+            - containerPort: 8080
+              name: webui
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+        - name: gluetun
+          image: ghcr.io/qdm12/gluetun:v3.41.1@sha256:2f33c71e5e164fcd51a962cb950134df25155593edf0c3e1201f888d027049b4
+          securityContext:
+            capabilities:
+              add: [NET_ADMIN]
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: "private internet access"
+            - name: VPN_TYPE
+              value: "openvpn"
+            - name: SERVER_REGIONS
+              value: "US East"
+            - name: VPN_PORT_FORWARDING
+              value: "on"
+          envFrom:
+            - secretRef:
+                name: qbittorrent-pia-credentials
+          ports:
+            - containerPort: 8000
+              name: gluetun-ctrl

@@ -28,7 +28,7 @@ spec:
               service:
                 name: qbittorrent
                 port:
-                  number: 10095
+                  number: 8080
   tls:
     - hosts:
         - qbittorrent.vollminlab.com

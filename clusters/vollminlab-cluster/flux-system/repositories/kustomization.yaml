@@ -34,7 +34,6 @@ resources:
   - portainer-helmrepository.yaml
   - prometheus-community-helmrepository.yaml
   - prowlarr-ocirepository.yaml
-  - qbittorrent-ocirepository.yaml
   - radarr-ocirepository.yaml
   - readarr-ocirepository.yaml
   - renovate-ocirepository.yaml

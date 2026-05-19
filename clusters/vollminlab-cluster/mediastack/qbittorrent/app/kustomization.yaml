@@ -3,8 +3,8 @@ kind: Kustomization
 metadata:
   name: qbittorrent-app
 resources:
-  - configmap.yaml
-  - helmrelease.yaml
+  - deployment.yaml
+  - service.yaml
   - ingress.yaml
   - pvc-qbittorrent-config.yaml
   - qbittorrent-pia-credentials-sealedsecret.yaml
