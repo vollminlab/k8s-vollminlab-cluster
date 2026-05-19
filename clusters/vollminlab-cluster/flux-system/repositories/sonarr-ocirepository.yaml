@@ -12,3 +12,6 @@ spec:
   interval: 5m
   ref:
     tag: 23.8.3
+  layerSelector:
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
