@@ -8,6 +8,7 @@ metadata:
     env: production
     category: media
 spec:
+  type: ClusterIP
   selector:
     app: qbittorrent
   ports:
