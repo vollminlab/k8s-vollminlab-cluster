@@ -114,8 +114,6 @@ data:
                 widget:
                   type: qbittorrent
                   url: http://qbittorrent.mediastack.svc.cluster.local:8080
-                  username: admin
-                  password: ""
             - Bazarr:
                 description: Subtitle manager
                 href: https://bazarr.vollminlab.com
