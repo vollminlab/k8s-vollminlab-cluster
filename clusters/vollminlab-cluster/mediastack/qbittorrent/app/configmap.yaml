@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qbittorrent-values
+  namespace: mediastack
+  labels:
+    app: qbittorrent
+    env: production
+    category: media
+data:
+  values.yaml: |
+    persistence:
+      config:
+        enabled: true
+        existingClaim: pvc-qbittorrent-config
+        mountPath: /config
+      downloads:
+        enabled: true
+        existingClaim: pvc-completed-downloads
+        mountPath: /downloads
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+    podLabels:
+      app: qbittorrent
+      env: production
+      category: media
+    podSecurityContext:
+      fsGroup: 568
+    # Pin the portforward image to avoid Kyverno :latest rejection
+    qbitportforwardImage:
+      repository: docker.io/mjmeli/qbittorrent-port-forward-gluetun-server
+      tag: 2025.12.21.02@sha256:073821829660309bdbfe62bcc8b0a6f72e0125e32c9a5576c6ec8093d17f5392
+    # Disabled in Phase 1 — enabled in Phase 2 after admin password is set
+    qbitportforward:
+      enabled: false
+    workload:
+      main:
+        podSpec:
+          containers:
+            gluetun:
+              image:
+                repository: ghcr.io/qdm12/gluetun
+                tag: v3.41.1@sha256:2f33c71e5e164fcd51a962cb950134df25155593edf0c3e1201f888d027049b4
+              securityContext:
+                capabilities:
+                  add: [NET_ADMIN]
+                allowPrivilegeEscalation: false
+                runAsNonRoot: false
+                runAsUser: 0
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              env:
+                VPN_SERVICE_PROVIDER: "private internet access"
+                VPN_TYPE: "openvpn"
+                SERVER_REGIONS: "US East"
+                VPN_PORT_FORWARDING: "on"
+              envFrom:
+                - secretRef:
+                    name: qbittorrent-pia-credentials
+      qbitportforward:
+        enabled: false
