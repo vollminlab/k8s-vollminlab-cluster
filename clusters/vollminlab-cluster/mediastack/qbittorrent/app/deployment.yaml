@@ -75,7 +75,7 @@ spec:
             - name: VPN_TYPE
               value: "openvpn"
             - name: SERVER_REGIONS
-              value: "US East"
+              value: "CA Montreal"
             - name: VPN_PORT_FORWARDING
               value: "on"
           envFrom:
