@@ -78,6 +78,8 @@ spec:
               value: "CA Montreal"
             - name: VPN_PORT_FORWARDING
               value: "on"
+            - name: OPENVPN_PROTOCOL
+              value: "tcp"
           envFrom:
             - secretRef:
                 name: qbittorrent-pia-credentials
