@@ -105,6 +105,17 @@ data:
                   type: sabnzbd
                   url: http://sabnzbd.mediastack.svc.cluster.local:10097
                   key: "{{HOMEPAGE_VAR_SABNZBD_API_KEY}}"
+            - qBittorrent:
+                description: Torrent client (VPN)
+                href: https://qbittorrent.vollminlab.com
+                icon: qbittorrent.png
+                namespace: mediastack
+                app: qbittorrent
+                widget:
+                  type: qbittorrent
+                  url: http://qbittorrent.mediastack.svc.cluster.local:8080
+                  username: admin
+                  password: ""
             - Bazarr:
                 description: Subtitle manager
                 href: https://bazarr.vollminlab.com
