@@ -10,7 +10,7 @@ resource "authentik_group" "audiobookshelf_users" {
 
 resource "authentik_group" "filebrowser_users" {
   name  = "FileBrowser Users"
-  users = toset([authentik_user.vollmin.id, authentik_user.gkroner.id, authentik_user.jkvedaras.id])
+  users = toset([authentik_user.vollmin.id, authentik_user.jvollmin.id, authentik_user.gkroner.id, authentik_user.jkvedaras.id])
 }
 
 resource "authentik_group" "grafana_admins" {
