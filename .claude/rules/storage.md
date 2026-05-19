@@ -43,6 +43,34 @@ If a PVC turns out to be too small after the fact, Longhorn supports online expa
 
 **Start conservative. Expand later. Never provision speculatively large.**
 
+## Deployment update strategy for RWO PVCs
+
+**Any Deployment that mounts a `ReadWriteOnce` PVC must set `strategy: type: Recreate`.**
+
+```yaml
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+```
+
+`RollingUpdate` (the default) starts the new pod before terminating the old one. A RWO volume can only be attached to one node at a time, so the new pod blocks in `ContainerCreating` indefinitely waiting for the volume to detach — which never happens automatically. The result is a frozen rollout that requires manual intervention.
+
+**How to check a PVC's access mode:**
+
+```bash
+kubectl get pvc <name> -n <namespace> -o jsonpath='{.spec.accessModes}'
+```
+
+`ReadWriteOnce` (RWO) → must use `Recreate`. `ReadWriteMany` (RWX) → `RollingUpdate` is fine.
+
+**In this cluster:**
+- Longhorn PVCs: always RWO
+- SMB PVCs (`smb` StorageClass): RWO as provisioned (even though SMB supports RWX, the CSI driver defaults to RWO here)
+- local-path PVCs: always RWO
+
+The brief downtime during `Recreate` rollouts is acceptable for single-replica stateful apps. If zero-downtime deploys are required, the workload needs RWX storage or a StatefulSet with per-replica PVCs.
+
 ## Multipath must be blacklisted on all worker nodes
 
 Longhorn iSCSI volumes conflict with `multipathd` on Ubuntu 24.04 (multipath is enabled by default). This causes `exit status 32` stale mount failures. Every worker node — including DMZ workers — must have Longhorn devices blacklisted in `/etc/multipath.conf`.
