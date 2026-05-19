@@ -235,7 +235,7 @@ data:
                 widget:
                   type: cloudflared
                   accountid: "9013108406ddceed8abc1a3e2e21907d"
-                  tunnelid: "d5a68ca0-0460-47f0-b17b-a4043f9fe69c"
+                  tunnelid: "b1108d76-399d-4351-bb08-a577f1dea08d"
                   key: "{{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}"
             - Cloudflare (Jellyfin):
                 description: Cloudflare tunnel — Jellyfin
@@ -244,7 +244,7 @@ data:
                 widget:
                   type: cloudflared
                   accountid: "9013108406ddceed8abc1a3e2e21907d"
-                  tunnelid: "51eeb142-e2fe-4153-8ed2-585d3c5ac018"
+                  tunnelid: "996f12d7-b677-4bb5-8ff4-04f59507880c"
                   key: "{{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}"
             - Cloudflare (Audiobookshelf):
                 description: Cloudflare tunnel — Audiobookshelf
@@ -253,7 +253,7 @@ data:
                 widget:
                   type: cloudflared
                   accountid: "9013108406ddceed8abc1a3e2e21907d"
-                  tunnelid: "01ca47d0-b545-4ee4-9fb0-2ae1f74c0e9c"
+                  tunnelid: "dbf1e417-263b-4ea9-8404-ee6fe2c9771f"
                   key: "{{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}"
             - Cloudflare (Filebrowser):
                 description: Cloudflare tunnel — Filebrowser (cluster nginx)
