@@ -1,0 +1,26 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vmware-exporter
+  namespace: monitoring
+  labels:
+    app: vmware-exporter
+    env: production
+    category: observability
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: vmware-exporter
+      version: "2.3.0"
+      sourceRef:
+        kind: HelmRepository
+        name: vmware-exporter-repo
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: vmware-exporter-values
+      valuesKey: values.yaml
+    - kind: Secret
+      name: vmware-exporter-credentials
+      valuesKey: helm-values.yaml
