@@ -250,6 +250,12 @@ import {
   id = "8e340cfd-475d-4f20-b3c6-67b395a900eb"
 }
 
+# Login stage
+import {
+  to = authentik_stage_user_login.default_authentication_login
+  id = "06d0ce3a-ec88-4295-882d-af84d84aa892"
+}
+
 # Portainer settings
 import {
   to = portainer_settings.main
