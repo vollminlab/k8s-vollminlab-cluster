@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sonarr-signalr-ingress
+  namespace: mediastack
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  labels:
+    app: sonarr
+    env: production
+    category: media
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: sonarr.vollminlab.com
+      http:
+        paths:
+          - path: /signalr
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarr
+                port:
+                  number: 8989
+  tls:
+    - hosts:
+        - sonarr.vollminlab.com
+      secretName: wildcard-tls

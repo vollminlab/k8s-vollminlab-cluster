@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prowlarr-signalr-ingress
+  namespace: mediastack
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  labels:
+    app: prowlarr
+    env: production
+    category: media
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: prowlarr.vollminlab.com
+      http:
+        paths:
+          - path: /signalr
+            pathType: Prefix
+            backend:
+              service:
+                name: prowlarr
+                port:
+                  number: 9696
+  tls:
+    - hosts:
+        - prowlarr.vollminlab.com
+      secretName: wildcard-tls
