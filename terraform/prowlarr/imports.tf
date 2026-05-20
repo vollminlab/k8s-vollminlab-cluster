@@ -21,7 +21,3 @@ import {
   id = "2"
 }
 
-import {
-  to = prowlarr_indexer.yts
-  id = "16"
-}
