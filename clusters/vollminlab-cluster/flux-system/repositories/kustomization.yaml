@@ -45,5 +45,6 @@ resources:
   - sonarr-ocirepository.yaml
   - tofu-controller-helmrepository.yaml
   - velero-helmrepository.yaml
+  - vmware-exporter-helmrepository.yaml
   - harbor-vollminlab-pull-sealedsecret.yaml
   - vollminlab-ocirepository.yaml
