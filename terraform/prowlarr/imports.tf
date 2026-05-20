@@ -20,3 +20,8 @@ import {
   to = prowlarr_application_sonarr.sonarr
   id = "2"
 }
+
+import {
+  to = prowlarr_indexer.yts
+  id = "16"
+}
