@@ -12,6 +12,7 @@ resources:
   - ./cloudflared-jellyfin/app
   - ./bazarr-exportarr/app
   - ./filebrowser/app
+  - ./flaresolverr/app
   - ./seerr/app
   - ./jellyfin/app
   - ./jellystat-db/app
