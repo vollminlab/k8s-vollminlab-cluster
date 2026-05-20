@@ -15,7 +15,6 @@ resource "prowlarr_indexer" "eztv" {
 
   fields = [
     { name = "definitionFile", text_value = "eztv" },
-    { name = "minimumSeeders", number_value = 1 },
   ]
 }
 
@@ -68,7 +67,6 @@ resource "prowlarr_indexer" "the1337x" {
 
   fields = [
     { name = "definitionFile", text_value = "1337x" },
-    { name = "minimumSeeders", number_value = 1 },
   ]
 }
 
@@ -85,6 +83,5 @@ resource "prowlarr_indexer" "yts" {
 
   fields = [
     { name = "definitionFile", text_value = "yts" },
-    { name = "minimumSeeders", number_value = 1 },
   ]
 }
