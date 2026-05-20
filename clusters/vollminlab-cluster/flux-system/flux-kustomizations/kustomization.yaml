@@ -31,6 +31,7 @@ resources:
   - minio-kustomization.yaml
   - renovate-kustomization.yaml
   - velero-kustomization.yaml
+  - vmware-exporter-kustomization.yaml
   - harbor-kustomization.yaml
   - authentik-kustomization.yaml
   - tofu-kustomization.yaml
