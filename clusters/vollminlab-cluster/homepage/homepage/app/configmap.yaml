@@ -153,17 +153,17 @@ data:
                 icon: vmware-esxi.png
                 ping: https://vcenter.vollminlab.com
             - ESXi 01:
-                description: ESXi host 1 — k8scp01/k8sworker01
+                description: VMware ESXi hypervisor 1
                 href: https://esxi01.vollminlab.com/ui/
                 icon: vmware-esxi.png
                 ping: https://esxi01.vollminlab.com
             - ESXi 02:
-                description: ESXi host 2 — k8scp02/k8sworker02
+                description: VMware ESXi hypervisor 2
                 href: https://esxi02.vollminlab.com/ui/
                 icon: vmware-esxi.png
                 ping: https://esxi02.vollminlab.com
             - ESXi 03:
-                description: ESXi host 3 — k8scp03/k8sworker03/k8sworker04/k8sworker05/k8sworker06
+                description: VMware ESXi hypervisor 3
                 href: https://esxi03.vollminlab.com/ui/
                 icon: vmware-esxi.png
                 ping: https://esxi03.vollminlab.com
