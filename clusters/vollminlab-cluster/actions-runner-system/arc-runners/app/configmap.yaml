@@ -42,7 +42,7 @@ data:
                   topologyKey: kubernetes.io/hostname
         containers:
           - name: runner
-            image: ghcr.io/actions/actions-runner:2.332.0
+            image: ghcr.io/actions/actions-runner:2.334.0
             command: ["/home/runner/run.sh"]
             env:
               - name: DOCKER_HOST
