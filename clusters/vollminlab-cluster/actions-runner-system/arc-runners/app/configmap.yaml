@@ -29,6 +29,17 @@ data:
           category: ci
       spec:
         serviceAccountName: github-actions-runner
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: prometheus
+                  namespaces:
+                    - monitoring
+                  topologyKey: kubernetes.io/hostname
         containers:
           - name: runner
             image: ghcr.io/actions/actions-runner:2.332.0
