@@ -1,8 +1,8 @@
 # Prowlarr indexers: Newznab usenet (NZBgeek, NzbPlanet) imported 2026-05-15;
 # Cardigann torrent (1337x, EZTV, YTS) created 2026-05-19.
 # Newznab indexers use ignore_changes on fields to tolerate Prowlarr masking sensitive API keys.
-# Cardigann indexers specify all fields returned by Prowlarr to avoid the provider's
-# "inconsistent values for sensitive attribute" hash mismatch on post-CREATE read.
+# Cardigann indexers specify only non-null field values — the provider omits null-value fields
+# from state, so including them in the plan causes a hash mismatch on post-CREATE read.
 
 resource "prowlarr_indexer" "eztv" {
   name            = "EZTV"
@@ -16,14 +16,7 @@ resource "prowlarr_indexer" "eztv" {
 
   fields = [
     { name = "definitionFile", text_value = "eztv" },
-    { name = "baseUrl" },
-    { name = "baseSettings.queryLimit" },
-    { name = "baseSettings.grabLimit" },
     { name = "baseSettings.limitsUnit", number_value = 0 },
-    { name = "torrentBaseSettings.appMinimumSeeders" },
-    { name = "torrentBaseSettings.seedRatio" },
-    { name = "torrentBaseSettings.seedTime" },
-    { name = "torrentBaseSettings.packSeedTime" },
     { name = "torrentBaseSettings.preferMagnetUrl", bool_value = false },
   ]
 }
@@ -76,16 +69,8 @@ resource "prowlarr_indexer" "the1337x" {
 
   fields = [
     { name = "definitionFile", text_value = "1337x" },
-    { name = "baseUrl" },
-    { name = "baseSettings.queryLimit" },
-    { name = "baseSettings.grabLimit" },
     { name = "baseSettings.limitsUnit", number_value = 0 },
-    { name = "torrentBaseSettings.appMinimumSeeders" },
-    { name = "torrentBaseSettings.seedRatio" },
-    { name = "torrentBaseSettings.seedTime" },
-    { name = "torrentBaseSettings.packSeedTime" },
     { name = "torrentBaseSettings.preferMagnetUrl", bool_value = false },
-    { name = "uploader" },
     { name = "info_uploader", text_value = "You can filter by Uploader by entering a Case Sensitive username, or leave empty to get all results.<br>Note: this is the username of the Uploader and not the Groupname that often show up at the end of 1337x titles, eg -GalaxyRG." },
     { name = "info_flaresolverr", text_value = "This site may use Cloudflare DDoS Protection, therefore Prowlarr requires <a href=\"https://wiki.servarr.com/prowlarr/faq#can-i-use-flaresolverr-indexers\" target=\"_blank\" rel=\"noreferrer\">FlareSolverr</a> to access it." },
     { name = "downloadlink", number_value = 0 },
@@ -109,14 +94,7 @@ resource "prowlarr_indexer" "yts" {
   fields = [
     { name = "definitionFile", text_value = "yts" },
     { name = "apiurl", text_value = "movies-api.accel.li" },
-    { name = "baseUrl" },
-    { name = "baseSettings.queryLimit" },
-    { name = "baseSettings.grabLimit" },
     { name = "baseSettings.limitsUnit", number_value = 0 },
-    { name = "torrentBaseSettings.appMinimumSeeders" },
-    { name = "torrentBaseSettings.seedRatio" },
-    { name = "torrentBaseSettings.seedTime" },
-    { name = "torrentBaseSettings.packSeedTime" },
     { name = "torrentBaseSettings.preferMagnetUrl", bool_value = false },
   ]
 }
