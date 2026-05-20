@@ -1,0 +1,59 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vmware-exporter-rules
+  namespace: monitoring
+  labels:
+    app: vmware-exporter
+    env: production
+    category: observability
+spec:
+  groups:
+    - name: vmware.hosts
+      rules:
+        - alert: ESXiHostPoweredOff
+          expr: vmware_host_power_state == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ESXi host {{ $labels.host_name }} is powered off"
+            description: "{{ $labels.host_name }} has reported power_state=0 for >2m. vCenter is reachable but host is off or unresponsive."
+
+        - alert: ESXiHostHighCPU
+          expr: (vmware_host_cpu_usage / vmware_host_cpu_max) * 100 > 85
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ESXi host {{ $labels.host_name }} CPU > 85%"
+            description: "{{ $labels.host_name }} CPU at {{ $value | printf \"%.0f\" }}% for 15m."
+
+        - alert: ESXiHostHighMemory
+          expr: (vmware_host_memory_usage / vmware_host_memory_max) * 100 > 90
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ESXi host {{ $labels.host_name }} memory > 90%"
+            description: "{{ $labels.host_name }} memory at {{ $value | printf \"%.0f\" }}% for 15m."
+
+    - name: vmware.datastores
+      rules:
+        - alert: DatastoreLowFreeSpace
+          expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 20
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Datastore {{ $labels.ds_name }} < 20% free"
+            description: "{{ $labels.ds_name }} has {{ $value | printf \"%.0f\" }}% free space remaining."
+
+        - alert: DatastoreCriticalFreeSpace
+          expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Datastore {{ $labels.ds_name }} critically low — take action now"
+            description: "{{ $labels.ds_name }} has {{ $value | printf \"%.0f\" }}% free space remaining."

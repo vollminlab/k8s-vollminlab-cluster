@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-vmware-exporter
+  namespace: flux-system
+  labels:
+    app: vmware-exporter
+    env: production
+    category: observability
+spec:
+  interval: 10m
+  path: ./clusters/vollminlab-cluster/monitoring/vmware-exporter/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

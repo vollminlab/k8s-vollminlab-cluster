@@ -1,0 +1,12 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: vmware-exporter-repo
+  namespace: flux-system
+  labels:
+    app: vmware-exporter
+    env: production
+    category: observability
+spec:
+  interval: 12h
+  url: https://kremers.github.io

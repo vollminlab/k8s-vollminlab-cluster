@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vmware-exporter
+  namespace: monitoring
+  labels:
+    app: vmware-exporter
+    env: production
+    category: observability
+spec:
+  selector:
+    matchLabels:
+      app: vmware-exporter
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s
+      scheme: http
