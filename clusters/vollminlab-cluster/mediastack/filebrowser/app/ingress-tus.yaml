@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: filebrowser-tus-ingress
+  namespace: mediastack
+  annotations:
+    # No Authentik auth_request — filebrowser's own JWT validates TUS uploads.
+    # Authentik sessions expire independently of filebrowser sessions; auth_request
+    # on the TUS path causes every chunk to fail with a 302 redirect loop once the
+    # Authentik session expires, even though the filebrowser JWT is still valid.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      client_body_timeout 600s;
+  labels:
+    app: filebrowser
+    env: production
+    category: apps
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: filebrowser.vollminlab.com
+      http:
+        paths:
+          - path: /api/tus
+            pathType: Prefix
+            backend:
+              service:
+                name: filebrowser
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - filebrowser.vollminlab.com
+      secretName: wildcard-tls
