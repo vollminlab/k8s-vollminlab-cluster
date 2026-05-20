@@ -29,6 +29,7 @@ data:
         memory: 256Mi
 
     service:
+      enabled: true
       type: ClusterIP
       port: 9272
       targetPort: 9272
