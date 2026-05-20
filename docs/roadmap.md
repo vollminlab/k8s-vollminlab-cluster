@@ -42,6 +42,8 @@ Self-hosted Renovate deployed as a Kubernetes CronJob in the `renovate` namespac
 
 All updates require manual review (no automerge). Dependency Dashboard issue maintained automatically in GitHub.
 
+**Planned addition:** add the `kubernetes` datasource to track kubeadm/node Kubernetes version availability. Renovate will open a PR when a new patch or minor version is available; the existing Ansible playbook (`k8s-upgrade.yml`) remains the upgrade executor.
+
 ---
 
 ### 1.4 Kyverno Policy Violations Cleanup
@@ -57,6 +59,19 @@ Fixed all outstanding Kyverno policy violations to establish a clean baseline (P
 **Status:** `deferred`
 
 Flux IUA's value is specifically for clusters that build and push custom container images — it scans a registry, detects new tags, and commits the update back to Git automatically (zero-touch CD for custom images). This cluster runs exclusively upstream Helm charts; Renovate already handles version bumps with human review, which is preferable. Revisit only if a CI pipeline starts building and pushing custom images.
+
+---
+
+### 1.6 Volsync — Continuous PVC Replication
+
+**Status:** `planned`
+
+Continuous PVC replication to Backblaze B2, complementing Velero's nightly FSB backups. Improves RPO for stateful apps from ~24h to near-real-time. Volsync operates at the volume level; Velero continues to handle namespace-level DR.
+
+- Restic-based replication via `ReplicationSource` CRs
+- Priority volumes: CNPG data directories, Harbor registry, MinIO export
+- Uses existing B2 bucket and credentials (already deployed via `terraform/b2/`)
+- Configurable sync interval (e.g. every 15min for databases, hourly for registry)
 
 ---
 
@@ -85,9 +100,19 @@ Flux IUA's value is specifically for clusters that build and push custom contain
 - Promtail DaemonSet shipping logs from all nodes
 - Grafana Loki data source configured and integrated with Grafana from 2.1
 
-### 2.3 OpenTelemetry Collector
+### 2.3 Goldilocks — VPA Resource Recommender
 
-**Status:** `planned` (deploy after Phase 5 Istio)
+**Status:** `planned`
+
+Kyverno enforces that resource limits exist but provides no tooling to determine appropriate values. Goldilocks deploys VPA in recommendation-only mode (no enforcement) and surfaces per-namespace right-sizing suggestions in a dashboard.
+
+Useful for the arr stack, exportarr sidecars, and any new app where limits were estimated rather than measured.
+
+---
+
+### 2.4 OpenTelemetry Collector
+
+**Status:** `planned` (deploy after Phase 5 / Cilium service mesh decision)
 
 Deploy the OpenTelemetry Operator + a collector pipeline:
 
@@ -215,6 +240,59 @@ This was discovered when implementing CI/CD access for GHA runners: the `arc-run
 
 ---
 
+### 3.7 Reloader (Stakater)
+
+**Status:** `planned` (priority: next — resolves active friction)
+
+In a GitOps workflow, updating a `configmap.yaml` or SealedSecret in a PR does not restart the pods that consume it. A manual `kubectl rollout restart` is required today. Stakater Reloader watches ConfigMaps and Secrets for changes and triggers rolling restarts automatically on annotated Deployments, StatefulSets, and DaemonSets.
+
+Usage: add `reloader.stakater.com/auto: "true"` to any Deployment once deployed. Pinned annotations (`configmap.reloader.stakater.com/reload`) are available for finer control.
+
+---
+
+### 3.8 external-secrets + 1Password Connect
+
+**Status:** `planned`
+
+Replaces the SealedSecrets workflow over time. External Secrets Operator syncs 1Password vault items directly into Kubernetes Secrets and rotates them automatically when the source changes — no `kubeseal` step.
+
+- Deploy 1Password Connect server (dedicated namespace)
+- Deploy External Secrets Operator with a 1Password `ClusterSecretStore`
+- Migrate namespaces incrementally; SealedSecrets and external-secrets can coexist during transition
+- Long-term: decommission `sealed-secrets` controller once all secrets migrated
+
+---
+
+### 3.9 Trivy Operator
+
+**Status:** `planned`
+
+Extends Harbor's push-time image scanning to continuous runtime scanning. Trivy Operator generates `VulnerabilityReport` and `ConfigAuditReport` CRs for every running workload — surfaces CVEs in images that were clean at push time but became vulnerable later. Integrates with Prometheus for alerting on critical/high findings.
+
+---
+
+### 3.10 Tailscale
+
+**Status:** `planned` (lower priority — Cloudflare tunnels cover HTTP; Tailscale adds private mesh)
+
+Deploy the Tailscale Kubernetes operator. Enables private WireGuard-based access to any cluster service from any tailnet device — useful for non-HTTP protocols, SSH to nodes, and access during Cloudflare outages. Individual services can be tagged into the tailnet without changing ingress config.
+
+---
+
+### 3.11 East-West Network Policies (Non-DMZ)
+
+**Status:** `planned` (security hardening — lower priority)
+
+All namespaces outside the DMZ are fully open east-west. A compromised pod in `mediastack` can reach Harbor, CNPG, MinIO, or Authentik. Minimum scope:
+
+- `harbor` — restrict inbound to ingress-nginx VIP + ARC runner egress only
+- `mediastack` — restrict outbound to known upstreams (indexers, Usenet, download targets)
+- `monitoring` — restrict write access (Prometheus scrape sources only)
+
+**Note:** Harbor's dedicated LoadBalancer VIP (3.6) makes its network policy straightforward — `ipBlock: 192.168.152.245/32` instead of the shared nginx VIP. Sequence 3.11 after 3.6 completes.
+
+---
+
 ## Phase 4 — Infrastructure Diagrams
 
 **Goal:** Create living architecture diagrams for every repo in the org once observability and security are settled — so diagrams reflect a stable system and don't need immediate revision.
@@ -251,6 +329,8 @@ Deploy Istio via the Helm-based install (not `istioctl`):
 
 Note: Istio's sidecar injection will interact with Kyverno policies — review `kyverno.md` before deploying.
 
+**Cilium decision point:** Cilium (Phase 8) ships a native service mesh (Cilium Mesh) with mTLS, traffic management, and Hubble L7 observability. Evaluate at Phase 8 planning time whether Cilium Mesh satisfies these requirements before investing in Istio. If it does, Phases 5 and 8 merge and Istio is dropped entirely.
+
 ---
 
 ## Phase 6 — SRE Practice
@@ -275,32 +355,61 @@ Controlled fault injection for resilience testing (pod kill, network partition, 
 
 ## Phase 7 — Node Maintenance Window
 
-**Status:** `planned` (depends on Phase 2 observability being in place for monitoring during maintenance)
-**Risk:** Medium — rolling node reboots; cluster should stay available if done one node at a time
+**Status:** `in-progress`
+**Risk:** Medium — rolling node reboots; cluster stays available if done one node at a time
 
-Normalize all nodes to current versions before the CNI migration. Current state (as of 2026-04-01 — **update table before starting this phase**):
+Normalize all nodes to current versions before the CNI migration. Three sub-items sequenced to allow bundling reboots efficiently.
 
-| Node | k8s | Kernel | Ubuntu |
+**Current state (2026-05-19):**
+
+| Node | K8s | Kernel | Ubuntu | containerd |
+| --- | --- | --- | --- | --- |
+| k8scp01 | v1.33.12 | 6.8.0-106 | 24.04.2 | 1.7.27 |
+| k8scp02 | v1.33.12 | 6.8.0-85 | 24.04.1 | 1.7.27 |
+| k8scp03 | v1.33.12 | 6.8.0-87 | 24.04.1 | 1.7.27 |
+| k8sworker01 | v1.33.12 | 6.8.0-107 | 24.04.4 | 1.7.27 |
+| k8sworker02 | v1.33.12 | 6.8.0-107 | 24.04.1 | 1.7.27 |
+| k8sworker03 | v1.33.12 | 6.8.0-107 | 24.04.1 | 1.7.27 |
+| k8sworker04 | v1.33.12 | 6.8.0-110 | 24.04.4 | **2.2.3** |
+| k8sworker05 | v1.33.12 | 6.8.0-87 | 24.04.3 | 1.7.27 |
+| k8sworker06 | v1.33.12 | 6.8.0-106 | 24.04.1 | 1.7.27 |
+
+### 7.1 Kubernetes upgrade (1.32 → current stable)
+
+**Status:** `in-progress`
+
+Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28 — hops 2–4 must complete before then.
+
+| Hop | Target | Method | Status |
 | --- | --- | --- | --- |
-| k8scp01 | v1.32.3 | 6.8.0-106 | 24.04.2 |
-| k8scp02 | v1.32.3 | 6.8.0-85 | 24.04.1 |
-| k8scp03 | v1.32.3 | 6.8.0-87 | 24.04.1 |
-| k8sworker01 | v1.32.3 | 6.8.0-79 | 24.04.1 |
-| k8sworker02 | v1.32.3 | 6.8.0-84 | 24.04.1 |
-| k8sworker03 | v1.32.3 | 6.8.0-87 | 24.04.1 |
-| k8sworker04 | v1.32.3 | 6.8.0-106 | 24.04.1 |
-| k8sworker05 | v1.32.9 | 6.8.0-87 | 24.04.3 |
-| k8sworker06 | v1.32.3 | 6.8.0-106 | 24.04.1 |
+| 1 | 1.33.12 | Manual node-by-node | `done` — 2026-05-19 |
+| 2 | 1.34.x | Ansible `k8s-upgrade.yml` | `planned` |
+| 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` |
+| 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` |
 
-Scope:
+Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain commands, Longhorn volume health gate after each uncordon (waits for zero degraded volumes before proceeding to next node).
 
-- Upgrade all nodes to the latest Kubernetes 1.32.x patch (or latest stable minor if 1.33+ is current)
-- `apt upgrade` on all nodes to normalize Ubuntu patch levels and kernel versions
-- Upgrade containerd if a newer stable version is available (currently 1.7.27 across all nodes)
-- Drain → upgrade → reboot → uncordon, one node at a time
-- Control plane nodes first, workers after
+**Compatibility note:** K8s 1.33 introduced `ServiceCIDR`/`IPAddress` networking types that Kyverno's catch-all webhook intercepts and rejects (HTTP 400, not a timeout — `failurePolicy: Ignore` has no effect). Fixed via `matchConditions` CEL expressions + `resourceFilters` entries in the Kyverno ConfigMap (PR #630). Verify this fix is present and survives each subsequent hop.
 
-Do not bundle this with the Cilium migration — they should be separate maintenance windows.
+### 7.2 containerd normalization
+
+**Status:** `planned` (bundle with 7.3 — both require node drain + reboot)
+
+k8sworker04 is on containerd 2.2.3; all other nodes are on 1.7.27. The 2.x line is the current stable track (1.7.x is maintenance-only). Target: upgrade all 1.7.x nodes to containerd 2.x current latest.
+
+- Drain node → stop kubelet → upgrade containerd → restart containerd + kubelet → uncordon
+- One node at a time; Longhorn health gate between nodes
+
+### 7.3 Kernel and OS normalization
+
+**Status:** `planned` (bundle with 7.2)
+
+Kernel versions range from 6.8.0-85 (k8scp02) to 6.8.0-110 (k8sworker04); Ubuntu patch levels range from 24.04.1 to 24.04.4. Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
+
+- Bundle with 7.2: drain → apt upgrade → reboot → uncordon covers both in one pass
+- One node at a time; same Longhorn health gate
+
+Do not bundle 7.2/7.3 with the Cilium migration — separate maintenance windows.
 
 ---
 
@@ -317,15 +426,26 @@ Cilium offers significant advantages over Calico for this use case:
 - Native Gateway API support
 - Industry direction for SRE/platform engineering roles
 
+**Expanded scope — Cilium enables a full networking stack simplification:**
+
+- **CNI replacement:** Calico → Cilium (eBPF-native, richer policy, better performance)
+- **MetalLB replacement:** Cilium L4LB + BGP peering replaces MetalLB entirely. Pair with UDM BGP configuration (see 3.2 note — skip the standalone MetalLB BGP migration and do it here instead)
+- **Gateway API adoption:** Cilium's native Gateway API implementation replaces nginx-ingress. All `ingress.yaml` files migrate to `HTTPRoute` resources. nginx-ingress is decommissioned at the end of this phase.
+- **kube-proxy replacement (optional):** eBPF-based routing; evaluate during planning
+- **Hubble:** L4/L7 network observability (flows, DNS, HTTP) — feeds Phase 2.4 OpenTelemetry pipeline
+- **Istio decision:** If Cilium Mesh provides sufficient mTLS + traffic management, Phase 5 is dropped. Decide at the start of this phase.
+
 Migration approach:
 
 1. Confirm Velero backups are healthy and a test restore has been validated
 2. Confirm Phase 2 observability is in place (Prometheus + Loki at minimum)
 3. Confirm all nodes are on current, normalized versions (Phase 7)
-4. Plan a maintenance window
+4. Plan a dedicated maintenance window — CNI replacement + nginx-ingress migration are both disruptive
 5. Drain nodes, uninstall Calico, install Cilium
 6. Validate network policies and DMZ rules (especially DMZ namespace on k8sworker05)
-7. Update `bootstrap/calico/` → `bootstrap/cilium/` references
+7. Migrate all Ingress resources to HTTPRoute; validate each service
+8. Decommission MetalLB and nginx-ingress HelmReleases
+9. Update `bootstrap/calico/` → `bootstrap/cilium/` references
 
 This is a cluster rebuild risk event — do not attempt without working backups.
 
@@ -337,7 +457,8 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | --- | --- |
 | Dynatrace / Dash0 | Homegrown stack (Prometheus + Loki + Grafana) is now established — evaluate if a managed platform adds value |
 | Tekton | Not needed for dependency updates (Renovate covers that); revisit if building/pushing custom images |
-| Crossplane | Potential future IaC-as-Kubernetes for cloud resources |
+| Crossplane | Potential future IaC-as-Kubernetes for cloud resources — redundant with tofu-controller today |
+| Foundry VTT | Self-hosted tabletop game server (`felddy/foundryvtt` image). Very feasible: single stateful web app, ~5Gi PVC, no database, handles its own player auth. Add to `foundry` namespace with `category: apps`. Sequence after Cilium migration so it lands on the final ingress stack. |
 
 ---
 
@@ -368,3 +489,5 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Velero scoped MinIO access key | Replaced root credentials with a least-privilege `velero-svc` MinIO key (PR #362) |
 | Flux upgrade v2.4 → v2.8 | Two-hop upgrade via PRs #423, #426, #428; 9 OCIRepository files migrated to v1; bootstrap deadlock fix documented |
 | Plex in-cluster + Cloudflare Tunnel | Plex migrated from TrueNAS (PRs #439, #440, #442); outbound-only tunnel, no open ports, Plex auth as sole gate |
+| Kyverno K8s 1.33 compatibility fix | `ServiceCIDR`/`IPAddress` excluded via `matchConditions` CEL + `resourceFilters`; fixed apiserver crash on upgrade (PR #630) |
+| K8s upgrade hop 1 (1.32 → 1.33.12) | All 9 nodes upgraded manually node-by-node with `--disable-eviction` and Longhorn health gates; Ansible playbook hardened for hops 2–4 (2026-05-19) |
