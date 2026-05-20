@@ -20,6 +20,9 @@ spec:
         env: production
         category: media
     spec:
+      securityContext:
+        seccompProfile:
+          type: Unconfined
       containers:
         - name: flaresolverr
           image: ghcr.io/flaresolverr/flaresolverr:v3.4.6@sha256:524715c5b5d045ff77ae409ffa1d6c0fcf9f23a2e5e957eb44da4f2fc53e6876
