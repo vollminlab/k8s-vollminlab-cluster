@@ -152,6 +152,21 @@ data:
                 href: https://vcenter.vollminlab.com
                 icon: vmware-esxi.png
                 ping: https://vcenter.vollminlab.com
+            - ESXi 01:
+                description: VMware ESXi hypervisor 1
+                href: https://esxi01.vollminlab.com/ui/
+                icon: vmware-esxi.png
+                ping: https://esxi01.vollminlab.com
+            - ESXi 02:
+                description: VMware ESXi hypervisor 2
+                href: https://esxi02.vollminlab.com/ui/
+                icon: vmware-esxi.png
+                ping: https://esxi02.vollminlab.com
+            - ESXi 03:
+                description: VMware ESXi hypervisor 3
+                href: https://esxi03.vollminlab.com/ui/
+                icon: vmware-esxi.png
+                ping: https://esxi03.vollminlab.com
             - Portainer:
                 description: Container management
                 href: https://portainer.vollminlab.com
