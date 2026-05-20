@@ -10,6 +10,7 @@ resource "prowlarr_indexer" "eztv" {
   implementation  = "Cardigann"
   config_contract = "CardigannSettings"
   app_profile_id  = 1
+  tags            = [prowlarr_tag.flaresolverr.id]
 
   lifecycle { ignore_changes = [fields] }
 
@@ -62,6 +63,7 @@ resource "prowlarr_indexer" "the1337x" {
   implementation  = "Cardigann"
   config_contract = "CardigannSettings"
   app_profile_id  = 1
+  tags            = [prowlarr_tag.flaresolverr.id]
 
   lifecycle { ignore_changes = [fields] }
 

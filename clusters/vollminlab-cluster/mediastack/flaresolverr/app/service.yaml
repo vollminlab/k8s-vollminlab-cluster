@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flaresolverr
+  namespace: mediastack
+  labels:
+    app: flaresolverr
+    env: production
+    category: media
+spec:
+  type: ClusterIP
+  selector:
+    app: flaresolverr
+  ports:
+    - name: http
+      port: 8191
+      targetPort: 8191
