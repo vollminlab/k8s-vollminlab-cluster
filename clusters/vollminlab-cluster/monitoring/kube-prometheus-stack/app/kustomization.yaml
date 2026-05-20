@@ -18,3 +18,5 @@ resources:
   - longhorn-dashboard-configmap.yaml
   - minio-dashboard-configmap.yaml
   - velero-dashboard-configmap.yaml
+  - vmware-hosts-dashboard-configmap.yaml
+  - vmware-datastores-dashboard-configmap.yaml
