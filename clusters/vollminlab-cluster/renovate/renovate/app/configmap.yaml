@@ -40,5 +40,22 @@ data:
           "gitAuthor": "Renovate Bot <bot@renovateapp.com>",
           "onboarding": false,
           "requireConfig": "optional",
-          "autodiscover": false
+          "autodiscover": false,
+          "customManagers": [
+            {
+              "customType": "regex",
+              "fileMatch": ["^\\.kubernetes-version$"],
+              "matchStrings": ["^(?<currentValue>[\\d.]+)"],
+              "datasourceTemplate": "github-releases",
+              "depNameTemplate": "kubernetes/kubernetes",
+              "extractVersionTemplate": "^v(?<version>.*)$"
+            }
+          ],
+          "packageRules": [
+            {
+              "matchDepNames": ["kubernetes/kubernetes"],
+              "allowedVersions": "/^v[0-9]+\\.[0-9]+\\.[0-9]+$/",
+              "commitMessagePrefix": "chore(k8s):"
+            }
+          ]
         }

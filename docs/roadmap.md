@@ -18,7 +18,7 @@ Living document tracking planned infrastructure work. Update status as projects 
 - Credentials in SealedSecrets; validation frequency tuned to 1h to limit B2 Class C API calls
 - Circular backup fixed (PR #410): `minio` namespace excluded from FSB on both schedules
 - Scoped MinIO access key for Velero deployed (PR #362) — root credentials no longer used
-- **Still needed:** run a test restore and document the procedure in `docs/` (gate for Phase 8)
+- **Test restore validated:** Minecraft namespace restored successfully from Velero backup — confirmed Velero can restore a running workload with PVC data intact. Phase 8 Velero gate is cleared.
 
 ---
 
@@ -42,7 +42,7 @@ Self-hosted Renovate deployed as a Kubernetes CronJob in the `renovate` namespac
 
 All updates require manual review (no automerge). Dependency Dashboard issue maintained automatically in GitHub.
 
-**Planned addition:** add the `kubernetes` datasource to track kubeadm/node Kubernetes version availability. Renovate will open a PR when a new patch or minor version is available; the existing Ansible playbook (`k8s-upgrade.yml`) remains the upgrade executor.
+**Added:** `kubernetes` datasource via a custom regex manager targeting `.kubernetes-version` at the repo root. Renovate opens a PR when a new stable K8s version is released; the existing Ansible playbook (`k8s-upgrade.yml`) remains the upgrade executor. Pre-releases filtered via `allowedVersions` regex.
 
 ---
 
@@ -154,11 +154,11 @@ Control plane certs issued by kubeadm expire annually and require manual renewal
 
 ### 3.1 Authentik — SSO / Identity Provider
 
-**Status:** `in-progress` — phases 1–5d complete, Phase 6 remaining
+**Status:** `done`
 
 Design doc: `docs/authentik-design.md`.
 
-- **Phase 1** `done` — Core infra: shared Redis (`redis` ns), CNPG Cluster CR, Authentik server+worker, cloudflared tunnel for `auth.vollminlab.com`
+- **Phase 1** `done` — Core infra: CNPG Cluster CR, Authentik server+worker, cloudflared tunnel for `authentik.vollminlab.com`. Redis was not deployed — Authentik 2025.10+ dropped the Redis dependency entirely.
 - **Phase 2** `done` — External proxy outpost + Jellyseerr (replaces Overseerr) + Jellyfin OIDC. Plex decommissioned; Jellyfin stable.
 - **Phase 3** `done` — Native OIDC: Grafana, Harbor, Headlamp, Portainer, Audiobookshelf, MinIO
 - **Phase 4** `done` — Forward-auth sweep: Longhorn, Homepage, arr stack, Tautulli, Shlink Web, Policy Reporter
@@ -166,7 +166,7 @@ Design doc: `docs/authentik-design.md`.
 - **Phase 5b** `done` — Full Authentik config under OpenTofu IaC: groups, users, OAuth2/proxy providers, scope mappings, applications, outpost, Portainer OAuth settings. All existing objects imported into state. Client secrets sealed. Post-merge fixes: cross-namespace refs (`allowCrossNamespaceRefs: true`, PR #547), flux-system NetworkPolicy for tofu→source-controller (PR #548, #549), Authentik provider 2026.2.x schema (`invalidation_flow` required, `redirect_uris`→`allowed_redirect_uris`, portainer `api_user`/`api_password`, PR #550, #551). tofu-controller reconciling cleanly. (PRs #542, #546–#551)
 - **Phase 5c** `done` — `terraform fmt --check` + `tofu validate` CI job for `terraform/**` PRs (PR #558). MinIO IaC: `terraform/minio/` module managing 4 buckets, 4 IAM users, 3 custom policies via `aminueza/minio` provider (PR #559). Harbor IaC: `terraform/harbor/` module managing OIDC config and 2 projects via `goharbor/harbor` provider (PR #560). Grafana IaC: `terraform/grafana/` module managing SSO settings, Pushover contact point, and default notification policy via `grafana/grafana` provider (PR #561). All existing objects imported into state. Legacy Harbor `extraEnvVars` OIDC config and Grafana `[auth.generic_oauth]` ini removed (PRs #571, #572).
 - **Phase 5d** `done` — Cloudflare IaC: `terraform/cloudflare/` managing 3 Zero Trust tunnels, 3 tunnel configs, and 3 DNS CNAME records via `cloudflare/cloudflare` v5 provider (PRs #575–#578). Radarr IaC: `terraform/radarr/` managing quality profiles, download client, indexer proxies via `devopsarr/radarr` v2.2 (PR #575). Sonarr IaC: `terraform/sonarr/` managing quality profiles, download client, indexer proxies via `devopsarr/sonarr` v3.3 (PR #575). Backblaze B2 IaC: `terraform/b2/` managing Velero bucket and scoped application key via `Backblaze/b2` v0.8 (PR #575). All 4 tofu-controller CRs reconciling cleanly (`True`). Provider quirks: Cloudflare v5 requires `lifecycle { ignore_changes = all }` on both tunnel and tunnel-config resources (PRs #577, #582); Radarr/Sonarr quality profile `name` returns null on single-quality groups requiring same lifecycle fix (PR #578); provider URLs need explicit ports (PR #577); B2 master key rolled after initial credential rejected (PR #580).
-- **Phase 6** `planned` — NPM-proxied external services via Authentik `auth_request`: Pi-hole, TrueNAS, HAProxy, NPM itself. vCenter via native OIDC.
+- **Phase 6** `done` — NPM-proxied external services via Authentik `auth_request`: Pi-hole ✅, HAProxy stats ✅, HAProxy DMZ stats ✅. NPM and TrueNAS skipped (can't disable their own auth — double-auth not worth it). vCenter OIDC deferred (no generic OIDC in this vCenter version). Tofu application entries for all five services (PRs #620, #621).
 
 ---
 
@@ -190,7 +190,7 @@ Design doc: `docs/authentik-design.md`.
 - `cloudflared` deployed as a plain Deployment in `mediastack` (PR #440). Tunnel connects outbound to Cloudflare edge; routes `plex.vollminlab.com → http://plex.mediastack.svc.cluster.local:32400`.
 - Plex's own auth (myPlex accounts) is the sole access gate — no Cloudflare Access policy. Remote access disabled in Plex; port 32400 confirmed closed on public IP.
 - Pi-hole DNS updated: `plex.vollminlab.com → 192.168.152.244`. TrueNAS Plex shut down.
-- Overseerr remains internal-only. Can be added to tunnel via Cloudflare dashboard with no code changes.
+- Overseerr replaced by Seerr (Authentik Phase 2, PR #494); Seerr has Authentik OIDC SSO and forward-auth (PR #600).
 
 ### 3.4 Jellyfin — Free External Streaming for Friends
 
@@ -213,30 +213,15 @@ Design doc: `docs/authentik-design.md`.
 
 **Status:** `done`
 
-Tautulli deployed in `mediastack`. Metrics dashboard complete.
+Tautulli deployed in `mediastack`. Metrics dashboard complete. Tautulli later replaced by Jellystat (PR #526) — Jellyfin-native play history and stats with a CNPG-backed PostgreSQL database and Homepage widget integration.
 
 ---
 
 ### 3.6 Harbor Network Isolation — LoadBalancer Expose
 
-**Status:** `in-progress`
+**Status:** `done` — PR #591
 
-**Context:** Harbor currently uses `expose.type: clusterIP` with a separate nginx Ingress that routes through the shared ingress-nginx LoadBalancer VIP (`192.168.152.244`). All cluster services share that VIP. Kubernetes NetworkPolicy operates at L3/L4 and cannot distinguish HTTP virtual hosts — any NetworkPolicy rule that allows `192.168.152.244:443` allows access to every nginx-served service, not just Harbor.
-
-This was discovered when implementing CI/CD access for GHA runners: the `arc-runners-egress` NetworkPolicy could not be made Harbor-specific without changing Harbor's architecture. PR #585 (ipBlock for nginx VIP) was opened and immediately closed as architecturally wrong.
-
-**Solution:** Migrate Harbor to `expose.type: loadBalancer`. Harbor's own internal nginx handles TLS. Harbor gets a dedicated MetalLB VIP (`192.168.152.245`) separate from the shared ingress. A cert-manager Certificate (issuer: `letsencrypt-cloudflare`) provisions the TLS cert in the `harbor` namespace. The nginx Ingress for Harbor is removed. The `arc-runners-egress` NetworkPolicy rule becomes `ipBlock: 192.168.152.245/32` — genuinely Harbor-specific.
-
-**Why this is the correct enterprise architecture:** The container registry is a critical supply chain component. It must have a dedicated network endpoint so that access can be controlled independently at the network layer. Sharing a VIP with monitoring, admin UIs, and applications prevents any meaningful network isolation for CI/CD systems.
-
-**Files to change:**
-- `clusters/vollminlab-cluster/harbor/harbor/app/configmap.yaml` — update expose type, add TLS config + MetalLB annotation
-- `clusters/vollminlab-cluster/harbor/harbor/app/ingress.yaml` — remove
-- `clusters/vollminlab-cluster/harbor/harbor/app/kustomization.yaml` — remove ingress reference
-- `clusters/vollminlab-cluster/harbor/harbor/app/harbor-tls-certificate.yaml` — new cert-manager Certificate
-- `clusters/vollminlab-cluster/actions-runner-system/arc-runners/app/networkpolicy.yaml` — replace ipBlock with Harbor-specific rule
-
-**Sequencing note:** DNS for `harbor.vollminlab.com` must be updated to `192.168.152.245` after Flux applies the new Harbor LoadBalancer service (Pi-hole A record update). The UI remains at the same hostname.
+Harbor migrated to `expose.type: loadBalancer` with dedicated MetalLB VIP `192.168.152.245`. Harbor's own nginx handles TLS via cert-manager wildcard cert. The `arc-runners-egress` NetworkPolicy uses `ipBlock: 192.168.152.245/32` for genuine Harbor-specific isolation. external-dns manages the `harbor.vollminlab.com` A record automatically. GHA robot accounts managed via tofu (`terraform/harbor/`); post-migration issue with robot import blocks resolved in PR #612.
 
 ---
 
@@ -416,7 +401,7 @@ Do not bundle 7.2/7.3 with the Cilium migration — separate maintenance windows
 ## Phase 8 — CNI Migration (Calico → Cilium)
 
 **Status:** `planned`
-**Depends on:** 1.1 test restore validated, Phase 2 observability (2.1 + 2.2 minimum), Phase 7 node maintenance complete
+**Depends on:** ~~1.1 test restore~~ ✓ validated (Minecraft restore), Phase 2 observability ✓ done, Phase 7 node maintenance complete
 **Risk:** High — CNI replacement requires a full cluster maintenance window
 
 Cilium offers significant advantages over Calico for this use case:
@@ -437,7 +422,7 @@ Cilium offers significant advantages over Calico for this use case:
 
 Migration approach:
 
-1. Confirm Velero backups are healthy and a test restore has been validated
+1. ~~Confirm Velero backups are healthy and a test restore has been validated~~ — done (Minecraft restore)
 2. Confirm Phase 2 observability is in place (Prometheus + Loki at minimum)
 3. Confirm all nodes are on current, normalized versions (Phase 7)
 4. Plan a dedicated maintenance window — CNI replacement + nginx-ingress migration are both disruptive
@@ -491,3 +476,14 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Plex in-cluster + Cloudflare Tunnel | Plex migrated from TrueNAS (PRs #439, #440, #442); outbound-only tunnel, no open ports, Plex auth as sole gate |
 | Kyverno K8s 1.33 compatibility fix | `ServiceCIDR`/`IPAddress` excluded via `matchConditions` CEL + `resourceFilters`; fixed apiserver crash on upgrade (PR #630) |
 | K8s upgrade hop 1 (1.32 → 1.33.12) | All 9 nodes upgraded manually node-by-node with `--disable-eviction` and Longhorn health gates; Ansible playbook hardened for hops 2–4 (2026-05-19) |
+| CNPG native backups | WAL archiving + daily scheduled base backups for all CNPG clusters (authentik-db, harbor-db, shlink-db, jellystat-db) via MinIO barman object store; scoped `cnpg-svc` MinIO user (PR #517; schedule fix PR #655) |
+| Jellystat | Replaced Tautulli: Jellyfin-native play stats, CNPG-backed PostgreSQL, Homepage widget (PR #526) |
+| FileBrowser | File drop service in `mediastack`; SMB-backed storage (audiobooks-incoming + misc-incoming); Authentik forward-auth; Cloudflare tunnel; tofu group/policy management (PR #629) |
+| FlareSolverr + Prowlarr Cardigann indexers | FlareSolverr deployed in `mediastack`; 1337x and EZTV unblocked via indexer proxy; YTS imported into tofu state (PR #688) |
+| qBittorrent + gluetun VPN sidecar | Deployed in `mediastack` with gluetun PIA VPN sidecar; port-forwarding via CA Montreal region; Homepage widget (PR #672) |
+| Readarr + tofu IaC | Readarr deployed on bookshelf/hardcover fork; `terraform/readarr/` tofu workspace; Prowlarr sync; Homepage widget (PRs #642, #644) |
+| Prowlarr tofu IaC | `terraform/prowlarr/` module managing Newznab indexers and app sync connections for Radarr/Sonarr/Readarr; `prowlarr-config` CR reconciling cleanly |
+| VMware metrics exporter | `kremers/vmware-exporter` Helm chart in `monitoring`; ServiceMonitor, PrometheusRules for host/datastore alerts, Grafana dashboards for ESXi hosts + datastores/VMs (PRs #700, #705) |
+| Homepage B2 + Cloudflare widgets | b2-exporter (custom Python/Prometheus) deployed in `monitoring`; Homepage prometheus widget for B2 bucket stats; three Cloudflare tunnel status widgets (PRs #579, #590) |
+| Nginx ssl-redirect loop fix | `use-forwarded-headers: "true"` in nginx configmap; fixed redirect loops for Cloudflare-fronted services (PR #649) |
+| Cloudflare WAF bypass for Authentik | WAF skip rule for `authentik.vollminlab.com` to allow Authentik flow executor calls through Cloudflare bot protection (PR #648) |
