@@ -54,6 +54,14 @@ spec:
           ports:
             - containerPort: 8080
               name: webui
+          readinessProbe:
+            httpGet:
+              path: /api/v2/app/version
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 5
           volumeMounts:
             - name: config
               mountPath: /config
