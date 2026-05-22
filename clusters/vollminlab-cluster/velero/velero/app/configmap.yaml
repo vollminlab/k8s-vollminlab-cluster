@@ -124,6 +124,8 @@ data:
           storageLocation: minio
           defaultVolumesToFsBackup: true
           excludedNamespaces:
+            - kyverno
+            - longhorn-system
             - minio
             - monitoring
             - velero
@@ -139,6 +141,8 @@ data:
           storageLocation: b2
           defaultVolumesToFsBackup: true
           excludedNamespaces:
+            - kyverno
+            - longhorn-system
             - minio
             - monitoring
             - velero
@@ -154,6 +158,8 @@ data:
           storageLocation: b2
           defaultVolumesToFsBackup: true
           excludedNamespaces:
+            - kyverno
+            - longhorn-system
             - minio
             - monitoring
             - velero
