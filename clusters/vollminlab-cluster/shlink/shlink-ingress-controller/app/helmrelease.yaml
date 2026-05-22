@@ -17,19 +17,3 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: shlink-ingress-controller-values
-  postRenderers:
-    - kustomize:
-        patches:
-          - patch: |-
-              apiVersion: apps/v1
-              kind: Deployment
-              metadata:
-                name: shlink-ingress-controller
-              spec:
-                template:
-                  spec:
-                    imagePullSecrets:
-                      - name: harbor-vollminlab-pull
-            target:
-              kind: Deployment
-              name: shlink-ingress-controller

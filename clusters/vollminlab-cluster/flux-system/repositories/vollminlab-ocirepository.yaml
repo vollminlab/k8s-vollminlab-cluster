@@ -11,6 +11,6 @@ spec:
   interval: 1h
   url: oci://harbor.vollminlab.com/vollminlab/charts/shlink-ingress-controller
   ref:
-    tag: "0.3.5"
+    tag: "0.3.6"
   secretRef:
     name: harbor-vollminlab-pull
