@@ -14,6 +14,9 @@ data:
       env: production
       category: apps
 
+    imagePullSecrets:
+      - name: harbor-vollminlab-pull
+
     resources:
       requests:
         cpu: 50m
