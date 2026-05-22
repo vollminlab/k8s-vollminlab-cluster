@@ -25,3 +25,4 @@ spec:
       path: /minio/v2/metrics/bucket
       interval: 30s
       scheme: http
+      honorTimestamps: false
