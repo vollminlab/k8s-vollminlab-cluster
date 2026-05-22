@@ -11,3 +11,4 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - loki-minio-credentials-sealedsecret.yaml
+  - loki-ruler-rules-configmap.yaml
