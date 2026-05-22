@@ -20,6 +20,10 @@ data:
         limits:
           cpu: 200m
           memory: 128Mi
+    frr-k8s:
+      prometheus:
+        serviceMonitor:
+          enabled: false
     speaker:
       enabled: true
       podAnnotations:
