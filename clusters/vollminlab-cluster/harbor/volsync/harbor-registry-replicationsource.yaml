@@ -1,0 +1,19 @@
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: harbor-registry-restic
+  namespace: harbor
+spec:
+  sourcePVC: harbor-registry
+  trigger:
+    schedule: "0 3 * * *"
+  restic:
+    pruneIntervalDays: 7
+    repository: volsync-harbor-registry-restic
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 3
+    copyMethod: Clone
+    cacheCapacity: 1Gi
+    cacheStorageClassName: longhorn
