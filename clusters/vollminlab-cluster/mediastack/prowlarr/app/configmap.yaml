@@ -18,6 +18,8 @@ data:
       app: prowlarr
       env: production
       category: media
+    podAnnotations:
+      backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm"
     env:
       PROWLARR__AUTH__METHOD: "External"
     terminationGracePeriodSeconds: 60
