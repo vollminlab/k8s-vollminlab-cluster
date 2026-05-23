@@ -45,6 +45,14 @@ data:
         retention_enabled: true
         delete_request_store: s3
 
+      rulerConfig:
+        alertmanager_url: http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093
+        enable_api: true
+        storage:
+          type: local
+          local:
+            directory: /etc/loki/rules
+
     singleBinary:
       replicas: 1
 
@@ -77,6 +85,14 @@ data:
         app: loki
         env: production
         category: observability
+
+      extraVolumes:
+        - name: ruler-rules
+          configMap:
+            name: loki-ruler-rules
+      extraVolumeMounts:
+        - name: ruler-rules
+          mountPath: /etc/loki/rules/fake
 
     gateway:
       enabled: false

@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: goldilocks-repo
+  namespace: flux-system
+  labels:
+    app: goldilocks
+    env: production
+    category: observability
+spec:
+  interval: 5m
+  url: https://charts.fairwinds.com/stable
+  timeout: 3m

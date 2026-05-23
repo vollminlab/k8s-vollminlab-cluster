@@ -57,7 +57,7 @@ data:
         registry:
           storageClass: longhorn
           accessMode: ReadWriteOnce
-          size: 25Gi
+          size: 5Gi
         jobservice:
           jobLog:
             storageClass: longhorn

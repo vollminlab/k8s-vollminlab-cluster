@@ -17,11 +17,14 @@ spec:
       path: /minio/v2/metrics/cluster
       interval: 30s
       scheme: http
+      honorTimestamps: false
     - port: http
       path: /minio/v2/metrics/node
       interval: 30s
       scheme: http
+      honorTimestamps: false
     - port: http
       path: /minio/v2/metrics/bucket
       interval: 30s
       scheme: http
+      honorTimestamps: false

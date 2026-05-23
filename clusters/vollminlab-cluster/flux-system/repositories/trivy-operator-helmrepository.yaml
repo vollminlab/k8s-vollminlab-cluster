@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: trivy-operator-repo
+  namespace: flux-system
+  labels:
+    app: trivy-operator
+    env: production
+    category: security
+spec:
+  interval: 5m
+  url: https://aquasecurity.github.io/helm-charts/
+  timeout: 3m

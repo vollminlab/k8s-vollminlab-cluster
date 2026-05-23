@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: goldilocks
+  namespace: goldilocks
+  labels:
+    app: goldilocks
+    env: production
+    category: observability
+spec:
+  interval: 5m
+  releaseName: goldilocks
+  chart:
+    spec:
+      chart: goldilocks
+      version: 10.3.0
+      sourceRef:
+        kind: HelmRepository
+        name: goldilocks-repo
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: goldilocks-values
+      valuesKey: values.yaml

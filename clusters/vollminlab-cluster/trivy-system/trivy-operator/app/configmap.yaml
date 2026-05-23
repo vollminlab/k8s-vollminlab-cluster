@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-operator-values
+  namespace: trivy-system
+  labels:
+    app: trivy-operator
+    env: production
+    category: security
+data:
+  values.yaml: |
+    operator:
+      scanJobsConcurrentLimit: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+    trivy:
+      ignoreUnfixed: true
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
+
+    scanJobTolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: dmz
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+
+    nodeCollector:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: dmz
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
+    serviceMonitor:
+      enabled: true

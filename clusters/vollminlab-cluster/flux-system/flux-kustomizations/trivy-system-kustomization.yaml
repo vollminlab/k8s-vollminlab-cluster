@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: trivy-system
+  namespace: flux-system
+  labels:
+    app: trivy-operator
+    env: production
+    category: security
+spec:
+  interval: 10m
+  path: ./clusters/vollminlab-cluster/trivy-system
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  targetNamespace: trivy-system
+  timeout: 5m
+  dependsOn:
+    - name: sealed-secrets
