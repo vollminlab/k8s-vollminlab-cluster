@@ -28,5 +28,24 @@ data:
           cpu: 500m
           memory: 512Mi
 
+    scanJobTolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: dmz
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+
+    nodeCollector:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: dmz
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+
     serviceMonitor:
       enabled: true
