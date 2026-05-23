@@ -37,3 +37,4 @@ resources:
   - tofu-kustomization.yaml
   - goldilocks-kustomization.yaml
   - trivy-system-kustomization.yaml
+  - volsync-kustomization.yaml

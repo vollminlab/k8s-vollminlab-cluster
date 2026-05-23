@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: volsync-values
+  namespace: volsync-system
+  labels:
+    app: volsync
+    env: production
+    category: storage
+data:
+  values.yaml: |
+    podLabels:
+      app: volsync
+      env: production
+      category: storage
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
