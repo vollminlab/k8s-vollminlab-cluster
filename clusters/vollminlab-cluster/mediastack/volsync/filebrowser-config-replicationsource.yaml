@@ -1,0 +1,19 @@
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: filebrowser-config-restic
+  namespace: mediastack
+spec:
+  sourcePVC: pvc-filebrowser-config
+  trigger:
+    schedule: "0 3 * * *"
+  restic:
+    pruneIntervalDays: 7
+    repository: volsync-filebrowser-config-restic
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 3
+    copyMethod: Clone
+    cacheCapacity: 1Gi
+    cacheStorageClassName: longhorn

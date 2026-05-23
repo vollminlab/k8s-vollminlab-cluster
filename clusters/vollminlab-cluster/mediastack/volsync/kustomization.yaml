@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - audiobookshelf-config-replicationsource.yaml
+  - audiobookshelf-metadata-replicationsource.yaml
+  - bazarr-config-replicationsource.yaml
+  - filebrowser-config-replicationsource.yaml
+  - jellyfin-config-replicationsource.yaml
+  - prowlarr-config-replicationsource.yaml
+  - qbittorrent-config-replicationsource.yaml
+  - radarr-config-replicationsource.yaml
+  - readarr-config-replicationsource.yaml
+  - sabnzbd-config-replicationsource.yaml
+  - seerr-config-replicationsource.yaml
+  - sonarr-config-replicationsource.yaml
+  - volsync-audiobookshelf-config-restic-sealedsecret.yaml
+  - volsync-audiobookshelf-metadata-restic-sealedsecret.yaml
+  - volsync-bazarr-config-restic-sealedsecret.yaml
+  - volsync-filebrowser-config-restic-sealedsecret.yaml
+  - volsync-jellyfin-config-restic-sealedsecret.yaml
+  - volsync-prowlarr-config-restic-sealedsecret.yaml
+  - volsync-qbittorrent-config-restic-sealedsecret.yaml
+  - volsync-radarr-config-restic-sealedsecret.yaml
+  - volsync-readarr-config-restic-sealedsecret.yaml
+  - volsync-sabnzbd-config-restic-sealedsecret.yaml
+  - volsync-seerr-config-restic-sealedsecret.yaml
+  - volsync-sonarr-config-restic-sealedsecret.yaml
