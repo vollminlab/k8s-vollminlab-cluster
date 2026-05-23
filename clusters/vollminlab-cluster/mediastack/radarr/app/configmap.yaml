@@ -38,6 +38,8 @@ data:
       app: radarr
       env: production
       category: media
+    podAnnotations:
+      backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm"
     env:
       RADARR__AUTH__METHOD: "External"
     securityContext:
