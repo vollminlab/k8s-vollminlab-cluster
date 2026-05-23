@@ -33,6 +33,8 @@ data:
       app: sonarr
       env: production
       category: media
+    podAnnotations:
+      backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm"
     env:
       SONARR__AUTH__METHOD: "External"
     securityContext:
