@@ -16,6 +16,7 @@ resources:
   - cnpg-helmrepository.yaml
   - descheduler-helmrepository.yaml
   - external-dns-helmrepository.yaml
+  - goldilocks-helmrepository.yaml
   - grafana-helmrepository.yaml
   - harbor-helmrepository.yaml
   - headlamp-helmrepository.yaml
@@ -44,6 +45,7 @@ resources:
   - smb-csi-driver-helmrepository.yaml
   - sonarr-ocirepository.yaml
   - tofu-controller-helmrepository.yaml
+  - trivy-operator-helmrepository.yaml
   - velero-helmrepository.yaml
   - vmware-exporter-helmrepository.yaml
   - harbor-vollminlab-pull-sealedsecret.yaml
