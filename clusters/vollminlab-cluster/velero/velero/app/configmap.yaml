@@ -126,9 +126,11 @@ data:
           excludedNamespaces:
             - kyverno
             - longhorn-system
+            - metallb-system
             - minio
             - monitoring
             - tofu
+            - trivy-system
             - velero
           resourcePolicy:
             kind: ConfigMap
@@ -144,9 +146,11 @@ data:
           excludedNamespaces:
             - kyverno
             - longhorn-system
+            - metallb-system
             - minio
             - monitoring
             - tofu
+            - trivy-system
             - velero
           resourcePolicy:
             kind: ConfigMap
@@ -162,9 +166,11 @@ data:
           excludedNamespaces:
             - kyverno
             - longhorn-system
+            - metallb-system
             - minio
             - monitoring
             - tofu
+            - trivy-system
             - velero
           resourcePolicy:
             kind: ConfigMap
