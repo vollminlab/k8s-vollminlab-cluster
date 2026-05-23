@@ -35,3 +35,5 @@ resources:
   - harbor-kustomization.yaml
   - authentik-kustomization.yaml
   - tofu-kustomization.yaml
+  - goldilocks-kustomization.yaml
+  - trivy-system-kustomization.yaml

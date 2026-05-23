@@ -6,3 +6,4 @@ metadata:
     app: mediastack
     env: production
     category: media
+    goldilocks.fairwinds.com/enabled: "true"

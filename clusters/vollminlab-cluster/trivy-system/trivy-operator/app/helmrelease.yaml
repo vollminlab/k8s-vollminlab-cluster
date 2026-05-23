@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+  labels:
+    app: trivy-operator
+    env: production
+    category: security
+spec:
+  interval: 5m
+  releaseName: trivy-operator
+  chart:
+    spec:
+      chart: trivy-operator
+      version: 0.32.1
+      sourceRef:
+        kind: HelmRepository
+        name: trivy-operator-repo
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: trivy-operator-values
+      valuesKey: values.yaml

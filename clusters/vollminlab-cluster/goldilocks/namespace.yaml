@@ -1,9 +1,8 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: monitoring
+  name: goldilocks
   labels:
-    app: monitoring
+    app: goldilocks
     env: production
     category: observability
-    goldilocks.fairwinds.com/enabled: "true"
