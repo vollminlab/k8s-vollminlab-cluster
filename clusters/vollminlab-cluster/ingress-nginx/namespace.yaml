@@ -6,3 +6,4 @@ metadata:
     app: ingress-nginx
     env: production
     category: networking
+    goldilocks.fairwinds.com/enabled: "true"

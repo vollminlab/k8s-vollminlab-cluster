@@ -6,3 +6,4 @@ metadata:
     app: volsync
     env: production
     category: storage
+    goldilocks.fairwinds.com/enabled: "true"

@@ -6,3 +6,4 @@ metadata:
     app: kyverno
     env: production
     category: security
+    goldilocks.fairwinds.com/enabled: "true"

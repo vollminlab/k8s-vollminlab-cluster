@@ -6,3 +6,4 @@ metadata:
     app: sealed-secrets
     env: production
     category: security
+    goldilocks.fairwinds.com/enabled: "true"

@@ -6,3 +6,4 @@ metadata:
     app: harbor
     env: production
     category: storage
+    goldilocks.fairwinds.com/enabled: "true"

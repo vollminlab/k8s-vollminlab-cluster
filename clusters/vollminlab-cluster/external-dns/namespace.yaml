@@ -6,3 +6,4 @@ metadata:
     app: external-dns
     env: production
     category: networking
+    goldilocks.fairwinds.com/enabled: "true"
