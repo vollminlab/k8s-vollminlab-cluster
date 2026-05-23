@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: volsync-system
+  namespace: flux-system
+  labels:
+    app: volsync
+    env: production
+    category: storage
+spec:
+  interval: 10m
+  path: ./clusters/vollminlab-cluster/volsync-system
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  targetNamespace: volsync-system
+  timeout: 10m
+  dependsOn:
+    - name: sealed-secrets
