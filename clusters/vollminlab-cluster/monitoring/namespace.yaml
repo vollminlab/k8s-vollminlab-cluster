@@ -6,5 +6,4 @@ metadata:
     app: monitoring
     env: production
     category: observability
-  annotations:
     goldilocks.fairwinds.com/enabled: "true"
