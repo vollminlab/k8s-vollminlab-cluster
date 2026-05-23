@@ -10,6 +10,7 @@ metadata:
 data:
   values.yaml: |
     operator:
+      scanJobsConcurrentLimit: 3
       resources:
         requests:
           cpu: 100m
@@ -23,10 +24,10 @@ data:
       resources:
         requests:
           cpu: 100m
-          memory: 128Mi
+          memory: 256Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
     scanJobTolerations:
       - key: node-role.kubernetes.io/control-plane
