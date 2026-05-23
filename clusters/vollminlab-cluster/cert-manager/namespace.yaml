@@ -6,3 +6,4 @@ metadata:
     app: cert-manager
     env: production
     category: security
+    goldilocks.fairwinds.com/enabled: "true"

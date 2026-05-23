@@ -6,3 +6,4 @@ metadata:
     app: tofu-controller
     env: production
     category: core
+    goldilocks.fairwinds.com/enabled: "true"

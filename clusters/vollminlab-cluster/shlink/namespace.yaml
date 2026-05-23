@@ -6,3 +6,4 @@ metadata:
     app: shlink
     env: production
     category: apps
+    goldilocks.fairwinds.com/enabled: "true"

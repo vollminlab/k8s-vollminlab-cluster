@@ -6,3 +6,4 @@ metadata:
     app: local-path-provisioner
     env: production
     category: storage
+    goldilocks.fairwinds.com/enabled: "true"

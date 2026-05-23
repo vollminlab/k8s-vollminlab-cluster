@@ -6,3 +6,4 @@ metadata:
     app: homepage
     env: production
     category: apps
+    goldilocks.fairwinds.com/enabled: "true"

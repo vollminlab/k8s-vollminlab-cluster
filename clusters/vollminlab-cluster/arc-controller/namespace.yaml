@@ -6,3 +6,4 @@ metadata:
     app: arc-controller
     env: production
     category: ci
+    goldilocks.fairwinds.com/enabled: "true"
