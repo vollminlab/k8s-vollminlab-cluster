@@ -14,10 +14,10 @@ data:
       resources:
         requests:
           cpu: 100m
-          memory: 128Mi
+          memory: 384Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 768Mi
 
     trivy:
       ignoreUnfixed: true
