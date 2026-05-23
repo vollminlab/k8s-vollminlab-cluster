@@ -9,4 +9,5 @@ metadata:
     category: storage
 resources:
   - namespace.yaml
+  - csi-snapshot-crds
   - volsync/app
