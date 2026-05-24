@@ -13,6 +13,8 @@ data:
       hostname: vollminlab-cluster-operator
       defaultTags:
         - tag:k8s
+      image:
+        pullPolicy: IfNotPresent
 
     resources:
       requests:
