@@ -17,6 +17,10 @@ data:
         repository: ghcr.io/tailscale/k8s-operator
         pullPolicy: IfNotPresent
 
+    proxyConfig:
+      image:
+        repository: ghcr.io/tailscale/tailscale
+
     resources:
       requests:
         cpu: 10m
