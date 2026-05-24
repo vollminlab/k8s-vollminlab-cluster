@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: reloader-repo
+  namespace: flux-system
+  labels:
+    app: reloader
+    env: production
+    category: core
+spec:
+  interval: 5m
+  url: https://stakater.github.io/stakater-charts
+  timeout: 3m

@@ -30,6 +30,7 @@ resources:
   - shlink-kustomization.yaml
   - minio-kustomization.yaml
   - renovate-kustomization.yaml
+  - reloader-kustomization.yaml
   - velero-kustomization.yaml
   - vmware-exporter-kustomization.yaml
   - harbor-kustomization.yaml
