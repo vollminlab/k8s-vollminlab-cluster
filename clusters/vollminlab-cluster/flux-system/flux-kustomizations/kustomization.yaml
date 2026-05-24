@@ -18,6 +18,7 @@ resources:
   - kube-system-kustomization.yaml
   - sealed-secrets-kustomization.yaml
   - tailscale-kustomization.yaml
+  - tailscale-connector-kustomization.yaml
   - arc-controller-kustomization.yaml
   - actions-runner-system-kustomization.yaml
   - actions-runner-system-runners-kustomization.yaml

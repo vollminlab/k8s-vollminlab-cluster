@@ -1,13 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 metadata:
-  name: tailscale-operator-deployment
+  name: tailscale-connector-deployment
   namespace: flux-system
   labels:
     app: tailscale-operator
     env: production
     category: networking
 resources:
-  - helmrelease.yaml
-  - configmap.yaml
-  - operator-oauth-sealedsecret.yaml
+  - connector.yaml
