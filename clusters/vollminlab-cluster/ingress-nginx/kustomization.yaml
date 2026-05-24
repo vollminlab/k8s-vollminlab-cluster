@@ -4,5 +4,6 @@ metadata:
   name: ingress-nginx
 resources:
   - namespace.yaml
-  - ./ingress-nginx/app
   - ./cloudflared-nginx/app
+  - ./ingress-nginx/app
+  - ./tailscale-svc

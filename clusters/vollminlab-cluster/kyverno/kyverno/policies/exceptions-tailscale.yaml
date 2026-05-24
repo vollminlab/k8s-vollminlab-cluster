@@ -8,11 +8,12 @@ metadata:
     env: production
     category: security
 spec:
-  # The Tailscale operator creates a StatefulSet for the subnet router connector.
-  # The connector pod requires privileged mode to create TUN devices and manage
-  # kernel routing tables for subnet advertisement. The operator controls this
-  # pod's spec directly — resource limits and security context are not configurable
-  # via our Helm values (use ProxyClass CR if fine-grained control is needed later).
+  # The Tailscale operator creates privileged StatefulSets for:
+  # 1. The subnet router Connector (tailscale namespace)
+  # 2. LoadBalancer service proxies (in the service's namespace, e.g. ingress-nginx)
+  # All require privileged mode to create TUN devices. The operator controls pod
+  # specs directly — limits and security context are not configurable via Helm
+  # values (use ProxyClass CR if fine-grained control is needed later).
   match:
     any:
       - resources:
@@ -21,6 +22,15 @@ spec:
             - StatefulSet
           namespaces:
             - tailscale
+      - resources:
+          kinds:
+            - Pod
+            - StatefulSet
+          namespaces:
+            - ingress-nginx
+          selector:
+            matchLabels:
+              tailscale.com/managed: "true"
   exceptions:
     - policyName: restrict-privileged
       ruleNames:

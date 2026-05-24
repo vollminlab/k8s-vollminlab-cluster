@@ -32,7 +32,7 @@ data:
           cpu: 25m
           memory: 64Mi
         limits:
-          cpu: 500m
+          cpu: 1000m
           memory: 256Mi
 
     dashboard:
