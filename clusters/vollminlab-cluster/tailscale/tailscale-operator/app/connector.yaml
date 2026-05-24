@@ -1,0 +1,15 @@
+apiVersion: tailscale.com/v1alpha1
+kind: Connector
+metadata:
+  name: vollminlab-cluster
+  namespace: tailscale
+  labels:
+    app: tailscale-operator
+    env: production
+    category: networking
+spec:
+  hostname: vollminlab-cluster
+  subnetRouter:
+    advertiseRoutes:
+      - "192.168.152.0/24"
+      - "192.168.100.0/24"

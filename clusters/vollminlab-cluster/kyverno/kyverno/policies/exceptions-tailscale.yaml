@@ -1,0 +1,30 @@
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: ignore-tailscale-connector
+  namespace: kyverno
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  # The Tailscale operator creates a StatefulSet for the subnet router connector.
+  # The connector pod requires privileged mode to create TUN devices and manage
+  # kernel routing tables for subnet advertisement. The operator controls this
+  # pod's spec directly — resource limits and security context are not configurable
+  # via our Helm values (use ProxyClass CR if fine-grained control is needed later).
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - StatefulSet
+          namespaces:
+            - tailscale
+  exceptions:
+    - policyName: restrict-privileged
+      ruleNames:
+        - block-privileged
+    - policyName: require-resources
+      ruleNames:
+        - require-limits
