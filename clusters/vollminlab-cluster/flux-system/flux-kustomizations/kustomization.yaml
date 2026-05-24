@@ -17,6 +17,7 @@ resources:
   - policy-reporter-patch-kustomization.yaml
   - kube-system-kustomization.yaml
   - sealed-secrets-kustomization.yaml
+  - tailscale-kustomization.yaml
   - arc-controller-kustomization.yaml
   - actions-runner-system-kustomization.yaml
   - actions-runner-system-runners-kustomization.yaml
