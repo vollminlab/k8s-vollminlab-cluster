@@ -64,14 +64,9 @@ Flux IUA's value is specifically for clusters that build and push custom contain
 
 ### 1.6 Volsync — Continuous PVC Replication
 
-**Status:** `planned`
+**Status:** `done` — PRs #728–#732
 
-Continuous PVC replication to Backblaze B2, complementing Velero's nightly FSB backups. Improves RPO for stateful apps from ~24h to near-real-time. Volsync operates at the volume level; Velero continues to handle namespace-level DR.
-
-- Restic-based replication via `ReplicationSource` CRs
-- Priority volumes: CNPG data directories, Harbor registry, MinIO export
-- Uses existing B2 bucket and credentials (already deployed via `terraform/b2/`)
-- Configurable sync interval (e.g. every 15min for databases, hourly for registry)
+Restic-based PVC replication to Backblaze B2 for 13 PVCs (CNPG clusters, Harbor registry, Longhorn app volumes). `ReplicationSource` CRs with 15-min sync interval. Scoped B2 application key. CSI VolumeSnapshot CRDs deployed separately. Metrics endpoint secured after TargetDown alert (PR #732).
 
 ---
 
@@ -102,11 +97,9 @@ Continuous PVC replication to Backblaze B2, complementing Velero's nightly FSB b
 
 ### 2.3 Goldilocks — VPA Resource Recommender
 
-**Status:** `planned`
+**Status:** `done` — PRs #721, #734
 
-Kyverno enforces that resource limits exist but provides no tooling to determine appropriate values. Goldilocks deploys VPA in recommendation-only mode (no enforcement) and surfaces per-namespace right-sizing suggestions in a dashboard.
-
-Useful for the arr stack, exportarr sidecars, and any new app where limits were estimated rather than measured.
+Goldilocks VPA recommender deployed in `goldilocks` namespace (PR #721). VPA recommendations enabled for all app namespaces (PR #734). Resource limits right-sized across the cluster based on Goldilocks data (PR #735).
 
 ---
 
@@ -227,11 +220,9 @@ Harbor migrated to `expose.type: loadBalancer` with dedicated MetalLB VIP `192.1
 
 ### 3.7 Reloader (Stakater)
 
-**Status:** `planned` (priority: next — resolves active friction)
+**Status:** `done` — this PR
 
-In a GitOps workflow, updating a `configmap.yaml` or SealedSecret in a PR does not restart the pods that consume it. A manual `kubectl rollout restart` is required today. Stakater Reloader watches ConfigMaps and Secrets for changes and triggers rolling restarts automatically on annotated Deployments, StatefulSets, and DaemonSets.
-
-Usage: add `reloader.stakater.com/auto: "true"` to any Deployment once deployed. Pinned annotations (`configmap.reloader.stakater.com/reload`) are available for finer control.
+Stakater Reloader deployed in `reloader` namespace, watching all namespaces. Resources opt in via `reloader.stakater.com/auto: "true"` annotation on Deployments, StatefulSets, and DaemonSets. ConfigMap or SealedSecret changes trigger automatic rolling restarts without manual `kubectl rollout restart`.
 
 ---
 
@@ -250,9 +241,9 @@ Replaces the SealedSecrets workflow over time. External Secrets Operator syncs 1
 
 ### 3.9 Trivy Operator
 
-**Status:** `planned`
+**Status:** `done` — PR #721
 
-Extends Harbor's push-time image scanning to continuous runtime scanning. Trivy Operator generates `VulnerabilityReport` and `ConfigAuditReport` CRs for every running workload — surfaces CVEs in images that were clean at push time but became vulnerable later. Integrates with Prometheus for alerting on critical/high findings.
+Trivy Operator deployed in `trivy-system` namespace alongside Goldilocks. Scans all running workloads continuously; generates `VulnerabilityReport` and `ConfigAuditReport` CRs. DMZ and control-plane node tolerations added (PR #722). MinIO concurrent scan jobs throttled to prevent timestamp ordering issues (PR #724).
 
 ---
 
@@ -487,3 +478,7 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Homepage B2 + Cloudflare widgets | b2-exporter (custom Python/Prometheus) deployed in `monitoring`; Homepage prometheus widget for B2 bucket stats; three Cloudflare tunnel status widgets (PRs #579, #590) |
 | Nginx ssl-redirect loop fix | `use-forwarded-headers: "true"` in nginx configmap; fixed redirect loops for Cloudflare-fronted services (PR #649) |
 | Cloudflare WAF bypass for Authentik | WAF skip rule for `authentik.vollminlab.com` to allow Authentik flow executor calls through Cloudflare bot protection (PR #648) |
+| Volsync — PVC replication to B2 | PRs #728–#732 — restic ReplicationSources for 13 PVCs, 15-min sync, scoped B2 key |
+| Goldilocks VPA recommender | PRs #721, #734, #735 — VPA recommendations enabled cluster-wide, limits right-sized |
+| Trivy Operator | PRs #721–#722, #724 — runtime vulnerability + config audit scanning, all nodes tolerated |
+| Stakater Reloader | This PR — auto rolling restarts on ConfigMap/Secret changes, opt-in via annotation |
