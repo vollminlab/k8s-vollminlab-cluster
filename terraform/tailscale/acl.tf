@@ -1,4 +1,5 @@
 resource "tailscale_acl" "main" {
+  overwrite_existing_content = true
   acl = jsonencode({
     grants = [
       {
