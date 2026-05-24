@@ -25,6 +25,7 @@ resource "tailscale_acl" "main" {
     autoApprovers = {
       routes = {
         "192.168.152.0/24" = ["tag:k8s"]
+        "192.168.151.0/24" = ["tag:k8s"]
         "192.168.100.0/24" = ["tag:k8s"]
       }
     }
