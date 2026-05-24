@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: tailscale-operator-repo
+  namespace: flux-system
+  labels:
+    app: tailscale-operator
+    env: production
+    category: networking
+spec:
+  interval: 5m
+  url: https://pkgs.tailscale.com/helmcharts
+  timeout: 3m

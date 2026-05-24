@@ -8,6 +8,7 @@ resources:
   - dmz-restrict-external-access.yaml
   - exceptions-calico.yaml
   - exceptions-ci-test-namespaces.yaml
+  - exceptions-tailscale.yaml
   - exceptions-kyverno-hooks.yaml
   - exceptions-kubeadm-cert-renew.yaml
   - exceptions-longhorn-dynamic.yaml
