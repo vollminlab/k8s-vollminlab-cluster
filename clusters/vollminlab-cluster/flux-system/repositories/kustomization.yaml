@@ -45,6 +45,7 @@ resources:
   - shlink-helmrepository.yaml
   - smb-csi-driver-helmrepository.yaml
   - sonarr-ocirepository.yaml
+  - tailscale-operator-helmrepository.yaml
   - tofu-controller-helmrepository.yaml
   - trivy-operator-helmrepository.yaml
   - velero-helmrepository.yaml
