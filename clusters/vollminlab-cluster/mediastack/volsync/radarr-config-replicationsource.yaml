@@ -17,3 +17,5 @@ spec:
     copyMethod: Clone
     cacheCapacity: 1Gi
     cacheStorageClassName: longhorn
+    exclude:
+      - asp/
