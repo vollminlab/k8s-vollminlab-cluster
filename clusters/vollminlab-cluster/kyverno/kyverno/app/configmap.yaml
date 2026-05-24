@@ -22,6 +22,11 @@ data:
       env: production
       category: security
 
+    features:
+      policyExceptions:
+        enabled: true
+        namespace: kyverno
+
     admissionController:
       labels:
         app: kyverno-admission-controller
