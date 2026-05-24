@@ -1,5 +1,5 @@
 data "tailscale_device" "connector" {
-  hostname = "vollminlab-cluster.tail8b1511.ts.net"
+  hostname = "vollminlab-cluster"
 }
 
 resource "tailscale_device_subnet_routes" "connector" {
