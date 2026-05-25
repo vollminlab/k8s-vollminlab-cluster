@@ -8,7 +8,7 @@ metadata:
     env: production
     category: core
 spec:
-  schedule: "0 3 * * 0"
+  schedule: "0 3 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
