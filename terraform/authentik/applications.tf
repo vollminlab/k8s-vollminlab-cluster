@@ -149,7 +149,7 @@ resource "authentik_application" "policy_reporter" {
   name            = "Policy Reporter"
   slug            = "policy-reporter"
   meta_launch_url = "https://policyreporter.vollminlab.com"
-  meta_icon       = "https://kyverno.io/icons/icon-512x512.png"
+  meta_icon       = "https://raw.githubusercontent.com/kyverno/kyverno/main/img/logo.png"
   open_in_new_tab = false
 }
 
