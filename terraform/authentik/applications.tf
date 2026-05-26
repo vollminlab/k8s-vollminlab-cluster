@@ -2,6 +2,7 @@ resource "authentik_application" "alertmanager" {
   name            = "Alertmanager"
   slug            = "alertmanager"
   meta_launch_url = "https://alertmanager.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/alertmanager.svg"
   open_in_new_tab = false
 }
 
@@ -10,6 +11,7 @@ resource "authentik_application" "audiobookshelf" {
   slug              = "audiobookshelf"
   protocol_provider = authentik_provider_oauth2.audiobookshelf.id
   meta_launch_url   = "https://audiobookshelf.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/audiobookshelf.svg"
   open_in_new_tab   = false
 }
 
@@ -17,6 +19,7 @@ resource "authentik_application" "bazarr" {
   name            = "Bazarr"
   slug            = "bazarr"
   meta_launch_url = "https://bazarr.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/bazarr.svg"
   open_in_new_tab = false
 }
 
@@ -39,7 +42,16 @@ resource "authentik_application" "grafana" {
   slug              = "grafana"
   protocol_provider = authentik_provider_oauth2.grafana.id
   meta_launch_url   = "https://grafana.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/grafana.svg"
   open_in_new_tab   = false
+}
+
+resource "authentik_application" "goldilocks" {
+  name            = "Goldilocks"
+  slug            = "goldilocks"
+  meta_launch_url = "https://goldilocks.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/goldilocks.png"
+  open_in_new_tab = false
 }
 
 resource "authentik_application" "haproxy" {
@@ -63,6 +75,7 @@ resource "authentik_application" "harbor" {
   slug              = "harbor"
   protocol_provider = authentik_provider_oauth2.harbor.id
   meta_launch_url   = "https://harbor.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/harbor.svg"
   open_in_new_tab   = false
 }
 
@@ -71,6 +84,7 @@ resource "authentik_application" "headlamp" {
   slug              = "headlamp"
   protocol_provider = authentik_provider_oauth2.headlamp.id
   meta_launch_url   = "https://headlamp.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/headlamp.svg"
   open_in_new_tab   = false
 }
 
@@ -86,6 +100,7 @@ resource "authentik_application" "jellyfin" {
   slug              = "jellyfin"
   protocol_provider = authentik_provider_oauth2.jellyfin.id
   meta_launch_url   = "https://jellyfin.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellyfin.svg"
   open_in_new_tab   = false
 }
 
@@ -93,6 +108,7 @@ resource "authentik_application" "jellystat" {
   name            = "Jellystat"
   slug            = "jellystat"
   meta_launch_url = "https://jellystat.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellystat.svg"
   open_in_new_tab = false
 }
 
@@ -100,6 +116,7 @@ resource "authentik_application" "longhorn" {
   name            = "Longhorn"
   slug            = "longhorn"
   meta_launch_url = "https://longhorn.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/longhorn.svg"
   open_in_new_tab = false
 }
 
@@ -108,6 +125,7 @@ resource "authentik_application" "minio" {
   slug              = "minio"
   protocol_provider = authentik_provider_oauth2.minio.id
   meta_launch_url   = "https://minio.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/minio.svg"
   open_in_new_tab   = false
 }
 
@@ -131,6 +149,7 @@ resource "authentik_application" "policy_reporter" {
   name            = "Policy Reporter"
   slug            = "policy-reporter"
   meta_launch_url = "https://policyreporter.vollminlab.com"
+  meta_icon       = "https://kyverno.io/icons/icon-512x512.png"
   open_in_new_tab = false
 }
 
@@ -139,6 +158,7 @@ resource "authentik_application" "portainer" {
   slug              = "portainer"
   protocol_provider = authentik_provider_oauth2.portainer.id
   meta_launch_url   = "https://portainer.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/portainer.svg"
   open_in_new_tab   = false
 }
 
@@ -146,6 +166,7 @@ resource "authentik_application" "prometheus" {
   name            = "Prometheus"
   slug            = "prometheus"
   meta_launch_url = "https://prometheus.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/prometheus.svg"
   open_in_new_tab = false
 }
 
@@ -153,6 +174,7 @@ resource "authentik_application" "prowlarr" {
   name            = "Prowlarr"
   slug            = "prowlarr"
   meta_launch_url = "https://prowlarr.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/prowlarr.svg"
   open_in_new_tab = false
 }
 
@@ -160,6 +182,7 @@ resource "authentik_application" "qbittorrent" {
   name            = "qBittorrent"
   slug            = "qbittorrent"
   meta_launch_url = "https://qbittorrent.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/qbittorrent.png"
   open_in_new_tab = false
 }
 
@@ -167,6 +190,7 @@ resource "authentik_application" "radarr" {
   name            = "Radarr"
   slug            = "radarr"
   meta_launch_url = "https://radarr.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/radarr.svg"
   open_in_new_tab = false
 }
 
@@ -174,6 +198,7 @@ resource "authentik_application" "readarr" {
   name            = "Readarr"
   slug            = "readarr"
   meta_launch_url = "https://readarr.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/readarr.png"
   open_in_new_tab = false
 }
 
@@ -181,6 +206,7 @@ resource "authentik_application" "sabnzbd" {
   name            = "SABnzbd"
   slug            = "sabnzbd"
   meta_launch_url = "https://sabnzbd.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/sabnzbd.svg"
   open_in_new_tab = false
 }
 
@@ -189,6 +215,7 @@ resource "authentik_application" "seerr" {
   slug              = "seerr"
   protocol_provider = authentik_provider_oauth2.seerr.id
   meta_launch_url   = "https://seerr.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/seerr.svg"
   open_in_new_tab   = false
 }
 
@@ -196,6 +223,7 @@ resource "authentik_application" "shlink_web" {
   name            = "Shlink Web"
   slug            = "shlink-web"
   meta_launch_url = "https://shlink.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/shlink.svg"
   open_in_new_tab = false
 }
 
@@ -203,6 +231,7 @@ resource "authentik_application" "sonarr" {
   name            = "Sonarr"
   slug            = "sonarr"
   meta_launch_url = "https://sonarr.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/sonarr.svg"
   open_in_new_tab = false
 }
 
