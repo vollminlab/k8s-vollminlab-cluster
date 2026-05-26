@@ -177,7 +177,7 @@ spec:
             severity: warning
           annotations:
             summary: "Longhorn volume {{ $labels.pvc }} ({{ $labels.pvc_namespace }}) is degraded"
-            description: "Volume {{ $labels.volume }} backing PVC {{ $labels.pvc }} in {{ $labels.pvc_namespace }} has been degraded for 10+ minutes. A replica may be rebuilding or a node is unhealthy."
+            description: "Volume {{ $labels.volume }} (PVC {{ $labels.pvc }}/{{ $labels.pvc_namespace }}) degraded 10+ min. A replica may be rebuilding or a node is unhealthy."
 
         - alert: LonghornVolumeFaulted
           expr: |
