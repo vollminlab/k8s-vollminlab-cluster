@@ -1,0 +1,36 @@
+apiVersion: kyverno.io/v1
+kind: Policy
+metadata:
+  name: patch-shlink-backend-probes
+  namespace: shlink
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+  labels:
+    app: shlink
+    env: production
+    category: apps
+spec:
+  rules:
+    - name: patch-probe-timeout
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - shlink
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: shlink-backend
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              - (name): shlink-backend
+                livenessProbe:
+                  timeoutSeconds: 5
+                  initialDelaySeconds: 30
+                  failureThreshold: 5
+                readinessProbe:
+                  timeoutSeconds: 5
+                  initialDelaySeconds: 30
