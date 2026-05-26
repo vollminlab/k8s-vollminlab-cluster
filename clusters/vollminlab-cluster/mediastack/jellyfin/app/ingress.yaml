@@ -4,7 +4,7 @@ metadata:
   name: jellyfin-ingress
   namespace: mediastack
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     shlink.vollminlab.com/slug: jellyfin
   labels:
     app: jellyfin
