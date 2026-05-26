@@ -9,9 +9,10 @@ metadata:
     category: security
 data:
   values.yaml: |
+    excludeNamespaces: "actions-runner-system,arc-controller"
+
     operator:
       scanJobsConcurrentLimit: 3
-      excludeNamespaces: "actions-runner-system,arc-controller"
       resources:
         requests:
           cpu: 100m
