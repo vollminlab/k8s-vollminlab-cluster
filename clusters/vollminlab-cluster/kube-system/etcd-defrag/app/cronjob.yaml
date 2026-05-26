@@ -37,15 +37,15 @@ spec:
                   echo "etcd defrag started at $(date)"
 
                   echo "Defragging k8scp01 (follower)..."
-                  kubectl exec -n kube-system etcd-k8scp01 -- etcdctl --endpoints=https://192.168.152.8:2379 $CERTS defrag
+                  kubectl exec -n kube-system etcd-k8scp01 -- etcdctl --endpoints=https://192.168.152.8:2379 $CERTS --command-timeout=120s defrag
                   sleep 10
 
                   echo "Defragging k8scp03 (follower)..."
-                  kubectl exec -n kube-system etcd-k8scp03 -- etcdctl --endpoints=https://192.168.152.10:2379 $CERTS defrag
+                  kubectl exec -n kube-system etcd-k8scp03 -- etcdctl --endpoints=https://192.168.152.10:2379 $CERTS --command-timeout=120s defrag
                   sleep 10
 
                   echo "Defragging k8scp02 (leader)..."
-                  kubectl exec -n kube-system etcd-k8scp02 -- etcdctl --endpoints=https://192.168.152.9:2379 $CERTS defrag
+                  kubectl exec -n kube-system etcd-k8scp02 -- etcdctl --endpoints=https://192.168.152.9:2379 $CERTS --command-timeout=120s defrag
 
                   echo "etcd defrag complete at $(date)"
               resources:
