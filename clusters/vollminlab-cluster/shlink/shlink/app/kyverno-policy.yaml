@@ -17,8 +17,6 @@ spec:
           - resources:
               kinds:
                 - Pod
-              namespaces:
-                - shlink
               selector:
                 matchLabels:
                   app.kubernetes.io/name: shlink-backend
