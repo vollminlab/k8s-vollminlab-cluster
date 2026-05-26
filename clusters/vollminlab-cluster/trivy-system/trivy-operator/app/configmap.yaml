@@ -11,6 +11,7 @@ data:
   values.yaml: |
     operator:
       scanJobsConcurrentLimit: 3
+      excludeNamespaces: "actions-runner-system,arc-controller"
       resources:
         requests:
           cpu: 100m
