@@ -6,3 +6,4 @@ resources:
   - ingress.yaml
   - vollm-in-certificate.yaml
   - shlink-credentials-sealedsecret.yaml
+  - kyverno-policy.yaml
