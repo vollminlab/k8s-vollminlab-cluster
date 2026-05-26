@@ -120,3 +120,82 @@ spec:
           annotations:
             summary: "Velero daily-full backup metric absent — Velero may not be running"
             description: "velero_backup_last_status for schedule=velero-daily-full is missing. Velero may be down or metrics scraping has failed."
+
+    - name: node-disk
+      rules:
+        - alert: NodeDiskSpaceLow
+          expr: |
+            (node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) < 0.20
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} root disk below 20% free"
+            description: "Node {{ $labels.instance }} has {{ $value | humanizePercentage }} free on root filesystem. Check with: df -h on the node."
+
+        - alert: NodeDiskSpaceCritical
+          expr: |
+            (node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+              / node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}) < 0.10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.instance }} root disk below 10% free"
+            description: "Node {{ $labels.instance }} has {{ $value | humanizePercentage }} free on root filesystem. Immediate action required."
+
+    - name: pod-health
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace!~"trivy-system|velero"}[30m]) > 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+            description: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $value | printf \"%.0f\" }} times in the last 30 minutes."
+
+        - alert: PodNotReady
+          expr: |
+            kube_pod_status_ready{condition="true",namespace!~"trivy-system|velero"} == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for more than 15 minutes."
+
+    - name: longhorn
+      rules:
+        - alert: LonghornVolumeDegraded
+          expr: |
+            longhorn_volume_robustness{state="degraded"} == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn volume {{ $labels.pvc }} ({{ $labels.pvc_namespace }}) is degraded"
+            description: "Volume {{ $labels.volume }} (PVC {{ $labels.pvc }}/{{ $labels.pvc_namespace }}) degraded 10+ min. A replica may be rebuilding or a node is unhealthy."
+
+        - alert: LonghornVolumeFaulted
+          expr: |
+            longhorn_volume_robustness{state="faulted"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Longhorn volume {{ $labels.pvc }} ({{ $labels.pvc_namespace }}) is faulted"
+            description: "Volume {{ $labels.volume }} backing PVC {{ $labels.pvc }} in {{ $labels.pvc_namespace }} is faulted. Data may be inaccessible."
+
+        - alert: LonghornNodeStorageLow
+          expr: |
+            (longhorn_node_storage_capacity_bytes - longhorn_node_storage_usage_bytes)
+              / longhorn_node_storage_capacity_bytes < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn node {{ $labels.node }} storage below 15% free"
+            description: "Longhorn storage node {{ $labels.node }} has less than 15% free. New replicas may fail to schedule. Expand the disk or evict replicas."
