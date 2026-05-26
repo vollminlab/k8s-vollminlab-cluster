@@ -155,6 +155,11 @@ import {
 }
 
 import {
+  to = authentik_application.goldilocks
+  id = "goldilocks"
+}
+
+import {
   to = authentik_application.grafana
   id = "grafana"
 }
@@ -212,6 +217,16 @@ import {
 import {
   to = authentik_application.prowlarr
   id = "prowlarr"
+}
+
+import {
+  to = authentik_application.qbittorrent
+  id = "qbittorrent"
+}
+
+import {
+  to = authentik_application.readarr
+  id = "readarr"
 }
 
 import {

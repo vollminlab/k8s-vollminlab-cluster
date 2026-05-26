@@ -46,6 +46,14 @@ resource "authentik_application" "grafana" {
   open_in_new_tab   = false
 }
 
+resource "authentik_application" "goldilocks" {
+  name            = "Goldilocks"
+  slug            = "goldilocks"
+  meta_launch_url = "https://goldilocks.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/goldilocks.png"
+  open_in_new_tab = false
+}
+
 resource "authentik_application" "haproxy" {
   name            = "HAProxy"
   slug            = "haproxy"
@@ -174,7 +182,7 @@ resource "authentik_application" "qbittorrent" {
   name            = "qBittorrent"
   slug            = "qbittorrent"
   meta_launch_url = "https://qbittorrent.vollminlab.com"
-  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/qbittorrent.svg"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/qbittorrent.png"
   open_in_new_tab = false
 }
 
@@ -190,7 +198,7 @@ resource "authentik_application" "readarr" {
   name            = "Readarr"
   slug            = "readarr"
   meta_launch_url = "https://readarr.vollminlab.com"
-  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/readarr.svg"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/readarr.png"
   open_in_new_tab = false
 }
 
