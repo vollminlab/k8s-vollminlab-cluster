@@ -14,7 +14,7 @@ data:
     operator:
       sbomReport:
         enabled: false
-      scanJobsConcurrentLimit: 3
+      scanJobsConcurrentLimit: 1
       resources:
         requests:
           cpu: 100m
