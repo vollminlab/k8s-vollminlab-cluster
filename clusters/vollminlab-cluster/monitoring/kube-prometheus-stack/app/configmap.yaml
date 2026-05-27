@@ -16,7 +16,7 @@ data:
         externalUrl: https://prometheus.vollminlab.com
         scrapeInterval: 30s
         retention: 7d
-        retentionSize: 15GB
+        retentionSize: 3GB
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
         serviceMonitorNamespaceSelector: {}
