@@ -31,7 +31,9 @@ data:
           pluginConfig:
             - name: DefaultEvictor
               args:
-                evictLocalStoragePods: false
+                podProtections:
+                  defaultDisabled:
+                    - "PodsWithLocalStorage"
                 nodeFit: true
             - name: LowNodeUtilization
               args:
