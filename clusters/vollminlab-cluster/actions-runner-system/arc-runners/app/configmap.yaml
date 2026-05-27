@@ -14,7 +14,7 @@ data:
 
     runnerScaleSetName: "vollminlab"
 
-    minRunners: 4
+    minRunners: 2
     maxRunners: 10
 
     controllerServiceAccount:
@@ -53,7 +53,7 @@ data:
                 memory: 512Mi
               limits:
                 cpu: 2000m
-                memory: 2Gi
+                memory: 1Gi
           - name: dind
             image: docker:26-dind
             securityContext:
@@ -68,7 +68,7 @@ data:
                 memory: 256Mi
               limits:
                 cpu: 2000m
-                memory: 2Gi
+                memory: 512Mi
 
     listenerTemplate:
       metadata:
