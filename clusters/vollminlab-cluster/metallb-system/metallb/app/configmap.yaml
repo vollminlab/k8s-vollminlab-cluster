@@ -24,6 +24,31 @@ data:
       prometheus:
         serviceMonitor:
           enabled: false
+      frrk8s:
+        frr:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+        frrMetrics:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+        frrStatus:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+        reloader:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+        livenessProbe:
+          timeoutSeconds: 5
+        readinessProbe:
+          timeoutSeconds: 5
     speaker:
       enabled: true
       podAnnotations:
