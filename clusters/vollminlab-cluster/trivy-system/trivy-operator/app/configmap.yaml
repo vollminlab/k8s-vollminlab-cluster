@@ -12,6 +12,8 @@ data:
     excludeNamespaces: "actions-runner-system,arc-controller"
 
     operator:
+      sbomReport:
+        enabled: false
       scanJobsConcurrentLimit: 3
       resources:
         requests:
