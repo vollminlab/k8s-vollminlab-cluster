@@ -32,7 +32,6 @@ data:
             - name: DefaultEvictor
               args:
                 evictLocalStoragePods: false
-                evictStatefulSetPods: true
                 nodeFit: true
             - name: LowNodeUtilization
               args:
