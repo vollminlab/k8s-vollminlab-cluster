@@ -23,6 +23,18 @@ data:
       app: jellystat
       env: production
       category: media
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - velero
+              topologyKey: kubernetes.io/hostname
     resources:
       requests:
         cpu: 50m
