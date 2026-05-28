@@ -58,6 +58,11 @@ data:
       storeValidationFrequency: 1h
       backupSyncPeriod: 1h
 
+      # Force-fail PVBs stuck in InProgress/Prepared after 30 minutes.
+      # Without this, the node-agent's gRPC data path can get stuck silently and
+      # block all PVBs on the affected node indefinitely across multiple backup runs.
+      podVolumeOperationTimeout: 30m
+
       backupStorageLocation:
         # Primary: in-cluster MinIO (fast restores, no egress cost)
         - name: minio
