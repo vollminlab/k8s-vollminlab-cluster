@@ -63,6 +63,22 @@ data:
       # block all PVBs on the affected node indefinitely across multiple backup runs.
       podVolumeOperationTimeout: 30m
 
+    # Prefer not to land on the same node as media stack workloads.
+    # The Velero pod generates significant API/CPU load during backup runs, which
+    # interferes with the node-agent's gRPC data path initialization on that node.
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: category
+                    operator: In
+                    values:
+                      - media
+              topologyKey: kubernetes.io/hostname
+
       backupStorageLocation:
         # Primary: in-cluster MinIO (fast restores, no egress cost)
         - name: minio
@@ -122,7 +138,7 @@ data:
     schedules:
       daily-full:
         disabled: false
-        schedule: "0 2 * * *"
+        schedule: "0 3 * * *"
         useOwnerReferencesInBackup: false
         template:
           ttl: 336h
