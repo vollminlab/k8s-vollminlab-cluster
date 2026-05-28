@@ -43,5 +43,5 @@ data:
         cpu: 500m
         memory: 512Mi
       limits:
-        cpu: 2000m
+        cpu: 4000m
         memory: 2Gi
