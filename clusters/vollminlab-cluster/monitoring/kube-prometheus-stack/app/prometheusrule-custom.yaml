@@ -67,17 +67,18 @@ spec:
 
     - name: velero
       rules:
-        # velero_backup_last_successful_timestamp was removed in Velero 12.
-        # Schedule CRs are named velero-<schedule-name> by Helm, so the label is velero-daily-full.
+        # velero_backup_last_successful_timestamp is a stable gauge — immune to pod restarts.
+        # increase(velero_backup_attempt_total[26h]) was used previously but fires false positives
+        # after any Velero pod restart (counter resets to 0, increase() returns 0 for the window).
         - alert: VeleroBackupNotAttempted
           expr: |
-            increase(velero_backup_attempt_total{schedule="velero-daily-full"}[26h]) == 0
+            time() - velero_backup_last_successful_timestamp{schedule="velero-daily-full"} > 26 * 3600
           for: 30m
           labels:
             severity: warning
           annotations:
             summary: "Velero daily-full backup has not run in 26 hours"
-            description: "No daily-full backup attempt detected in the past 26 hours. Check the Velero schedule."
+            description: "Last successful daily-full backup was {{ $value | humanizeDuration }} ago. Check the Velero schedule."
 
         - alert: VeleroBackupFailed
           expr: |
