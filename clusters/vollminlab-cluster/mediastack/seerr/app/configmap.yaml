@@ -34,6 +34,19 @@ data:
                     values:
                       - velero
               topologyKey: kubernetes.io/hostname
+
+    livenessProbe:
+      initialDelaySeconds: 90
+      timeoutSeconds: 10
+      failureThreshold: 3
+      periodSeconds: 15
+
+    readinessProbe:
+      initialDelaySeconds: 90
+      timeoutSeconds: 10
+      failureThreshold: 3
+      periodSeconds: 15
+
     resources:
       requests:
         cpu: 100m

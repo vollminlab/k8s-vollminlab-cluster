@@ -25,6 +25,20 @@ spec:
       securityContext:
         fsGroup: 568
       terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: fix-lockfile
+          image: docker.io/library/busybox:1.38.0
+          command: ["sh", "-c", "rm -f /config/qBittorrent/lockfile /config/qBittorrent/ipc-socket"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
       volumes:
         - name: config
           persistentVolumeClaim:

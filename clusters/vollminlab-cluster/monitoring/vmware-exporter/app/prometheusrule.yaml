@@ -42,12 +42,12 @@ spec:
     - name: vmware.datastores
       rules:
         - alert: DatastoreLowFreeSpace
-          expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 20
+          expr: (vmware_datastore_freespace_size / vmware_datastore_capacity_size) * 100 < 15
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Datastore {{ $labels.ds_name }} < 20% free"
+            summary: "Datastore {{ $labels.ds_name }} < 15% free"
             description: "{{ $labels.ds_name }} has {{ $value | printf \"%.0f\" }}% free space remaining."
 
         - alert: DatastoreCriticalFreeSpace
