@@ -43,6 +43,18 @@ data:
     podSecurityContext:
       fsGroup: 568
       fsGroupChangePolicy: "OnRootMismatch"
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - velero
+              topologyKey: kubernetes.io/hostname
     terminationGracePeriodSeconds: 60
     lifecycle:
       preStop:
