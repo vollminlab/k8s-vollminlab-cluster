@@ -8,7 +8,7 @@ metadata:
     category: observability
 resources:
   - namespace.yaml
-  - harbor-vollminlab-pull-sealedsecret.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml
   - b2-exporter/app
   - kube-prometheus-stack/app
   - loki/app
