@@ -369,14 +369,9 @@ Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain co
 
 ### 7.2 containerd normalization
 
-**Status:** `planned` (bundle with 7.3 — both require node drain + reboot)
+**Status:** `done` (2026-05-30)
 
-The 2.x line is the current stable track (1.7.x is maintenance-only). Target: upgrade all 1.7.x nodes to containerd 2.x current latest.
-
-> **Status (2026-05-30, verified all 9 nodes via `kubectl get nodes -o ...containerRuntimeVersion`):** all 6 **workers** (k8sworker01–06) are on containerd **v2.2.4**. The 3 **control-plane** nodes (k8scp01–03) are still on **v1.7.27**. Remaining work: upgrade the control plane to 2.2.4 (drain → upgrade containerd → restart containerd + kubelet → uncordon, one at a time with etcd/Longhorn health gates).
-
-- Drain node → stop kubelet → upgrade containerd → restart containerd + kubelet → uncordon
-- One node at a time; Longhorn health gate between nodes
+All 9 nodes are on containerd **v2.2.4** (docker.com apt repo). The 6 workers were upgraded during the 2026-05-30 maintenance; the 3 control-plane nodes (k8scp01–03, previously on 1.7.27) were upgraded via the `cp-containerd-upgrade.yml` playbook in `ansible-playbooks` (PR #11). The control-plane upgrade was serial:1 with etcd endpoint-health gates before and after each node; etcd/controller-manager/scheduler bind addresses and the Harbor pull-through mirror config (`config_path = certs.d`) were verified unchanged afterward.
 
 ### 7.3 Kernel and OS normalization
 
@@ -384,10 +379,11 @@ The 2.x line is the current stable track (1.7.x is maintenance-only). Target: up
 
 Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
 
-> **Status (2026-05-30, verified all 9 nodes):** kernel is already uniform at **6.8.0-117-generic** across every node (the prior 6.8.0-85→110 spread is closed — likely the 2026-05-30 maintenance reboots). Only Ubuntu **patch** levels still vary: 24.04.1 (k8scp02/03), 24.04.2 (k8scp01), 24.04.4 (all workers). Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace; can fold into the 7.2 control-plane containerd pass.
+> **Status (2026-05-30, verified all 9 nodes):** kernel is already uniform at **6.8.0-117-generic** across every node (the prior 6.8.0-85→110 spread is closed — likely the 2026-05-30 maintenance reboots). Only Ubuntu **patch** levels still vary: 24.04.1 (k8scp02/03), 24.04.2 (k8scp01), 24.04.4 (all workers). Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace.
 
-- Bundle with 7.2: drain → apt upgrade → reboot → uncordon covers both in one pass
-- One node at a time; same Longhorn health gate
+- One node at a time; same Longhorn health gate as the other node-maintenance playbooks
+
+> **Playbook consolidation (proposed):** `ansible-playbooks` now has three node-maintenance playbooks that share the same drain → act → verify → gate → uncordon skeleton: `k8s-upgrade.yml` (kubeadm/kubelet, runs kubeadm so it re-binds CP metrics), `containerd-dockerhub-mirror.yml`, and `cp-containerd-upgrade.yml`. These should be unified — either a single parameterized node-maintenance playbook (with `kubeadm`, `containerd`, `apt`/kernel toggles) covering all 9 nodes with one wait-logic implementation, or a shared task-include the others import. This kernel/userspace pass is a good candidate to fold into that consolidation rather than write a fourth one-off.
 
 Do not bundle 7.2/7.3 with the Cilium migration — separate maintenance windows.
 
