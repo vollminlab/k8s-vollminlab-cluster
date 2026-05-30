@@ -3,6 +3,7 @@ kind: Kustomization
 metadata:
   name: flux-kustomizations
 resources:
+  - 1password-kustomization.yaml
   - cnpg-system-kustomization.yaml
   - cert-manager-kustomization.yaml
   - clusterwide-kustomization.yaml

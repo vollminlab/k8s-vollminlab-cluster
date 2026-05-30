@@ -1,0 +1,23 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: onepassword-connect
+  namespace: 1password
+  labels:
+    app: onepassword-connect
+    env: production
+    category: security
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: connect
+      version: "2.4.1"
+      sourceRef:
+        kind: HelmRepository
+        name: 1password-connect-repo
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: onepassword-connect-values
+      valuesKey: values.yaml
