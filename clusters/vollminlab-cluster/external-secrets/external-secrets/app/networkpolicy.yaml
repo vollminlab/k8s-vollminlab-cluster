@@ -21,9 +21,6 @@ spec:
           port: 8080
     - ports:
         - protocol: TCP
-          port: 443
-    - ports:
-        - protocol: TCP
           port: 6443
     - ports:
         - protocol: UDP
