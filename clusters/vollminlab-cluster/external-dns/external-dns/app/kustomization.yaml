@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - configmap.yaml
-  - external-dns-pihole-sealedsecret.yaml
+  - external-dns-pihole-externalsecret.yaml
