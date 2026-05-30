@@ -31,7 +31,7 @@ spec:
       containers:
         - name: masters-league
           image: harbor.vollminlab.com/vollminlab/masters-league:v1.1.1
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               protocol: TCP
