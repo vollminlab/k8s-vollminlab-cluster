@@ -39,6 +39,35 @@ spec:
             summary: "ESXi host {{ $labels.host_name }} memory > 90%"
             description: "{{ $labels.host_name }} memory at {{ $value | printf \"%.0f\" }}% for 15m."
 
+    - name: vmware.capacity
+      rules:
+        # N+1 HA: if any one ESXi host fails, its VMs must fit on the survivors.
+        # Hosts are uniform (~98,033 MB / ~95.7 GiB each), so the requirement is
+        # simply: cluster-wide free memory must stay >= one host's capacity.
+        # Free = sum(max) - sum(usage), divided by 1024 to express in GiB.
+        # Floor 95.7 GiB = one ESXi host. Static per uniform-host spec; bump if
+        # host memory is ever right-sized upward.
+        - alert: VMwareClusterMemoryN1Violation
+          expr: (sum(vmware_host_memory_max) - sum(vmware_host_memory_usage)) / 1024 < 95.7
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "vSphere cluster below N+1 memory headroom"
+            description: "Cluster free memory is {{ $value | printf \"%.1f\" }} GiB; N+1 HA needs >= 95.7 GiB free (one ESXi host) to survive a host failure. Right-size or add capacity."
+
+        # CPU N+1: same principle, one host's CPU (~17,970 MHz / ~18 GHz) must
+        # stay free. CPU overcommit degrades gracefully (scheduling contention),
+        # so this is warning-only, unlike a memory shortfall which risks OOM.
+        - alert: VMwareClusterCPUN1Violation
+          expr: (sum(vmware_host_cpu_max) - sum(vmware_host_cpu_usage)) / 1000 < 18
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "vSphere cluster below N+1 CPU headroom"
+            description: "Cluster free CPU is {{ $value | printf \"%.1f\" }} GHz; N+1 HA needs >= 18 GHz free (one ESXi host's worth) to absorb a single host failure without CPU contention."
+
     - name: vmware.datastores
       rules:
         - alert: DatastoreLowFreeSpace
