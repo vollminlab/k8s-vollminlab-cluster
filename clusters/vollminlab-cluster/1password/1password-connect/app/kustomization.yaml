@@ -5,3 +5,4 @@ metadata:
 resources:
   - helmrelease.yaml
   - configmap.yaml
+  - networkpolicy.yaml
