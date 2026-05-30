@@ -371,9 +371,9 @@ Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain co
 
 **Status:** `planned` (bundle with 7.3 — both require node drain + reboot)
 
-k8sworker04 is on containerd 2.2.3; all other nodes are on 1.7.27. The 2.x line is the current stable track (1.7.x is maintenance-only). Target: upgrade all 1.7.x nodes to containerd 2.x current latest.
+The 2.x line is the current stable track (1.7.x is maintenance-only). Target: upgrade all 1.7.x nodes to containerd 2.x current latest.
 
-> **Status note (2026-05-30):** spot-checked nodes (k8sworker01, k8scp01) are already on containerd **v2.2.4** — this normalization may already be complete from the 2026-05-30 maintenance window. Verify all 9 nodes' versions and update/close this item.
+> **Status (2026-05-30, verified all 9 nodes via `kubectl get nodes -o ...containerRuntimeVersion`):** all 6 **workers** (k8sworker01–06) are on containerd **v2.2.4**. The 3 **control-plane** nodes (k8scp01–03) are still on **v1.7.27**. Remaining work: upgrade the control plane to 2.2.4 (drain → upgrade containerd → restart containerd + kubelet → uncordon, one at a time with etcd/Longhorn health gates).
 
 - Drain node → stop kubelet → upgrade containerd → restart containerd + kubelet → uncordon
 - One node at a time; Longhorn health gate between nodes
@@ -382,7 +382,9 @@ k8sworker04 is on containerd 2.2.3; all other nodes are on 1.7.27. The 2.x line 
 
 **Status:** `planned` (bundle with 7.2)
 
-Kernel versions range from 6.8.0-85 (k8scp02) to 6.8.0-110 (k8sworker04); Ubuntu patch levels range from 24.04.1 to 24.04.4. Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
+Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
+
+> **Status (2026-05-30, verified all 9 nodes):** kernel is already uniform at **6.8.0-117-generic** across every node (the prior 6.8.0-85→110 spread is closed — likely the 2026-05-30 maintenance reboots). Only Ubuntu **patch** levels still vary: 24.04.1 (k8scp02/03), 24.04.2 (k8scp01), 24.04.4 (all workers). Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace; can fold into the 7.2 control-plane containerd pass.
 
 - Bundle with 7.2: drain → apt upgrade → reboot → uncordon covers both in one pass
 - One node at a time; same Longhorn health gate
