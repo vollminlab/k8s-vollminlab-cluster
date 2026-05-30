@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: eso-sync-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: external-secrets
+      rules:
+        - alert: ExternalSecretSyncError
+          expr: externalsecret_status_condition{type="Ready",status="False"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ExternalSecret sync failure"
+            description: "ExternalSecret {{ $labels.name }} in namespace {{ $labels.namespace }} has not synced successfully for 15 minutes."
+        - alert: ExternalSecretSyncErrorCritical
+          expr: externalsecret_status_condition{type="Ready",status="False",namespace=~"authentik|harbor|shlink"} > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Critical ExternalSecret sync failure in auth-path namespace"
+            description: "ExternalSecret {{ $labels.name }} in {{ $labels.namespace }} has not synced for 5 minutes."
