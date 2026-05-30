@@ -373,6 +373,8 @@ Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain co
 
 k8sworker04 is on containerd 2.2.3; all other nodes are on 1.7.27. The 2.x line is the current stable track (1.7.x is maintenance-only). Target: upgrade all 1.7.x nodes to containerd 2.x current latest.
 
+> **Status note (2026-05-30):** spot-checked nodes (k8sworker01, k8scp01) are already on containerd **v2.2.4** — this normalization may already be complete from the 2026-05-30 maintenance window. Verify all 9 nodes' versions and update/close this item.
+
 - Drain node → stop kubelet → upgrade containerd → restart containerd + kubelet → uncordon
 - One node at a time; Longhorn health gate between nodes
 
@@ -482,3 +484,4 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Goldilocks VPA recommender | PRs #721, #734, #735 — VPA recommendations enabled cluster-wide, limits right-sized |
 | Trivy Operator | PRs #721–#722, #724 — runtime vulnerability + config audit scanning, all nodes tolerated |
 | Stakater Reloader | This PR — auto rolling restarts on ConfigMap/Secret changes, opt-in via annotation |
+| Harbor Docker Hub pull-through cache | `dockerhub-proxy` Harbor proxy-cache project (authenticated read-only PAT) + containerd registry mirror on all 9 nodes routing `docker.io` through Harbor; eliminates anonymous 429 `ImagePullBackOff` storms on mass reschedule. k8s repo PR #809 (Harbor proxy via tofu) + ansible-playbooks PRs #9/#10 (containerd mirror playbook). Runbook: `docs/runbooks/harbor-dockerhub-proxy-cache.md` |
