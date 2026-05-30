@@ -21,3 +21,15 @@ variable "harbor_cluster_pull_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "harbor_dockerhub_user" {
+  description = "Docker Hub username for the pull-through cache registry (authenticated proxy)"
+  type        = string
+  sensitive   = true
+}
+
+variable "harbor_dockerhub_token" {
+  description = "Docker Hub read-only personal access token for the pull-through cache registry"
+  type        = string
+  sensitive   = true
+}
