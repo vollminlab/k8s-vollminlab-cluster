@@ -54,7 +54,7 @@ spec:
             severity: warning
           annotations:
             summary: "vSphere cluster below N+1 memory headroom"
-            description: "Cluster free memory is {{ $value | printf \"%.1f\" }} GiB; N+1 HA needs >= 95.7 GiB free (one ESXi host's worth) so all VMs survive a single host failure. Right-size workloads or add capacity before the next node-maintenance window."
+            description: "Cluster free memory is {{ $value | printf \"%.1f\" }} GiB; N+1 HA needs >= 95.7 GiB free (one ESXi host) to survive a host failure. Right-size or add capacity."
 
         # CPU N+1: same principle, one host's CPU (~17,970 MHz / ~18 GHz) must
         # stay free. CPU overcommit degrades gracefully (scheduling contention),
