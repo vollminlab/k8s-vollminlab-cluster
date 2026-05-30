@@ -10,5 +10,5 @@ metadata:
 resources:
   - helmrelease.yaml
   - configmap.yaml
-  - loki-minio-credentials-sealedsecret.yaml
+  - loki-minio-credentials-externalsecret.yaml
   - loki-ruler-rules-configmap.yaml

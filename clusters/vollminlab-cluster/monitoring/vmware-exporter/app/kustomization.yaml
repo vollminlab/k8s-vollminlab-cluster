@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - configmap.yaml
-  - vmware-exporter-credentials-sealedsecret.yaml
+  - vmware-exporter-credentials-externalsecret.yaml
   - servicemonitor.yaml
   - prometheusrule.yaml
   - grafana-dashboard-configmap.yaml

@@ -10,4 +10,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - servicemonitor.yaml
-  - b2-exporter-credentials-sealedsecret.yaml
+  - b2-exporter-credentials-externalsecret.yaml
