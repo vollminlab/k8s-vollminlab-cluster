@@ -5,4 +5,4 @@ metadata:
 resources:
   - rbac.yaml
   - cronjob.yaml
-  - kubeadm-cert-pushover-sealedsecret.yaml
+  - kubeadm-cert-pushover-externalsecret.yaml

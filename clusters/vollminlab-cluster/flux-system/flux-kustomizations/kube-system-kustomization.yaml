@@ -16,3 +16,5 @@ spec:
     name: flux-system
   targetNamespace: kube-system
   timeout: 2m
+  dependsOn:
+    - name: external-secrets

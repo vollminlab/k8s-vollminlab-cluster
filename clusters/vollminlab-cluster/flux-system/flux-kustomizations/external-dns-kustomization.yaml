@@ -23,3 +23,4 @@ spec:
       namespace: external-dns
   dependsOn:
     - name: sealed-secrets
+    - name: external-secrets
