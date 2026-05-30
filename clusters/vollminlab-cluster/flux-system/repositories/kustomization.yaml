@@ -7,6 +7,7 @@ metadata:
     env: production
     category: system
 resources:
+  - 1password-connect-helmrepository.yaml
   - arc-controller-ocirepository.yaml
   - arc-runners-ocirepository.yaml
   - audiobookshelf-ocirepository.yaml
@@ -16,6 +17,7 @@ resources:
   - cnpg-helmrepository.yaml
   - descheduler-helmrepository.yaml
   - external-dns-helmrepository.yaml
+  - external-secrets-helmrepository.yaml
   - goldilocks-helmrepository.yaml
   - grafana-helmrepository.yaml
   - harbor-helmrepository.yaml

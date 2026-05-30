@@ -14,6 +14,7 @@ resources:
   - alertmanager-pushover-config-sealedsecret.yaml
   - grafana-admin-credentials-sealedsecret.yaml
   - prometheusrule-custom.yaml
+  - prometheusrule-eso.yaml
   - nodes-dashboard-configmap.yaml
   - longhorn-dashboard-configmap.yaml
   - minio-dashboard-configmap.yaml

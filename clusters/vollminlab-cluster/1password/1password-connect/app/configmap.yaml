@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: onepassword-connect-values
+  namespace: 1password
+  labels:
+    app: onepassword-connect
+    env: production
+    category: security
+data:
+  values.yaml: |
+    commonLabels:
+      app: onepassword-connect
+      env: production
+      category: security
+    connect:
+      credentialsName: onepassword-connect
+      credentialsKey: 1password-credentials.json
+      api:
+        serviceMonitor:
+          enabled: true
+          interval: 30s
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      sync:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 50m
+            memory: 64Mi

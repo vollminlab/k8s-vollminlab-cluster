@@ -17,3 +17,4 @@ resources:
   - storageclass-longhorn-dmz.yaml
   - disk-cleanup-rbac.yaml
   - disk-cleanup-cronjob.yaml
+  - onepassword-cluster-store.yaml

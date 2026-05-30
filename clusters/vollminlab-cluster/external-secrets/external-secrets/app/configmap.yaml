@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: external-secrets-values
+  namespace: external-secrets
+  labels:
+    app: external-secrets
+    env: production
+    category: security
+data:
+  values.yaml: |
+    podLabels:
+      app: external-secrets
+      env: production
+      category: security
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+    webhook:
+      podLabels:
+        app: external-secrets-webhook
+        env: production
+        category: security
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 50m
+          memory: 128Mi
+    certController:
+      podLabels:
+        app: external-secrets-cert-controller
+        env: production
+        category: security
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 50m
+          memory: 128Mi
