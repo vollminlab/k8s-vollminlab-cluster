@@ -126,3 +126,14 @@ extraEnv:
 Examples: `harbor-db-credentials`, `renovate-token`, `alertmanager-pushover-config`
 
 Wrong: `harbor-admin-sealedsecret.yaml` containing `metadata.name: harbor-admin-credentials` — the base (`harbor-admin`) doesn't match the name (`harbor-admin-credentials`).
+
+## 1Password vault item naming — cluster infrastructure
+
+After ESO migration, vault item names and field labels are cluster infrastructure:
+
+- Never rename a vault item referenced by an ExternalSecret without first updating the
+  ExternalSecret CR and merging the PR
+- Field label names are locked — use: `username`, `password`, `api_key`, `token`,
+  `credentials_json`, `access_key_id`, `secret_access_key`, `dockerconfigjson`
+- Procedure: update ExternalSecret CR → merge PR → Flux reconciles → verify Ready → rename in 1Password
+- Note on vault items: add "Referenced by ExternalSecret — do not rename fields" to item notes
