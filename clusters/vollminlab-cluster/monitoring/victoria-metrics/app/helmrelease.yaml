@@ -1,0 +1,24 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: victoria-metrics
+  namespace: monitoring
+  labels:
+    app: victoria-metrics
+    env: production
+    category: observability
+spec:
+  interval: 5m
+  releaseName: victoria-metrics
+  chart:
+    spec:
+      chart: victoria-metrics-single
+      version: 0.39.0
+      sourceRef:
+        kind: HelmRepository
+        name: victoria-metrics-repo
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: victoria-metrics-values
+      valuesKey: values.yaml

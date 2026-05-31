@@ -196,3 +196,16 @@ data:
           resourcePolicy:
             kind: ConfigMap
             name: velero-skip-smb-policy
+      victoria-metrics-b2:
+        disabled: false
+        schedule: "0 5 * * *"
+        useOwnerReferencesInBackup: false
+        template:
+          ttl: 2160h
+          storageLocation: b2
+          defaultVolumesToFsBackup: true
+          includedNamespaces:
+            - monitoring
+          labelSelector:
+            matchLabels:
+              app: victoria-metrics

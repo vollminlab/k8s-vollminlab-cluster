@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victoria-metrics-values
+  namespace: monitoring
+  labels:
+    app: victoria-metrics
+    env: production
+    category: observability
+data:
+  values.yaml: |
+    # Stable service name -> victoria-metrics-single-server.monitoring.svc:8428
+    fullnameOverride: victoria-metrics-single
+
+    server:
+      retentionPeriod: 90d
+
+      # mode: statefulSet (not deployment) so the RWO Longhorn volume is handled via a
+      # volumeClaimTemplate and there is no rolling-update detach trap.
+      mode: statefulSet
+
+      persistentVolume:
+        enabled: true
+        storageClassName: longhorn-r2
+        accessModes:
+          - ReadWriteOnce
+        size: 30Gi
+
+      podLabels:
+        app: victoria-metrics
+        env: production
+        category: observability
+
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi

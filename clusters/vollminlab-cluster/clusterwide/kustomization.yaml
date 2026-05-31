@@ -15,6 +15,7 @@ resources:
   - pv-tv.yaml
   - storageclass-smb.yaml
   - storageclass-longhorn-dmz.yaml
+  - storageclass-longhorn-r2.yaml
   - disk-cleanup-rbac.yaml
   - disk-cleanup-cronjob.yaml
   - onepassword-cluster-store.yaml

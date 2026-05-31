@@ -50,6 +50,7 @@ resources:
   - tofu-controller-helmrepository.yaml
   - trivy-operator-helmrepository.yaml
   - velero-helmrepository.yaml
+  - victoria-metrics-helmrepository.yaml
   - vmware-exporter-helmrepository.yaml
   - volsync-helmrepository.yaml
   - harbor-vollminlab-pull-externalsecret.yaml
