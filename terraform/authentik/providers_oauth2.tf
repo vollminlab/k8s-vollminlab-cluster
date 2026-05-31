@@ -14,6 +14,7 @@ resource "authentik_provider_oauth2" "grafana" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://grafana.vollminlab.com/login"
 
   allowed_redirect_uris = [
     {
@@ -35,6 +36,7 @@ resource "authentik_provider_oauth2" "headlamp" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://headlamp.vollminlab.com"
 
   allowed_redirect_uris = [
     {
@@ -57,6 +59,7 @@ resource "authentik_provider_oauth2" "minio" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://minio.vollminlab.com"
 
   allowed_redirect_uris = [
     {
@@ -78,6 +81,7 @@ resource "authentik_provider_oauth2" "jellyfin" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://jellyfin.vollminlab.com"
 
   allowed_redirect_uris = [
     {
@@ -99,6 +103,7 @@ resource "authentik_provider_oauth2" "harbor" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://harbor.vollminlab.com"
 
   allowed_redirect_uris = [
     {
@@ -120,6 +125,7 @@ resource "authentik_provider_oauth2" "portainer" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://portainer.vollminlab.com"
 
   allowed_redirect_uris = [
     {
@@ -164,6 +170,7 @@ resource "authentik_provider_oauth2" "audiobookshelf" {
   invalidation_flow  = data.authentik_flow.default_provider_invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
   sub_mode           = "hashed_user_id"
+  logout_uri         = "https://audiobookshelf.vollminlab.com"
 
   allowed_redirect_uris = [
     {
