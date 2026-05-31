@@ -5,5 +5,5 @@ resources:
   - configmap.yaml
   - ingress.yaml
   - vollm-in-certificate.yaml
-  - shlink-credentials-sealedsecret.yaml
+  - shlink-credentials-externalsecret.yaml
   - kyverno-policy.yaml

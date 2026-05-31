@@ -2,6 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - cluster.yaml
-  - shlink-db-credentials-sealedsecret.yaml
-  - cnpg-minio-credentials-sealedsecret.yaml
+  - shlink-db-credentials-externalsecret.yaml
+  - cnpg-minio-credentials-externalsecret.yaml
   - scheduled-backup.yaml

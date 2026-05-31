@@ -16,4 +16,5 @@ spec:
     name: flux-system
   timeout: 10m
   dependsOn:
+    - name: external-secrets
     - name: sealed-secrets
