@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
-  - authentik-proxy-token-sealedsecret.yaml
+  - authentik-proxy-token-externalsecret.yaml
