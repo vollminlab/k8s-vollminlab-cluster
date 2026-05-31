@@ -4,5 +4,5 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - harbor-tls-certificate.yaml
-  - harbor-admin-credentials-sealedsecret.yaml
-  - harbor-core-credentials-sealedsecret.yaml
+  - harbor-admin-credentials-externalsecret.yaml
+  - harbor-core-credentials-externalsecret.yaml
