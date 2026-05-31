@@ -10,4 +10,4 @@ metadata:
 resources:
   - helmrelease.yaml
   - configmap.yaml
-  - operator-oauth-sealedsecret.yaml
+  - operator-oauth-externalsecret.yaml

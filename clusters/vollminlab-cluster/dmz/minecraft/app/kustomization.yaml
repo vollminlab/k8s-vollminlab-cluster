@@ -4,7 +4,7 @@ metadata:
   name: minecraft
 resources:
   - configmap.yaml
-  - minecraft-rcon-secret-sealedsecret.yaml
+  - minecraft-rcon-secret-externalsecret.yaml
   - helmrelease.yaml
   - networkpolicy.yaml
   - bluemap-service.yaml

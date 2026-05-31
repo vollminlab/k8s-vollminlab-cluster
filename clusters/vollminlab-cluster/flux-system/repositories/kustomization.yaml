@@ -53,5 +53,5 @@ resources:
   - velero-helmrepository.yaml
   - vmware-exporter-helmrepository.yaml
   - volsync-helmrepository.yaml
-  - harbor-vollminlab-pull-sealedsecret.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml
   - vollminlab-ocirepository.yaml

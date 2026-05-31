@@ -17,4 +17,4 @@ spec:
   targetNamespace: tailscale
   timeout: 5m
   dependsOn:
-    - name: sealed-secrets
+    - name: external-secrets

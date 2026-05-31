@@ -17,4 +17,4 @@ spec:
   targetNamespace: actions-runner-system
   timeout: 2m
   dependsOn:
-    - name: sealed-secrets
+    - name: external-secrets

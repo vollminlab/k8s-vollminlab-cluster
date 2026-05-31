@@ -4,4 +4,4 @@ metadata:
   name: cloudflared-nginx
 resources:
   - deployment.yaml
-  - cloudflared-nginx-tunnel-credentials-sealedsecret.yaml
+  - cloudflared-nginx-tunnel-credentials-externalsecret.yaml
