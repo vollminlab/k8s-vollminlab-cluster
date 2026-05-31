@@ -8,4 +8,4 @@ metadata:
     category: core
 resources:
   - terraform-cr.yaml
-  - prowlarr-tf-credentials-sealedsecret.yaml
+  - prowlarr-tf-credentials-externalsecret.yaml

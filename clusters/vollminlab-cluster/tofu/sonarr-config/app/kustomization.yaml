@@ -7,5 +7,5 @@ metadata:
     env: production
     category: core
 resources:
-  - sonarr-tf-credentials-sealedsecret.yaml
+  - sonarr-tf-credentials-externalsecret.yaml
   - terraform-cr.yaml

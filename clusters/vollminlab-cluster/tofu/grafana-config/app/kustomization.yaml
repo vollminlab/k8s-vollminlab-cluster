@@ -7,5 +7,5 @@ metadata:
     env: production
     category: core
 resources:
-  - grafana-tf-credentials-sealedsecret.yaml
+  - grafana-tf-credentials-externalsecret.yaml
   - terraform-cr.yaml

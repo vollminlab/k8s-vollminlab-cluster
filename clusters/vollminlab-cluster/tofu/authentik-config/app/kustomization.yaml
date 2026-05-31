@@ -7,8 +7,8 @@ metadata:
     env: production
     category: core
 resources:
-  - authentik-tf-credentials-sealedsecret.yaml
-  - authentik-oauth-client-secrets-sealedsecret.yaml
-  - portainer-tf-credentials-sealedsecret.yaml
-  - tofu-minio-credentials-sealedsecret.yaml
+  - authentik-oauth-client-secrets-externalsecret.yaml
+  - authentik-tf-credentials-externalsecret.yaml
+  - portainer-tf-credentials-externalsecret.yaml
   - terraform-cr.yaml
+  - tofu-minio-credentials-externalsecret.yaml
