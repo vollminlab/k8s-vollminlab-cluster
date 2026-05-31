@@ -18,4 +18,5 @@ spec:
   timeout: 2m
   dependsOn:
     - name: cnpg-system
+    - name: external-secrets
     - name: sealed-secrets

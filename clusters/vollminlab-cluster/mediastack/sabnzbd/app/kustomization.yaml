@@ -4,7 +4,7 @@ metadata:
   name: sabnzbd-app
 resources:
   - configmap.yaml
-  - sabnzbd-exportarr-apikey-sealedsecret.yaml
+  - sabnzbd-exportarr-apikey-externalsecret.yaml
   - exportarr-deployment.yaml
   - exportarr-service.yaml
   - exportarr-servicemonitor.yaml

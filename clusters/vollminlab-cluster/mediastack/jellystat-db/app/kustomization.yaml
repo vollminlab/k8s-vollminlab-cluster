@@ -4,6 +4,6 @@ metadata:
   name: jellystat-db-app
 resources:
   - cluster.yaml
-  - cnpg-minio-credentials-sealedsecret.yaml
-  - jellystat-db-credentials-sealedsecret.yaml
+  - cnpg-minio-credentials-externalsecret.yaml
+  - jellystat-db-credentials-externalsecret.yaml
   - scheduled-backup.yaml

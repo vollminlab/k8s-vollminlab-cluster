@@ -6,5 +6,5 @@ resources:
   - configmap.yaml
   - helmrelease.yaml
   - ingress.yaml
-  - jellystat-credentials-sealedsecret.yaml
+  - jellystat-credentials-externalsecret.yaml
   - jellystat-postgresql-service.yaml

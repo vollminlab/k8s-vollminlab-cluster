@@ -3,7 +3,7 @@ kind: Kustomization
 metadata:
   name: bazarr-exportarr-app
 resources:
-  - bazarr-exportarr-apikey-sealedsecret.yaml
+  - bazarr-exportarr-apikey-externalsecret.yaml
   - bazarr-exportarr-deployment.yaml
   - bazarr-exportarr-service.yaml
   - bazarr-exportarr-servicemonitor.yaml
