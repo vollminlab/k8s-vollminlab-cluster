@@ -47,11 +47,12 @@ resource "authentik_application" "grafana" {
 }
 
 resource "authentik_application" "goldilocks" {
-  name            = "Goldilocks"
-  slug            = "goldilocks"
-  meta_launch_url = "https://goldilocks.vollminlab.com"
-  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/goldilocks.png"
-  open_in_new_tab = false
+  name             = "Goldilocks"
+  slug             = "goldilocks"
+  meta_description = "VPA resource recommendations dashboard"
+  meta_launch_url  = "https://goldilocks.vollminlab.com"
+  meta_icon        = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/goldilocks.png"
+  open_in_new_tab  = false
 }
 
 resource "authentik_application" "haproxy" {
@@ -92,6 +93,7 @@ resource "authentik_application" "homepage" {
   name            = "Homepage"
   slug            = "homepage"
   meta_launch_url = "https://homepage.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/homepage.png"
   open_in_new_tab = false
 }
 
@@ -105,11 +107,12 @@ resource "authentik_application" "jellyfin" {
 }
 
 resource "authentik_application" "jellystat" {
-  name            = "Jellystat"
-  slug            = "jellystat"
-  meta_launch_url = "https://jellystat.vollminlab.com"
-  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellystat.svg"
-  open_in_new_tab = false
+  name             = "Jellystat"
+  slug             = "jellystat"
+  meta_description = "Jellyfin statistics"
+  meta_launch_url  = "https://jellystat.vollminlab.com"
+  meta_icon        = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/jellystat.svg"
+  open_in_new_tab  = false
 }
 
 resource "authentik_application" "longhorn" {
@@ -214,6 +217,7 @@ resource "authentik_application" "seerr" {
   name              = "Seerr"
   slug              = "seerr"
   protocol_provider = authentik_provider_oauth2.seerr.id
+  meta_description  = "Media request management"
   meta_launch_url   = "https://seerr.vollminlab.com"
   meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/seerr.svg"
   open_in_new_tab   = false
@@ -248,5 +252,6 @@ resource "authentik_application" "vollminlab_forward_auth" {
   slug              = "vollminlab-forward-auth"
   protocol_provider = authentik_provider_proxy.vollminlab_forward_auth.id
   meta_launch_url   = "https://authentik.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/authentik.png"
   open_in_new_tab   = false
 }

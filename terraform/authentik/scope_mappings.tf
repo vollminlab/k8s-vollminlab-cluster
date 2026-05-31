@@ -5,9 +5,10 @@ resource "authentik_property_mapping_provider_scope" "groups" {
 }
 
 resource "authentik_property_mapping_provider_scope" "minio_policy" {
-  name       = "MinIO Policy"
-  scope_name = "minio"
-  expression = <<-EOT
+  name        = "MinIO Policy"
+  description = "Mapping for Minio Admins"
+  scope_name  = "minio"
+  expression  = <<-EOT
     if ak_is_group_member(request.user, name="MinIO Admins"):
         return {"policy": "consoleAdmin"}
     return {"policy": "readwrite"}
