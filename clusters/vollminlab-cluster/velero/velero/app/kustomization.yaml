@@ -4,5 +4,5 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - resource-policy-configmap.yaml
-  - velero-minio-credentials-sealedsecret.yaml
-  - velero-b2-credentials-sealedsecret.yaml
+  - velero-minio-credentials-externalsecret.yaml
+  - velero-b2-credentials-externalsecret.yaml

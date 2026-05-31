@@ -7,5 +7,5 @@ metadata:
     env: production
     category: core
 resources:
-  - minio-tf-credentials-sealedsecret.yaml
+  - minio-tf-credentials-externalsecret.yaml
   - terraform-cr.yaml

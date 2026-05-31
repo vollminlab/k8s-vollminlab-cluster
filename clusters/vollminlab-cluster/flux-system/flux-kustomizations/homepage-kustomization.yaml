@@ -17,4 +17,4 @@ spec:
   targetNamespace: homepage
   timeout: 2m
   dependsOn:
-    - name: sealed-secrets
+    - name: external-secrets

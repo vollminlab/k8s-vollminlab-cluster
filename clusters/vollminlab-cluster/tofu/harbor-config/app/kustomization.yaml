@@ -7,5 +7,5 @@ metadata:
     env: production
     category: core
 resources:
-  - harbor-tf-credentials-sealedsecret.yaml
+  - harbor-tf-credentials-externalsecret.yaml
   - terraform-cr.yaml

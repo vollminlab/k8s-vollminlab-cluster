@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   - configmap.yaml
-  - harbor-vollminlab-pull-sealedsecret.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml

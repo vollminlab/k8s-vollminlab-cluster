@@ -17,4 +17,5 @@ spec:
   timeout: 10m
   dependsOn:
     - name: minio
+    - name: external-secrets
     - name: sealed-secrets
