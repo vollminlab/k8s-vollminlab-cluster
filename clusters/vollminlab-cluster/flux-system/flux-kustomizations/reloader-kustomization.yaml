@@ -16,5 +16,3 @@ spec:
     name: flux-system
   targetNamespace: reloader
   timeout: 5m
-  dependsOn:
-    - name: sealed-secrets

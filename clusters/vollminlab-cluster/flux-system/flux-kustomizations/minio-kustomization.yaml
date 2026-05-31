@@ -17,4 +17,3 @@ spec:
   timeout: 10m
   dependsOn:
     - name: external-secrets
-    - name: sealed-secrets
