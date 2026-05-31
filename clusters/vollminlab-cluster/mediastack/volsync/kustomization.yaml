@@ -13,15 +13,15 @@ resources:
   - sabnzbd-config-replicationsource.yaml
   - seerr-config-replicationsource.yaml
   - sonarr-config-replicationsource.yaml
-  - volsync-audiobookshelf-config-restic-sealedsecret.yaml
-  - volsync-audiobookshelf-metadata-restic-sealedsecret.yaml
-  - volsync-bazarr-config-restic-sealedsecret.yaml
-  - volsync-filebrowser-config-restic-sealedsecret.yaml
-  - volsync-jellyfin-config-restic-sealedsecret.yaml
-  - volsync-prowlarr-config-restic-sealedsecret.yaml
-  - volsync-qbittorrent-config-restic-sealedsecret.yaml
-  - volsync-radarr-config-restic-sealedsecret.yaml
-  - volsync-readarr-config-restic-sealedsecret.yaml
-  - volsync-sabnzbd-config-restic-sealedsecret.yaml
-  - volsync-seerr-config-restic-sealedsecret.yaml
-  - volsync-sonarr-config-restic-sealedsecret.yaml
+  - volsync-audiobookshelf-config-restic-externalsecret.yaml
+  - volsync-audiobookshelf-metadata-restic-externalsecret.yaml
+  - volsync-bazarr-config-restic-externalsecret.yaml
+  - volsync-filebrowser-config-restic-externalsecret.yaml
+  - volsync-jellyfin-config-restic-externalsecret.yaml
+  - volsync-prowlarr-config-restic-externalsecret.yaml
+  - volsync-qbittorrent-config-restic-externalsecret.yaml
+  - volsync-radarr-config-restic-externalsecret.yaml
+  - volsync-readarr-config-restic-externalsecret.yaml
+  - volsync-sabnzbd-config-restic-externalsecret.yaml
+  - volsync-seerr-config-restic-externalsecret.yaml
+  - volsync-sonarr-config-restic-externalsecret.yaml
