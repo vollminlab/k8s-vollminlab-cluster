@@ -7,4 +7,4 @@ resources:
   - service.yaml
   - ingress.yaml
   - pvc-qbittorrent-config.yaml
-  - qbittorrent-pia-credentials-sealedsecret.yaml
+  - qbittorrent-pia-credentials-externalsecret.yaml

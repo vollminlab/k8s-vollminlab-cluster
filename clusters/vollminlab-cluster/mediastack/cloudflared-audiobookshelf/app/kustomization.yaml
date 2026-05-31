@@ -3,5 +3,5 @@ kind: Kustomization
 metadata:
   name: cloudflared-audiobookshelf-app
 resources:
-  - cloudflared-audiobookshelf-tunnel-credentials-sealedsecret.yaml
+  - cloudflared-audiobookshelf-tunnel-credentials-externalsecret.yaml
   - deployment.yaml

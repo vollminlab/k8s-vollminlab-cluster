@@ -3,5 +3,5 @@ kind: Kustomization
 metadata:
   name: cloudflared-jellyfin-app
 resources:
-  - cloudflared-jellyfin-tunnel-credentials-sealedsecret.yaml
+  - cloudflared-jellyfin-tunnel-credentials-externalsecret.yaml
   - deployment.yaml
