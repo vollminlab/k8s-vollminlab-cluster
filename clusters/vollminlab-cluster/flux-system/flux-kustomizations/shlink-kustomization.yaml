@@ -18,4 +18,3 @@ spec:
   dependsOn:
     - name: cnpg-system
     - name: external-secrets
-    - name: sealed-secrets
