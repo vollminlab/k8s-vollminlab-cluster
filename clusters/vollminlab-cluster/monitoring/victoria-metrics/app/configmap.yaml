@@ -15,10 +15,9 @@ data:
     server:
       retentionPeriod: 90d
 
-      # StatefulSet (not Deployment) so the RWO Longhorn volume is handled via a
+      # mode: statefulSet (not deployment) so the RWO Longhorn volume is handled via a
       # volumeClaimTemplate and there is no rolling-update detach trap.
-      statefulSet:
-        enabled: true
+      mode: statefulSet
 
       persistentVolume:
         enabled: true
