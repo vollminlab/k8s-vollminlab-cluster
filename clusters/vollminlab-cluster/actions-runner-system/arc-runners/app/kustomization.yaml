@@ -6,5 +6,5 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - rbac.yaml
-  - arc-githubapp-secret-sealedsecret.yaml
+  - arc-githubapp-secret-externalsecret.yaml
   - networkpolicy.yaml

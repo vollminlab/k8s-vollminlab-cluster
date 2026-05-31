@@ -6,4 +6,4 @@ resources:
   - service.yaml
   - service-redis.yaml
   - networkpolicy.yaml
-  - harbor-vollminlab-pull-sealedsecret.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml

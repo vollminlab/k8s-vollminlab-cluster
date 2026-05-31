@@ -7,6 +7,6 @@ resources:
   - clusterrolebinding.yaml
   - configmap.yaml
   - helmrelease.yaml
-  - headlamp-oidc-credentials-sealedsecret.yaml
+  - headlamp-oidc-credentials-externalsecret.yaml
   - ingress.yaml
   - networkpolicy.yaml
