@@ -4,6 +4,6 @@ metadata:
   name: authentik-cnpg-app
 resources:
   - cluster.yaml
-  - authentik-db-credentials-sealedsecret.yaml
-  - cnpg-minio-credentials-sealedsecret.yaml
+  - authentik-db-credentials-externalsecret.yaml
+  - cnpg-minio-credentials-externalsecret.yaml
   - scheduled-backup.yaml

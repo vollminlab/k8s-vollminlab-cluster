@@ -6,4 +6,4 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - ingress.yaml
-  - authentik-credentials-sealedsecret.yaml
+  - authentik-credentials-externalsecret.yaml

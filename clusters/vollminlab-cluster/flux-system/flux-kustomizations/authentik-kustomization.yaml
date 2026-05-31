@@ -16,4 +16,4 @@ spec:
     name: flux-system
   dependsOn:
     - name: cnpg-system
-    - name: sealed-secrets
+    - name: external-secrets
