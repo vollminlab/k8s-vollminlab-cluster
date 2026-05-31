@@ -17,6 +17,8 @@ data:
         scrapeInterval: 30s
         retention: 7d
         retentionSize: 3GB
+        remoteWrite:
+          - url: http://victoria-metrics-single-server.monitoring.svc.cluster.local:8428/api/v1/write
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
         serviceMonitorNamespaceSelector: {}
@@ -79,7 +81,26 @@ data:
         accessModes:
           - ReadWriteOnce
 
+      sidecar:
+        datasources:
+          defaultDatasourceEnabled: false
       additionalDataSources:
+        - name: VictoriaMetrics
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          url: http://victoria-metrics-single-server.monitoring.svc.cluster.local:8428
+          isDefault: true
+          jsonData:
+            timeInterval: 30s
+        - name: Prometheus (live)
+          type: prometheus
+          uid: prometheus-live
+          access: proxy
+          url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          isDefault: false
+          jsonData:
+            timeInterval: 30s
         - name: Loki
           type: loki
           url: http://loki.monitoring.svc.cluster.local:3100
