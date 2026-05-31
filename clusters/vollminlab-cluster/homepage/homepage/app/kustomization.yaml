@@ -7,7 +7,7 @@ resources:
   - configmap.yaml
   - helmrelease.yaml
   - homepage-custom-css-configmap.yaml
-  - homepage-env-vars-sealedsecret.yaml
+  - homepage-env-vars-externalsecret.yaml
   - ingress.yaml
   - rbac.yaml
   - pihole-watchdog-cronjob.yaml
