@@ -30,10 +30,14 @@ data:
         resources:
           requests:
             cpu: 500m
-            memory: 1500Mi
+            # ~2.5Gi reflects real steady-state usage (~2.7Gi observed). RAM here
+            # is driven by ~600k active head series, NOT retention — the 24h cut
+            # (PR #834) did not reduce it. Under-requesting silently over-commits
+            # the node and worsened memory pressure.
+            memory: 2560Mi
           limits:
             cpu: 2000m
-            memory: 3Gi
+            memory: 3584Mi
         storageSpec:
           volumeClaimTemplate:
             spec:
