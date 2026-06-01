@@ -28,6 +28,15 @@ data:
 
     persistence:
       enabled: true
+      # storageClass stays "longhorn" (3-replica default) on purpose: this PVC's
+      # live Longhorn volume was patched to 2 replicas on 2026-06-01 to reclaim
+      # ~100G (backups also go to B2, so 2 in-cluster copies suffice). We do NOT
+      # switch to a 2-replica StorageClass here because storageClassName is
+      # immutable on the existing PVC and changing it would break this HelmRelease
+      # (and recreating the PVC would mean migrating 100G of backups).
+      # If this PVC is ever recreated it reverts to 3 replicas — re-apply with:
+      #   kubectl -n longhorn-system patch volumes.longhorn.io <minio-vol> \
+      #     --type=merge -p '{"spec":{"numberOfReplicas":2}}'
       storageClass: "longhorn"
       size: 100Gi
 
