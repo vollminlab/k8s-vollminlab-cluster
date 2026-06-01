@@ -38,3 +38,14 @@ data:
         limits:
           cpu: "1"
           memory: 1Gi
+
+      # Let Prometheus scrape VM's own /metrics so VM health (ingestion rate,
+      # dedup, disk growth, uptime) is visible in Grafana. Prometheus scrapes all
+      # ServiceMonitors (serviceMonitorSelectorNilUsesHelmValues: false), so
+      # enabling this is sufficient. Marginal cardinality (single vmsingle).
+      serviceMonitor:
+        enabled: true
+        extraLabels:
+          app: victoria-metrics
+          env: production
+          category: observability
