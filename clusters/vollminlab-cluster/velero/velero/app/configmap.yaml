@@ -63,22 +63,11 @@ data:
       # block all PVBs on the affected node indefinitely across multiple backup runs.
       podVolumeOperationTimeout: 30m
 
-    # Prefer not to land on the same node as media stack workloads.
-    # The Velero pod generates significant API/CPU load during backup runs, which
-    # interferes with the node-agent's gRPC data path initialization on that node.
-    affinity:
-      podAntiAffinity:
-        preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                  - key: category
-                    operator: In
-                    values:
-                      - media
-              topologyKey: kubernetes.io/hostname
-
+      # BackupStorageLocations MUST stay nested under configuration: — the velero
+      # chart reads configuration.backupStorageLocation. If this drifts out (e.g.
+      # displaced by an inserted sibling block), the chart synthesizes an invalid
+      # "default" BSL with no provider and every helm upgrade fails. (Regression
+      # from PR #790 left it under affinity: and broke velero upgrades for days.)
       backupStorageLocation:
         # Primary: in-cluster MinIO (fast restores, no egress cost)
         - name: minio
@@ -103,6 +92,22 @@ data:
           credential:
             name: velero-b2-credentials
             key: cloud
+
+    # Prefer not to land on the same node as media stack workloads.
+    # The Velero pod generates significant API/CPU load during backup runs, which
+    # interferes with the node-agent's gRPC data path initialization on that node.
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: category
+                    operator: In
+                    values:
+                      - media
+              topologyKey: kubernetes.io/hostname
 
     # node-agent DaemonSet runs kopia on every node for file-system PVC backups
     deployNodeAgent: true
