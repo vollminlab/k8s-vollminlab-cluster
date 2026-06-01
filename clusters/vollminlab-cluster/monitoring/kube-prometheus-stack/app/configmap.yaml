@@ -41,7 +41,12 @@ data:
         storageSpec:
           volumeClaimTemplate:
             spec:
-              storageClassName: longhorn
+              # longhorn-r2 = 2 replicas (vs longhorn's 3) — Prometheus is ephemeral
+              # now (24h retention; VM holds long-term history), so 2 replicas is
+              # plenty and reclaims Longhorn space. NOTE: VCT storageClassName is
+              # immutable, so this only takes effect after the StatefulSet + PVC are
+              # recreated (done once at merge time).
+              storageClassName: longhorn-r2
               accessModes:
                 - ReadWriteOnce
               resources:
