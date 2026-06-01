@@ -15,8 +15,7 @@ data:
       prometheusSpec:
         externalUrl: https://prometheus.vollminlab.com
         scrapeInterval: 30s
-        retention: 7d
-        retentionSize: 3GB
+        retention: 24h
         remoteWrite:
           - url: http://victoria-metrics-single-server.monitoring.svc.cluster.local:8428/api/v1/write
         serviceMonitorSelectorNilUsesHelmValues: false
