@@ -32,7 +32,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 512Mi
+              # Idles at ~0-100Mi; spikes only briefly during a headless-Chromium
+              # Cloudflare solve. 192Mi request / 768Mi limit keeps solve headroom
+              # while reclaiming the over-provisioned 512Mi/2Gi.
+              memory: 192Mi
             limits:
               cpu: 1000m
-              memory: 2Gi
+              memory: 768Mi
