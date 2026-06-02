@@ -161,6 +161,16 @@ data:
           resourcePolicy:
             kind: ConfigMap
             name: velero-skip-smb-policy
+          # Skip VolSync's transient mover pods/PVCs (label app.kubernetes.io/created-by:
+          # volsync). They are created then deleted mid-sync, so Velero hits "PVC not
+          # found" -> benign errors -> PartiallyFailed. NotIn also keeps all unlabeled
+          # resources (incl. the real app config PVCs), so actual data is still backed up.
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/created-by
+                operator: NotIn
+                values:
+                  - volsync
       daily-b2:
         disabled: false
         schedule: "0 4 * * *"
@@ -181,6 +191,16 @@ data:
           resourcePolicy:
             kind: ConfigMap
             name: velero-skip-smb-policy
+          # Skip VolSync's transient mover pods/PVCs (label app.kubernetes.io/created-by:
+          # volsync). They are created then deleted mid-sync, so Velero hits "PVC not
+          # found" -> benign errors -> PartiallyFailed. NotIn also keeps all unlabeled
+          # resources (incl. the real app config PVCs), so actual data is still backed up.
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/created-by
+                operator: NotIn
+                values:
+                  - volsync
       monthly-b2:
         disabled: false
         schedule: "0 6 1 * *"
@@ -201,6 +221,16 @@ data:
           resourcePolicy:
             kind: ConfigMap
             name: velero-skip-smb-policy
+          # Skip VolSync's transient mover pods/PVCs (label app.kubernetes.io/created-by:
+          # volsync). They are created then deleted mid-sync, so Velero hits "PVC not
+          # found" -> benign errors -> PartiallyFailed. NotIn also keeps all unlabeled
+          # resources (incl. the real app config PVCs), so actual data is still backed up.
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/created-by
+                operator: NotIn
+                values:
+                  - volsync
       victoria-metrics-b2:
         disabled: false
         schedule: "0 5 * * *"
