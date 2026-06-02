@@ -16,6 +16,7 @@ resources:
   - inject-namespace-labels.yaml
   - inject-pod-labels.yaml
   - inject-resource-requirements.yaml
+  - mutate-default-sa-automount.yaml
   - require-labels.yaml
   - require-resources.yaml
   - restrict-default.yaml
