@@ -1,0 +1,48 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-default-sa-pod-automount
+  annotations:
+    policies.kyverno.io/title: Disable Pod Token Automounting for Default SA
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    pod-policies.kyverno.io/autogen-controllers: none
+    policies.kyverno.io/description: >-
+      Sets automountServiceAccountToken=false at the pod spec level for pods
+      using the default ServiceAccount in non-system namespaces. Complements
+      mutate-default-sa-automount by overriding charts that hardcode
+      automountServiceAccountToken=true in the pod template (e.g. bazarr
+      k8s-home-lab chart which is not configurable via Helm values).
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  background: false
+  rules:
+    - name: disable-pod-automount-for-default-sa
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaceSelector:
+                matchExpressions:
+                  - key: kubernetes.io/metadata.name
+                    operator: NotIn
+                    values:
+                      - kube-system
+                      - kube-public
+                      - kube-node-lease
+                      - calico-system
+                      - calico-apiserver
+                      - tigera-operator
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+            operator: Equals
+            value: default
+      mutate:
+        patchStrategicMerge:
+          spec:
+            automountServiceAccountToken: false
