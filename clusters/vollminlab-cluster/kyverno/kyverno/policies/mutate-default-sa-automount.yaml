@@ -1,0 +1,43 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-default-sa-automount
+  annotations:
+    policies.kyverno.io/title: Disable Default SA Token Automounting
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Sets automountServiceAccountToken=false on every 'default' ServiceAccount
+      in non-system namespaces. The default SA is never legitimately used by
+      workloads in this cluster — verified RBAC audit 2026-06-02 found zero
+      bindings on all default SAs. Pod-level automountServiceAccountToken=true
+      overrides this at the pod spec if a chart explicitly needs the token.
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  background: true
+  rules:
+    - name: disable-default-sa-automount
+      match:
+        any:
+          - resources:
+              kinds:
+                - ServiceAccount
+              names:
+                - default
+              namespaceSelector:
+                matchExpressions:
+                  - key: kubernetes.io/metadata.name
+                    operator: NotIn
+                    values:
+                      - kube-system
+                      - kube-public
+                      - kube-node-lease
+                      - calico-system
+                      - calico-apiserver
+                      - tigera-operator
+      mutate:
+        patchStrategicMerge:
+          automountServiceAccountToken: false
