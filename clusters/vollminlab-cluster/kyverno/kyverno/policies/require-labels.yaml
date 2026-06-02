@@ -13,7 +13,7 @@ metadata:
     env: production
     category: security
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: require-labels-on-controllers
