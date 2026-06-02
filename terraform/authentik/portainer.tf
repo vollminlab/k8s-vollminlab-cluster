@@ -11,7 +11,7 @@ resource "portainer_settings" "main" {
     user_identifier         = "preferred_username"
     scopes                  = "openid profile email groups"
     sso                     = true
-    hide_internal_auth      = false
+    hide_internal_auth      = true
     oauth_auto_create_users = true
     default_team_id         = 0
   }
