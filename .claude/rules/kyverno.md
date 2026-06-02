@@ -14,10 +14,11 @@ description: Kyverno policy rules, required labels, DMZ constraints, and enforce
 | No `hostPath`        | `hostPath` volumes are blocked                                            |
 | No default namespace | Pods may not run in the `default` namespace                               |
 | DMZ placement        | DMZ pods must run on `k8sworker05`/`k8sworker06` (injected automatically) |
+| Required labels      | Every pod/controller/namespace must have `app`, `env`, `category` labels  |
 
 ## Audit-mode policies (violations logged, not blocked)
 
-- Required labels (`app`, `env`, `category`) — pods missing these labels are logged but not blocked
+- None currently — all policies are in Enforce mode
 
 ## Valid `category` label values
 
