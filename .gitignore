@@ -6,6 +6,14 @@
 .codex
 .worktrees/
 session-report-*.html
+.claude/scheduled_tasks.lock
+.playwright-mcp/
+
+# Local scratch
+tmp/
+
+# Screenshots captured during browser testing
+filebrowser-*.png
 
 # macOS
 .DS_Store
