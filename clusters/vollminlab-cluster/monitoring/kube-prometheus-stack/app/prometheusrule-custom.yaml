@@ -161,7 +161,7 @@ spec:
         - alert: PodNotReady
           expr: |
             (
-              kube_pod_status_ready{condition="true",namespace!~"trivy-system|velero"} == 0
+              kube_pod_status_ready{condition="true",namespace!~"trivy-system|velero",pod!~"volsync-src-.*"} == 0
             ) unless on(pod, namespace)
               kube_pod_status_phase{phase=~"Succeeded|Failed"} == 1
           for: 15m
