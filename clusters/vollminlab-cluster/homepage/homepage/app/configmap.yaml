@@ -415,6 +415,7 @@ data:
             memory: true
             show: true
             showLabel: true
+            mode: cluster
         - datetime:
             show: true
             showLabel: true
