@@ -29,6 +29,11 @@ spec:
             - Deployment
             - StatefulSet
             - DaemonSet
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.template.spec.containers[] | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
       validate:
         message: "Image '{{ element.image }}' uses an unapproved registry."
         foreach:
