@@ -34,11 +34,15 @@ The material gaps are **architectural, not "anyone can walk in"**:
 - **Risk:** Kubernetes default is allow-all. Any single compromised pod (e.g. a media app pulling from the internet) can reach every Service in every namespace — Authentik, the CNPG databases, MinIO/S3, the sealing-secrets controller, Longhorn, etc. — enabling secret exfiltration and pivoting. The DMZ is correctly isolated; the *internal* network is wide open.
 - **Recommendation:** Roll out a `default-deny` + explicit-allow baseline per namespace, prioritizing the crown jewels: `authentik`, `sealed-secrets`, `cnpg-system`, `minio`, `harbor`, `monitoring`, `portainer`, `tofu`. Template it with a shared kustomize component (allow DNS to kube-dns, allow ingress-nginx → app port, allow needed egress). Start with the sensitive namespaces, then fill in the rest. The DMZ policies are a good internal model.
 
-### H2 — No Pod Security Standards enforcement on application namespaces
+### H2 — No Pod Security Standards enforcement on application namespaces *(partially resolved)*
 - **Category:** policy_gap / missing_coverage
 - **Evidence:** Kyverno enforces `restrict-privileged`, `restrict-hostpath`, `require-resources`, `restrict-latest-tag`, `restrict-default-namespace`, `restrict-loadbalancer-services`, `dmz-restrict-external-access`. It does **not** enforce (or even audit) `runAsNonRoot`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `readOnlyRootFilesystem`, or `allowPrivilegeEscalation: false`. Pod Security Admission labels exist only for infra exceptions (`calico-system`, `metallb-system`, `tigera-operator` = `privileged`) and **DMZ = `enforce: baseline`** (baseline does *not* require non-root/seccomp/caps). **No application namespace enforces `restricted`.** ~383 of 464 containers (~83%) carry no explicit securityContext; ~28 explicitly set `runAsNonRoot: false`.
 - **Risk:** A compromised container is far more likely to be running as root with the full capability set and a writable rootfs, turning an app-level RCE into node-level escalation and persistence.
 - **Recommendation (two paths):** *(a, easiest)* set `pod-security.kubernetes.io/enforce` to `baseline` then `restricted` on app namespaces incrementally, starting with `warn`/`audit` to surface violators — no policy authoring, and DMZ already does baseline. *(b)* Kyverno policies Audit→Enforce with infra exclusions: `require-run-as-non-root` first, then `require-drop-all-capabilities` + `require-seccomp-runtime-default`, then `readOnlyRootFilesystem` (needs per-app `emptyDir` for `/tmp`). Mind autogen per `.claude/rules/kyverno.md`.
+
+**Step 1 — RESOLVED 2026-06-03 (PR #858):** `pod-security.kubernetes.io/warn: restricted` and `pod-security.kubernetes.io/audit: restricted` labels added to all 19 application namespaces (1password, authentik, cert-manager, cnpg-system, dmz, external-dns, external-secrets, flux-system, goldilocks, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, renovate, shlink, tailscale, tofu, trivy-system). Infrastructure namespaces with known privilege requirements (kube-system, longhorn-system, ingress-nginx, velero, volsync-system, kyverno, etc.) intentionally excluded — to be addressed in a follow-up PR with appropriate `privileged`/`baseline` levels.
+
+**Remaining:** add PSA labels to infra namespaces; review violation baseline from audit/warn scan; then tighten app namespaces from `warn`/`audit` → `enforce`.
 
 > _H3 (Portainer cluster-admin) was withdrawn — see the corrected LOW item below and the Executive summary correction note. Portainer authenticates via Authentik OIDC; its cluster-admin SA is inherent to a k8s management UI, as accepted for Headlamp._
 
@@ -48,11 +52,8 @@ The material gaps are **architectural, not "anyone can walk in"**:
 
 > **M1 & M2 (ingress auth) were WITHDRAWN as false positives — verified 2026-05-29.** A full reconciliation of every ingress against the live Authentik provider list found **no genuinely unprotected sensitive endpoint**. Apps with dedicated Authentik OIDC providers: Audiobookshelf, Grafana, Harbor, Headlamp, Jellyfin, MinIO, Portainer, Seerr. All other app ingresses carry nginx forward-auth (`vollminlab-forward-auth`). The OIDC config is provisioned **out-of-band via Terraform through each app's API (DB-stored)** — e.g. Grafana's live SSO API reports `generic_oauth … source=database … enabled=True … name="Authentik"` — which is why it is invisible to manifest/`grafana.ini` inspection and tripped up the agents (and my first pass). Adding nginx forward-auth on top of these OIDC apps would be **redundant double-auth** and is explicitly discouraged in `.claude/rules/authentik-akshell.md`. The only outlier, `s3.vollminlab.com`, correctly uses S3 access-key (SigV4) auth (see L9). **The cluster's authentication posture is sound and matches its documented design.**
 
-### M3 — No image-registry allowlist and no digest pinning (supply chain)
-- **Category:** supply_chain
-- **Evidence:** No Kyverno policy restricts source registries; images may be pulled from any registry. Only ~6 of ~35 images are digest-pinned (`@sha256:…`); the rest are tag-only (tags are mutable and can be re-pushed). Registries in use are all reputable (docker.io, ghcr.io, quay.io, harbor.vollminlab.com).
-- **Risk:** A compromised or typosquatted registry, or a re-pushed tag, can inject a malicious image at the next reconcile with no integrity check.
-- **Recommendation:** Add a `restrict-image-registries` Kyverno policy allowlisting the known registries (Audit → Enforce). Enable Renovate's `pinDigests` to add digest pins automatically, prioritizing infra (Flux, Kyverno, cert-manager, ingress-nginx, CNPG, Velero). Optionally a `require-image-digest` policy later.
+### ~~M3~~ — RESOLVED 2026-06-03 (PRs #857, #859, #860)
+`restrict-image-registries` ClusterPolicy deployed in Audit mode allowlisting nine approved registries (harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev). Short names without an explicit domain (docker.io default) are also permitted. Renovate `pinDigests: true` enabled for the Docker datasource — digest pins will be added automatically on next Renovate run. Two follow-up fixes (PRs #859, #860) were required to satisfy Kyverno v1.18.1's stricter variable-scoping rules for `validate.foreach.deny` messages. Policy is `Ready: True` with no autogen variants. Next step: promote from Audit → Enforce once the violation baseline from the first background scan has been reviewed.
 
 ### ~~M4~~ — RESOLVED 2026-06-02 (PR #846)
 `require-standard-labels` promoted from Audit → Enforce. Zero violations confirmed before promotion. Policy now blocks unlabelled workloads at admission.
@@ -103,19 +104,19 @@ RBAC audit confirmed zero bindings on any default SA — no legitimate API acces
 
 ---
 
-## Remaining open items (as of 2026-06-02)
+## Remaining open items (as of 2026-06-03)
 
 | ID | Severity | GitHub Issue | Status |
 |----|----------|-------------|--------|
 | H1 | HIGH | #795 | Open — multi-PR effort |
-| H2 | HIGH | #796 | Open — multi-PR effort |
-| M3 | MEDIUM | #800 | Open |
+| H2 | HIGH | #796 | Step 1 done (PR #858) — infra PSA labels + enforce tightening remain |
+| ~~M3~~ | MEDIUM | #800 | **RESOLVED** (PRs #857, #859, #860) |
 | L5 | LOW | — | Open — monitor |
 | L6 | LOW | — | Open — low priority |
 
 ## Suggested remediation order
 
-1. **H1** — default-deny NetworkPolicies for the sensitive namespaces first (authentik, cnpg-system, minio, harbor, monitoring, portainer, tofu). *(biggest gap, GitHub #795)*
-2. **H2** — PSS on app namespaces (PSA labels warn→audit→enforce, or Kyverno non-root first). *(GitHub #796)*
-3. **M3** — registry allowlist + Renovate digest pinning. *(GitHub #800)*
+1. **H2 (continue)** — add `privileged`/`baseline` PSA labels to infra namespaces; review audit/warn baseline; tighten app namespaces to `enforce`. *(GitHub #796)*
+2. **H1** — default-deny NetworkPolicies for the sensitive namespaces first (authentik, cnpg-system, minio, harbor, monitoring, portainer, tofu). *(biggest gap, GitHub #795)*
+3. **M3 follow-up** — promote `restrict-image-registries` from Audit → Enforce once violation baseline is clean; add `require-image-digest` policy.
 4. **L6** — scope longhorn-support-bundle SA down from cluster-admin.
