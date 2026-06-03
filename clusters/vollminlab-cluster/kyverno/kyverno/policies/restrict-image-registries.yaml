@@ -39,31 +39,7 @@ spec:
                   - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
                     operator: Equals
                     value: true
-                  - key: "{{ starts_with(element.image, 'harbor.vollminlab.com/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'ghcr.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'quay.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'registry.k8s.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'docker.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'mirror.gcr.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'oci.trueforge.org/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'reg.kyverno.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'us-docker.pkg.dev/') }}"
+                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"  # yamllint disable-line rule:line-length
                     operator: Equals
                     value: false
 
@@ -89,30 +65,6 @@ spec:
                   - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
                     operator: Equals
                     value: true
-                  - key: "{{ starts_with(element.image, 'harbor.vollminlab.com/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'ghcr.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'quay.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'registry.k8s.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'docker.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'mirror.gcr.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'oci.trueforge.org/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'reg.kyverno.io/') }}"
-                    operator: Equals
-                    value: false
-                  - key: "{{ starts_with(element.image, 'us-docker.pkg.dev/') }}"
+                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"  # yamllint disable-line rule:line-length
                     operator: Equals
                     value: false
