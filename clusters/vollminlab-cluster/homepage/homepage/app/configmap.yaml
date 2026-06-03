@@ -152,6 +152,25 @@ data:
                 href: https://vcenter.vollminlab.com
                 icon: vmware-esxi.png
                 ping: https://vcenter.vollminlab.com
+                widget:
+                  type: prometheusmetric
+                  url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+                  metrics:
+                    - label: CPU
+                      query: round(sum(vmware_host_cpu_usage{cluster_name="vollminlab-ESXi-Cluster"}) / sum(vmware_host_cpu_max{cluster_name="vollminlab-ESXi-Cluster"}) * 100, 0.1)
+                      format:
+                        type: number
+                        suffix: "%"
+                    - label: Memory
+                      query: round(sum(vmware_host_memory_usage{cluster_name="vollminlab-ESXi-Cluster"}) / sum(vmware_host_memory_max{cluster_name="vollminlab-ESXi-Cluster"}) * 100, 0.1)
+                      format:
+                        type: number
+                        suffix: "%"
+                    - label: vmstore
+                      query: round((1 - sum(vmware_datastore_freespace_size{ds_name=~"vmstore1|vmstore2"}) / sum(vmware_datastore_capacity_size{ds_name=~"vmstore1|vmstore2"})) * 100, 0.1)
+                      format:
+                        type: number
+                        suffix: "%"
             - ESXi 01:
                 description: VMware ESXi hypervisor 1
                 href: https://esxi01.vollminlab.com/ui/
