@@ -6,4 +6,6 @@ metadata:
     app: ingress-nginx
     env: production
     category: networking
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
     goldilocks.fairwinds.com/enabled: "true"
