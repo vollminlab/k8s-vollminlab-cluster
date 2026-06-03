@@ -1278,7 +1278,7 @@ jobs:
             fi
             
             # Skip policy files themselves to avoid circular validation
-            if [[ "$file" =~ /kyverno/.*/policies/.*\.ya\?ml$ ]]; then
+            if [[ "$file" =~ /kyverno/.*/policies/.*\.(yaml|yml)$ ]]; then
               echo "Skipping policy file (avoiding circular validation): $file"
               continue
             fi
