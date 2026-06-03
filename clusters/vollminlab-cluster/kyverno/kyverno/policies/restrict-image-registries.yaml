@@ -30,9 +30,13 @@ spec:
             - StatefulSet
             - DaemonSet
       validate:
+        message: >-
+          Image uses a registry not in the approved list. Approved:
+          harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io,
+          mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
+          Short names without an explicit domain are also permitted.
         foreach:
           - list: "spec.template.spec.containers || `[]`"
-            message: "Image '{{ element.image }}' uses an unapproved registry."
             deny:
               conditions:
                 all:
@@ -51,9 +55,13 @@ spec:
             - StatefulSet
             - DaemonSet
       validate:
+        message: >-
+          initContainer image uses a registry not in the approved list. Approved:
+          harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io,
+          mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
+          Short names without an explicit domain are also permitted.
         foreach:
           - list: "spec.template.spec.initContainers || `[]`"
-            message: "initContainer image '{{ element.image }}' uses an unapproved registry."
             deny:
               conditions:
                 all:
