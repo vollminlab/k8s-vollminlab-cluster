@@ -8,9 +8,12 @@ metadata:
     policies.kyverno.io/category: Supply Chain Security
     policies.kyverno.io/severity: medium
     policies.kyverno.io/description: >-
-      Images must be pulled from approved registries. Short names without an
-      explicit registry domain (defaulting to docker.io) are also permitted.
-      Running in Audit mode — violations are reported but not blocked.
+      Images must be pulled from approved registries: harbor.vollminlab.com,
+      ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io,
+      oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev. Short names
+      without an explicit registry domain (defaulting to docker.io) are
+      also permitted. Running in Audit mode — violations are reported but
+      not blocked.
   labels:
     app: kyverno
     env: production
@@ -27,18 +30,40 @@ spec:
             - StatefulSet
             - DaemonSet
       validate:
-        message: "Image '{{ element.image }}' uses an unapproved registry. Allowed: harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev"
+        message: "Image '{{ element.image }}' uses an unapproved registry."
         foreach:
           - list: "request.object.spec.template.spec.containers"
             deny:
               conditions:
                 all:
-                  # Has an explicit registry domain (contains a dot before the first slash)
                   - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
                     operator: Equals
                     value: true
-                  # AND it is not one of the approved registries
-                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"
+                  - key: "{{ starts_with(element.image, 'harbor.vollminlab.com/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'ghcr.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'quay.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'registry.k8s.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'docker.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'mirror.gcr.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'oci.trueforge.org/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'reg.kyverno.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'us-docker.pkg.dev/') }}"
                     operator: Equals
                     value: false
 
@@ -55,7 +80,7 @@ spec:
             operator: GreaterThanOrEquals
             value: 1
       validate:
-        message: "initContainer image '{{ element.image }}' uses an unapproved registry. Allowed: harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev"
+        message: "initContainer image '{{ element.image }}' uses an unapproved registry."
         foreach:
           - list: "request.object.spec.template.spec.initContainers"
             deny:
@@ -64,6 +89,30 @@ spec:
                   - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
                     operator: Equals
                     value: true
-                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"
+                  - key: "{{ starts_with(element.image, 'harbor.vollminlab.com/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'ghcr.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'quay.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'registry.k8s.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'docker.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'mirror.gcr.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'oci.trueforge.org/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'reg.kyverno.io/') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ starts_with(element.image, 'us-docker.pkg.dev/') }}"
                     operator: Equals
                     value: false
