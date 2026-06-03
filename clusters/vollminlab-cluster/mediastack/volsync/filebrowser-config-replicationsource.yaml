@@ -17,10 +17,6 @@ spec:
     copyMethod: Clone
     cacheCapacity: 1Gi
     cacheStorageClassName: longhorn
-    moverPodTemplateSpec:
-      metadata:
-        annotations:
-          velero.io/exclude-from-backup: "true"
     moverSecurityContext:
       runAsUser: 1000
       runAsGroup: 1000
