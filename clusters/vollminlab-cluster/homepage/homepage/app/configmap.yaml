@@ -310,6 +310,22 @@ data:
                 icon: alertmanager.png
                 namespace: monitoring
                 app: alertmanager
+                widget:
+                  type: prometheusmetric
+                  url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+                  metrics:
+                    - label: Firing
+                      query: count(ALERTS{alertstate="firing"}) or vector(0)
+                      format:
+                        type: number
+                    - label: Critical
+                      query: count(ALERTS{alertstate="firing",severity="critical"}) or vector(0)
+                      format:
+                        type: number
+                    - label: Warning
+                      query: count(ALERTS{alertstate="firing",severity="warning"}) or vector(0)
+                      format:
+                        type: number
         - Tools:
             - Homepage:
                 description: This dashboard
@@ -410,12 +426,14 @@ data:
         - search:
             provider: google
             target: _blank
-        - resources:
-            cpu: true
-            memory: true
-            show: true
-            showLabel: true
-            mode: cluster
+        - kubernetes:
+            cluster:
+              show: true
+              cpu: true
+              memory: true
+              showLabel: true
+            nodes:
+              show: false
         - datetime:
             show: true
             showLabel: true
