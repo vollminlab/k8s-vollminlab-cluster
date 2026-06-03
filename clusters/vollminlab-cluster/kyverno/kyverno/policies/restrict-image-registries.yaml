@@ -30,9 +30,9 @@ spec:
             - StatefulSet
             - DaemonSet
       validate:
-        message: "Image '{{ element.image }}' uses an unapproved registry."
         foreach:
           - list: "spec.template.spec.containers || `[]`"
+            message: "Image '{{ element.image }}' uses an unapproved registry."
             deny:
               conditions:
                 all:
@@ -51,9 +51,9 @@ spec:
             - StatefulSet
             - DaemonSet
       validate:
-        message: "initContainer image '{{ element.image }}' uses an unapproved registry."
         foreach:
           - list: "spec.template.spec.initContainers || `[]`"
+            message: "initContainer image '{{ element.image }}' uses an unapproved registry."
             deny:
               conditions:
                 all:
