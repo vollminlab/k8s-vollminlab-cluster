@@ -6,4 +6,6 @@ metadata:
     app: local-path-provisioner
     env: production
     category: storage
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
     goldilocks.fairwinds.com/enabled: "true"

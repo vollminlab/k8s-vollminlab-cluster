@@ -6,4 +6,6 @@ metadata:
     app: kyverno
     env: production
     category: security
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
     goldilocks.fairwinds.com/enabled: "true"

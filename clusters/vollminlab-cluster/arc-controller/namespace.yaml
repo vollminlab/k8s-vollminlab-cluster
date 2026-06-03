@@ -6,4 +6,6 @@ metadata:
     app: arc-controller
     env: production
     category: ci
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
     goldilocks.fairwinds.com/enabled: "true"
