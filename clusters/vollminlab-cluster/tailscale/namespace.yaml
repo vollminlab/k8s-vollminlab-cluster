@@ -6,3 +6,5 @@ metadata:
     app: tailscale-operator
     env: production
     category: networking
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
