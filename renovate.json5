@@ -52,7 +52,8 @@
     {
       "description": "Require manual review for all Flux HelmRelease updates",
       "matchManagers": ["flux"],
-      "automerge": false
+      "automerge": false,
+      "pinDigests": true
     },
     {
       "description": "Flag major updates with an additional label",
