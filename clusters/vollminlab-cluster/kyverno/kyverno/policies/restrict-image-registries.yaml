@@ -29,15 +29,10 @@ spec:
             - Deployment
             - StatefulSet
             - DaemonSet
-      preconditions:
-        all:
-          - key: "{{ request.object.spec.template.spec.containers[] | length(@) }}"
-            operator: GreaterThanOrEquals
-            value: 1
       validate:
         message: "Image '{{ element.image }}' uses an unapproved registry."
         foreach:
-          - list: "request.object.spec.template.spec.containers"
+          - list: "spec.template.spec.containers || `[]`"
             deny:
               conditions:
                 all:
@@ -55,15 +50,10 @@ spec:
             - Deployment
             - StatefulSet
             - DaemonSet
-      preconditions:
-        all:
-          - key: "{{ request.object.spec.template.spec.initContainers[] | length(@) }}"
-            operator: GreaterThanOrEquals
-            value: 1
       validate:
         message: "initContainer image '{{ element.image }}' uses an unapproved registry."
         foreach:
-          - list: "request.object.spec.template.spec.initContainers"
+          - list: "spec.template.spec.initContainers || `[]`"
             deny:
               conditions:
                 all:
