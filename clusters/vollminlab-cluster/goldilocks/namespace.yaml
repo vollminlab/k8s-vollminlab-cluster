@@ -6,3 +6,5 @@ metadata:
     app: goldilocks
     env: production
     category: observability
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

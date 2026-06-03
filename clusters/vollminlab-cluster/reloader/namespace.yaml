@@ -6,3 +6,5 @@ metadata:
     app: reloader
     env: production
     category: core
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
