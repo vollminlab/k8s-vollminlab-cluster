@@ -1,0 +1,73 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    kyverno.io/enable-background: "true"
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Images must be pulled from approved registries: harbor.vollminlab.com,
+      ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io,
+      oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev. Short names
+      without an explicit registry domain (defaulting to docker.io) are
+      also permitted. Running in Audit mode — violations are reported but
+      not blocked.
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: restrict-image-registries-containers
+      match:
+        resources:
+          kinds:
+            - Deployment
+            - StatefulSet
+            - DaemonSet
+      validate:
+        message: >-
+          Image uses a registry not in the approved list. Approved:
+          harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io,
+          mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
+          Short names without an explicit domain are also permitted.
+        foreach:
+          - list: "spec.template.spec.containers || `[]`"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"  # yamllint disable-line rule:line-length
+                    operator: Equals
+                    value: false
+
+    - name: restrict-image-registries-init-containers
+      match:
+        resources:
+          kinds:
+            - Deployment
+            - StatefulSet
+            - DaemonSet
+      validate:
+        message: >-
+          initContainer image uses a registry not in the approved list. Approved:
+          harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io,
+          mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
+          Short names without an explicit domain are also permitted.
+        foreach:
+          - list: "spec.template.spec.initContainers || `[]`"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ regex_match('^[a-z0-9][a-z0-9._-]*\\.[a-z]', element.image) }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ regex_match('^(harbor\\.vollminlab\\.com|ghcr\\.io|quay\\.io|registry\\.k8s\\.io|docker\\.io|mirror\\.gcr\\.io|oci\\.trueforge\\.org|reg\\.kyverno\\.io|us-docker\\.pkg\\.dev)/', element.image) }}"  # yamllint disable-line rule:line-length
+                    operator: Equals
+                    value: false

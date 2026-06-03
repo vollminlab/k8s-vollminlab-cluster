@@ -21,6 +21,7 @@ resources:
   - require-labels.yaml
   - require-resources.yaml
   - restrict-default.yaml
+  - restrict-image-registries.yaml
   - restrict-hostpath.yaml
   - restrict-latest-tag.yaml
   - restrict-loadbalancer.yaml
