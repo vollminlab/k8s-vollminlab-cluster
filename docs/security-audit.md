@@ -34,7 +34,7 @@ The material gaps are **architectural, not "anyone can walk in"**:
 - **Risk:** Kubernetes default is allow-all. Any single compromised pod (e.g. a media app pulling from the internet) can reach every Service in every namespace — Authentik, the CNPG databases, MinIO/S3, the sealing-secrets controller, Longhorn, etc. — enabling secret exfiltration and pivoting. The DMZ is correctly isolated; the *internal* network is wide open.
 - **Recommendation:** Roll out a `default-deny` + explicit-allow baseline per namespace, prioritizing the crown jewels: `authentik`, `sealed-secrets`, `cnpg-system`, `minio`, `harbor`, `monitoring`, `portainer`, `tofu`. Template it with a shared kustomize component (allow DNS to kube-dns, allow ingress-nginx → app port, allow needed egress). Start with the sensitive namespaces, then fill in the rest. The DMZ policies are a good internal model.
 
-### H2 — No Pod Security Standards enforcement on application namespaces *(partially resolved)*
+### H2 — No Pod Security Standards enforcement on application namespaces *(mostly resolved)*
 - **Category:** policy_gap / missing_coverage
 - **Evidence:** Kyverno enforces `restrict-privileged`, `restrict-hostpath`, `require-resources`, `restrict-latest-tag`, `restrict-default-namespace`, `restrict-loadbalancer-services`, `dmz-restrict-external-access`. It does **not** enforce (or even audit) `runAsNonRoot`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `readOnlyRootFilesystem`, or `allowPrivilegeEscalation: false`. Pod Security Admission labels exist only for infra exceptions (`calico-system`, `metallb-system`, `tigera-operator` = `privileged`) and **DMZ = `enforce: baseline`** (baseline does *not* require non-root/seccomp/caps). **No application namespace enforces `restricted`.** ~383 of 464 containers (~83%) carry no explicit securityContext; ~28 explicitly set `runAsNonRoot: false`.
 - **Risk:** A compromised container is far more likely to be running as root with the full capability set and a writable rootfs, turning an app-level RCE into node-level escalation and persistence.
@@ -42,7 +42,11 @@ The material gaps are **architectural, not "anyone can walk in"**:
 
 **Step 1 — RESOLVED 2026-06-03 (PR #858):** `pod-security.kubernetes.io/warn: restricted` and `pod-security.kubernetes.io/audit: restricted` labels added to all 19 application namespaces (1password, authentik, cert-manager, cnpg-system, dmz, external-dns, external-secrets, flux-system, goldilocks, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, renovate, shlink, tailscale, tofu, trivy-system). Infrastructure namespaces with known privilege requirements (kube-system, longhorn-system, ingress-nginx, velero, volsync-system, kyverno, etc.) intentionally excluded — to be addressed in a follow-up PR with appropriate `privileged`/`baseline` levels.
 
-**Remaining:** add PSA labels to infra namespaces; review violation baseline from audit/warn scan; then tighten app namespaces from `warn`/`audit` → `enforce`.
+**Step 2 — RESOLVED 2026-06-03 (PR #864):** PSA labels added to all infrastructure namespaces: `enforce+audit+warn: privileged` for kube-system, longhorn-system, actions-runner-system; `warn+audit: baseline` for ingress-nginx, velero, volsync-system, local-path-storage, arc-controller; `warn+audit: restricted` for kyverno.
+
+**Step 3 — RESOLVED 2026-06-03 (PR #866):** Live pod audit across all `warn+audit=restricted` app namespaces found 9 fully compliant: 1password, cert-manager, cnpg-system, external-dns, external-secrets, goldilocks, kyverno, renovate, tofu — all promoted to `enforce: restricted`. tailscale corrected from `warn+audit=restricted` to `enforce+audit+warn=privileged` (ts-* connector pods require `privileged: true`). Remaining 11 namespaces (authentik, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, shlink, trivy-system + flux-system) stay at `warn+audit=restricted` pending upstream chart securityContext fixes or VolumeSync mover configuration.
+
+**Remaining:** upstream chart fixes to securityContext for authentik, homepage, minio, mediastack apps, monitoring stack (node-exporter/promtail), portainer, reloader, shlink, trivy-system — then promote those to `enforce: restricted`.
 
 > _H3 (Portainer cluster-admin) was withdrawn — see the corrected LOW item below and the Executive summary correction note. Portainer authenticates via Authentik OIDC; its cluster-admin SA is inherent to a k8s management UI, as accepted for Headlamp._
 
@@ -109,14 +113,14 @@ RBAC audit confirmed zero bindings on any default SA — no legitimate API acces
 | ID | Severity | GitHub Issue | Status |
 |----|----------|-------------|--------|
 | H1 | HIGH | #795 | Open — multi-PR effort |
-| H2 | HIGH | #796 | Step 1 done (PR #858) — infra PSA labels + enforce tightening remain |
+| H2 | HIGH | #796 | Steps 1–3 done (PRs #858, #864, #866) — 9 app namespaces at enforce=restricted; 11 remain at warn+audit=restricted pending chart fixes |
 | ~~M3~~ | MEDIUM | #800 | **RESOLVED** (PRs #857, #859, #860) |
 | L5 | LOW | — | Open — monitor |
 | L6 | LOW | — | Open — low priority |
 
 ## Suggested remediation order
 
-1. **H2 (continue)** — add `privileged`/`baseline` PSA labels to infra namespaces; review audit/warn baseline; tighten app namespaces to `enforce`. *(GitHub #796)*
+1. **H2 (remaining)** — fix upstream chart securityContext for authentik, minio, monitoring (node-exporter/promtail), homepage, shlink, reloader, trivy-system; then promote to `enforce: restricted`. *(GitHub #796)*
 2. **H1** — default-deny NetworkPolicies for the sensitive namespaces first (authentik, cnpg-system, minio, harbor, monitoring, portainer, tofu). *(biggest gap, GitHub #795)*
 3. **M3 follow-up** — promote `restrict-image-registries` from Audit → Enforce once violation baseline is clean; add `require-image-digest` policy.
 4. **L6** — scope longhorn-support-bundle SA down from cluster-admin.
