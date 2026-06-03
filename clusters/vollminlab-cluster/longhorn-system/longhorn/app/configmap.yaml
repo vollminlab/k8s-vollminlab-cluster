@@ -13,6 +13,8 @@ data:
       defaultReplicaCount: 3
       defaultDataPath: /var/lib/longhorn
       taintToleration: "dmz=true:NoSchedule;dmz=true:NoExecute"
+      storageOverProvisioningPercentage: 25
+      storageMinimalAvailablePercentage: 25
     longhornManager:
       podLabels:
         app: longhorn-manager
