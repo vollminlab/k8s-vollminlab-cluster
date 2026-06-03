@@ -203,3 +203,27 @@ spec:
           annotations:
             summary: "Longhorn node {{ $labels.node }} storage below 15% free"
             description: "Longhorn storage node {{ $labels.node }} has less than 15% free. New replicas may fail to schedule. Expand the disk or evict replicas."
+
+    - name: minio
+      rules:
+        - alert: MinioDiskUsageHigh
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace="minio"}
+              / kubelet_volume_stats_capacity_bytes{namespace="minio"} < 0.20
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MinIO PVC {{ $labels.persistentvolumeclaim }} below 20% free"
+            description: "MinIO PVC {{ $labels.persistentvolumeclaim }} has {{ $value | humanizePercentage }} free. Review Velero backup TTLs, Loki retention, and kopia GC status."
+
+        - alert: MinioDiskUsageCritical
+          expr: |
+            kubelet_volume_stats_available_bytes{namespace="minio"}
+              / kubelet_volume_stats_capacity_bytes{namespace="minio"} < 0.10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MinIO PVC {{ $labels.persistentvolumeclaim }} below 10% free"
+            description: "MinIO PVC {{ $labels.persistentvolumeclaim }} has {{ $value | humanizePercentage }} free. Immediate action required — node kubelet eviction threshold is ~10-15%."
