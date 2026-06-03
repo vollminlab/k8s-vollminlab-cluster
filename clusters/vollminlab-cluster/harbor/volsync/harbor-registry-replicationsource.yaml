@@ -17,7 +17,3 @@ spec:
     copyMethod: Clone
     cacheCapacity: 1Gi
     cacheStorageClassName: longhorn
-    moverPodTemplateSpec:
-      metadata:
-        annotations:
-          velero.io/exclude-from-backup: "true"
