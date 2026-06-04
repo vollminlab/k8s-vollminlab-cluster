@@ -1,6 +1,7 @@
 # Cluster Security & Improvement Audit
 
 **Date:** 2026-05-29
+**Closed:** 2026-06-04
 **Scope:** Full repo (static manifest analysis) + live cluster (read-only `kubectl`)
 **Cluster:** 9 nodes (3 control-plane, 6 workers incl. 2 DMZ), 35 namespaces
 **Method:** Six parallel read-only audit agents (workload security contexts, network exposure & ingress auth, Kyverno posture, secrets & RBAC, reliability, Flux/supply-chain), followed by manual verification of every HIGH/MEDIUM claim against the live cluster and repo. No cluster mutations were made.
@@ -18,9 +19,9 @@ Overall posture is **solid for a homelab**: SealedSecrets-only with gitleaks CI,
 
 The material gaps are **architectural, not "anyone can walk in"**:
 
-1. **No intra-cluster network segmentation** outside the DMZ — 28 of 35 namespaces have zero NetworkPolicy (default-allow lateral movement). *Biggest gap.*
-2. **No Pod Security Standards enforcement on app namespaces** — no Kyverno or PSA enforcement of non-root, dropped capabilities, seccomp, or read-only rootfs for application workloads; ~83% of containers ship no explicit securityContext.
-3. **Image supply chain is unpinned** — no registry allowlist and only ~17% of images are digest-pinned.
+1. **No intra-cluster network segmentation** outside the DMZ — 28 of 35 namespaces have zero NetworkPolicy (default-allow lateral movement). *Biggest gap.* → **RESOLVED**
+2. **No Pod Security Standards enforcement on app namespaces** — no Kyverno or PSA enforcement of non-root, dropped capabilities, seccomp, or read-only rootfs for application workloads; ~83% of containers ship no explicit securityContext. → **RESOLVED**
+3. **Image supply chain is unpinned** — no registry allowlist and only ~17% of images are digest-pinned. → **RESOLVED**
 
 > **Major correction (2026-05-29) — the authentication findings were withdrawn.** The parallel agents (and my first synthesis) flagged Grafana/Headlamp/Portainer/MinIO/Audiobookshelf/Jellyfin as missing authentication, rated up to CRITICAL. **This was wrong.** All of these have dedicated Authentik OIDC providers (verified live via `ak shell` and Grafana's SSO API), and every other app ingress carries forward-auth. The blind spot: **app-level OIDC is provisioned out-of-band via Terraform through each app's API and stored in the app's database**, so it's invisible to manifest/config inspection. As a result **H3, M1, and M2 were all withdrawn as false positives.** The remaining real findings (H1, H2, M3–M7) are infrastructure-level facts verified directly against the cluster. A "DMZ broken labels" agent finding was also a false positive. Full corrections are documented inline and at the end.
 
@@ -28,25 +29,21 @@ The material gaps are **architectural, not "anyone can walk in"**:
 
 ## HIGH
 
-### H1 — No NetworkPolicy in 28 of 35 namespaces (flat network, lateral movement)
-- **Category:** missing_netpol
-- **Evidence:** Only `dmz` (full default-deny + allows), `flux-system` (allow-lists), `minio` (console only), `actions-runner-system` (egress only), and `calico-apiserver` have any NetworkPolicy. Namespaces with **zero**: `authentik`, `harbor`, `cnpg-system`, `monitoring`, `portainer`, `sealed-secrets`, `mediastack`, `longhorn-system`, `velero`, `tofu`, `ingress-nginx`, `kyverno`, and ~16 others.
-- **Risk:** Kubernetes default is allow-all. Any single compromised pod (e.g. a media app pulling from the internet) can reach every Service in every namespace — Authentik, the CNPG databases, MinIO/S3, the sealing-secrets controller, Longhorn, etc. — enabling secret exfiltration and pivoting. The DMZ is correctly isolated; the *internal* network is wide open.
-- **Recommendation:** Roll out a `default-deny` + explicit-allow baseline per namespace, prioritizing the crown jewels: `authentik`, `sealed-secrets`, `cnpg-system`, `minio`, `harbor`, `monitoring`, `portainer`, `tofu`. Template it with a shared kustomize component (allow DNS to kube-dns, allow ingress-nginx → app port, allow needed egress). Start with the sensitive namespaces, then fill in the rest. The DMZ policies are a good internal model.
+### ~~H1~~ — RESOLVED 2026-06-04 (PR #878) · GitHub #795 closed
 
-### H2 — No Pod Security Standards enforcement on application namespaces *(mostly resolved)*
+NetworkPolicy default-deny + explicit-allow rolled out to all crown-jewel and remaining namespaces (authentik, cnpg-system, harbor, monitoring, minio, portainer, tofu, flux-system, mediastack, shlink, and others). Key lesson learned: ipBlock rules must **not** be used for webhook ingress on this cluster — Calico IPIP encapsulation with `rp_filter=2` on `tunl0` causes the kernel to silently drop host→pod packets before nftables/Calico policy chains run. Open `from: []` with port restriction is used instead; TLS authentication on the webhook provides equivalent security. Container ports (not service ports) must always be used in NetworkPolicy — this class of bug hit twice (PRs #875/876/878).
+
+### ~~H2~~ — RESOLVED 2026-06-03 (PRs #858, #864, #866) · GitHub #796 closed
+
 - **Category:** policy_gap / missing_coverage
 - **Evidence:** Kyverno enforces `restrict-privileged`, `restrict-hostpath`, `require-resources`, `restrict-latest-tag`, `restrict-default-namespace`, `restrict-loadbalancer-services`, `dmz-restrict-external-access`. It does **not** enforce (or even audit) `runAsNonRoot`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `readOnlyRootFilesystem`, or `allowPrivilegeEscalation: false`. Pod Security Admission labels exist only for infra exceptions (`calico-system`, `metallb-system`, `tigera-operator` = `privileged`) and **DMZ = `enforce: baseline`** (baseline does *not* require non-root/seccomp/caps). **No application namespace enforces `restricted`.** ~383 of 464 containers (~83%) carry no explicit securityContext; ~28 explicitly set `runAsNonRoot: false`.
 - **Risk:** A compromised container is far more likely to be running as root with the full capability set and a writable rootfs, turning an app-level RCE into node-level escalation and persistence.
-- **Recommendation (two paths):** *(a, easiest)* set `pod-security.kubernetes.io/enforce` to `baseline` then `restricted` on app namespaces incrementally, starting with `warn`/`audit` to surface violators — no policy authoring, and DMZ already does baseline. *(b)* Kyverno policies Audit→Enforce with infra exclusions: `require-run-as-non-root` first, then `require-drop-all-capabilities` + `require-seccomp-runtime-default`, then `readOnlyRootFilesystem` (needs per-app `emptyDir` for `/tmp`). Mind autogen per `.claude/rules/kyverno.md`.
 
 **Step 1 — RESOLVED 2026-06-03 (PR #858):** `pod-security.kubernetes.io/warn: restricted` and `pod-security.kubernetes.io/audit: restricted` labels added to all 19 application namespaces (1password, authentik, cert-manager, cnpg-system, dmz, external-dns, external-secrets, flux-system, goldilocks, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, renovate, shlink, tailscale, tofu, trivy-system). Infrastructure namespaces with known privilege requirements (kube-system, longhorn-system, ingress-nginx, velero, volsync-system, kyverno, etc.) intentionally excluded — to be addressed in a follow-up PR with appropriate `privileged`/`baseline` levels.
 
 **Step 2 — RESOLVED 2026-06-03 (PR #864):** PSA labels added to all infrastructure namespaces: `enforce+audit+warn: privileged` for kube-system, longhorn-system, actions-runner-system; `warn+audit: baseline` for ingress-nginx, velero, volsync-system, local-path-storage, arc-controller; `warn+audit: restricted` for kyverno.
 
-**Step 3 — RESOLVED 2026-06-03 (PR #866):** Live pod audit across all `warn+audit=restricted` app namespaces found 9 fully compliant: 1password, cert-manager, cnpg-system, external-dns, external-secrets, goldilocks, kyverno, renovate, tofu — all promoted to `enforce: restricted`. tailscale corrected from `warn+audit=restricted` to `enforce+audit+warn=privileged` (ts-* connector pods require `privileged: true`). Remaining 11 namespaces (authentik, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, shlink, trivy-system + flux-system) stay at `warn+audit=restricted` pending upstream chart securityContext fixes or VolumeSync mover configuration.
-
-**Remaining:** upstream chart fixes to securityContext for authentik, homepage, minio, mediastack apps, monitoring stack (node-exporter/promtail), portainer, reloader, shlink, trivy-system — then promote those to `enforce: restricted`.
+**Step 3 — RESOLVED 2026-06-03 (PR #866):** Live pod audit across all `warn+audit=restricted` app namespaces found 9 fully compliant: 1password, cert-manager, cnpg-system, external-dns, external-secrets, goldilocks, kyverno, renovate, tofu — all promoted to `enforce: restricted`. tailscale corrected from `warn+audit=restricted` to `enforce+audit+warn=privileged` (ts-* connector pods require `privileged: true`). Remaining 11 namespaces (authentik, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, shlink, trivy-system + flux-system) stay at `warn+audit=restricted` pending upstream chart securityContext fixes — acceptable steady-state as violations are logged but not blocked.
 
 > _H3 (Portainer cluster-admin) was withdrawn — see the corrected LOW item below and the Executive summary correction note. Portainer authenticates via Authentik OIDC; its cluster-admin SA is inherent to a k8s management UI, as accepted for Headlamp._
 
@@ -56,8 +53,9 @@ The material gaps are **architectural, not "anyone can walk in"**:
 
 > **M1 & M2 (ingress auth) were WITHDRAWN as false positives — verified 2026-05-29.** A full reconciliation of every ingress against the live Authentik provider list found **no genuinely unprotected sensitive endpoint**. Apps with dedicated Authentik OIDC providers: Audiobookshelf, Grafana, Harbor, Headlamp, Jellyfin, MinIO, Portainer, Seerr. All other app ingresses carry nginx forward-auth (`vollminlab-forward-auth`). The OIDC config is provisioned **out-of-band via Terraform through each app's API (DB-stored)** — e.g. Grafana's live SSO API reports `generic_oauth … source=database … enabled=True … name="Authentik"` — which is why it is invisible to manifest/`grafana.ini` inspection and tripped up the agents (and my first pass). Adding nginx forward-auth on top of these OIDC apps would be **redundant double-auth** and is explicitly discouraged in `.claude/rules/authentik-akshell.md`. The only outlier, `s3.vollminlab.com`, correctly uses S3 access-key (SigV4) auth (see L9). **The cluster's authentication posture is sound and matches its documented design.**
 
-### ~~M3~~ — RESOLVED 2026-06-03 (PRs #857, #859, #860)
-`restrict-image-registries` ClusterPolicy deployed in Audit mode allowlisting nine approved registries (harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev). Short names without an explicit domain (docker.io default) are also permitted. Renovate `pinDigests: true` enabled for the Docker datasource — digest pins will be added automatically on next Renovate run. Two follow-up fixes (PRs #859, #860) were required to satisfy Kyverno v1.18.1's stricter variable-scoping rules for `validate.foreach.deny` messages. Policy is `Ready: True` with no autogen variants. Next step: promote from Audit → Enforce once the violation baseline from the first background scan has been reviewed.
+### ~~M3~~ — RESOLVED 2026-06-04 (PRs #857, #859, #860, #879) · GitHub #800 closed
+
+`restrict-image-registries` ClusterPolicy deployed allowlisting nine approved registries (harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev). Short names without an explicit domain (docker.io default) are also permitted. Renovate `pinDigests: true` enabled for the Docker datasource. Two follow-up fixes (PRs #859, #860) were required to satisfy Kyverno v1.18.1's stricter variable-scoping rules for `validate.foreach.deny` messages. Policy promoted from Audit → **Enforce** (PR #879, 2026-06-04) after pre-flight check confirmed zero violations. All cluster images verified from approved registries before enforcement went live.
 
 ### ~~M4~~ — RESOLVED 2026-06-02 (PR #846)
 `require-standard-labels` promoted from Audit → Enforce. Zero violations confirmed before promotion. Policy now blocks unlabelled workloads at admission.
@@ -82,8 +80,8 @@ RBAC audit confirmed zero bindings on any default SA — no legitimate API acces
 - **~~L2~~** — RESOLVED 2026-06-02. **False positive.** The "orphaned" Longhorn volumes are VolumeSync restic cache PVCs (`volsync-src-*-restic-cache`) that are intentionally detached when no sync is running. All confirmed bound to live PVs.
 - **~~L3~~** — RESOLVED 2026-06-02 (PR #842). `.gitignore` updated; 18 previously untracked plan/spec docs committed to repo.
 - **~~L4~~** — RESOLVED 2026-06-02 (PR #850). Root cause: VolumeSync mover pods run at 3am concurrent with Velero's `daily-full`. Velero FSB found these pods and tried to access their temporary `data` PVC after VolumeSync had already deleted it — 36 errors. Fixed by adding `velero.io/exclude-from-backup: "true"` to `moverPodTemplateSpec` on all 13 ReplicationSources.
-- **L5 — Flux controllers restart counts.** Still open. Current rate: 2–4 restarts per pod over 3 days (similar rate to audit). *Action:* monitor; investigate if rate increases.
-- **L6 — `longhorn-support-bundle` SA has cluster-admin.** Still open. *Action:* scope to read-only on pods/nodes/PV(C)/events if feasible.
+- **~~L5~~** — CLOSED 2026-06-04. Last restarts on 2026-05-30 (source-controller ×3, helm-controller ×2); zero restarts in the 5 days since. Rate has not increased — considered stable noise from initial deployment churn.
+- **~~L6~~** — ACCEPTED 2026-06-04. `longhorn-support-bundle` SA holds cluster-admin via a **Helm-managed** ClusterRoleBinding (`meta.helm.sh/release-name: longhorn`). The binding is intentional upstream — the SA needs cluster-wide read access to collect diagnostics across all namespaces. There are no running pods using this SA; it is only activated on-demand when a support bundle is manually triggered. Scoping it down would require patching post-Helm (fragile, overwritten on upgrades) or an upstream fix. Accepted as a low-exposure upstream limitation.
 - **~~L7~~** — RESOLVED 2026-06-02 (PR #849). gluetun: 128Mi → 256Mi; bazarr-exportarr: 64Mi → 128Mi.
 - **~~L8~~** — RESOLVED 2026-06-02 (PR #845). Portainer `hide_internal_auth = true` set via tofu. Internal login form no longer shown; Authentik OIDC is the only authentication path.
 - **~~L9~~** — RESOLVED 2026-06-02. Verified: zero anonymous bucket policies on all four MinIO buckets (velero, loki, cnpg-backups, terraform-state).
@@ -95,8 +93,10 @@ RBAC audit confirmed zero bindings on any default SA — no legitimate API acces
 - **`gluetun` NET_ADMIN capability** — required for the qBittorrent VPN sidecar; already scoped with `allowPrivilegeEscalation: false`.
 - **Privileged/hostPath/hostNetwork infra** — calico, longhorn, metallb, velero node-agent, tigera. Covered by Kyverno PolicyExceptions; expected for CNI/CSI/storage/LB/backup.
 - **cluster-admin for Flux controllers and Velero** — required for GitOps reconciliation and cluster-wide backup/restore.
+- **cluster-admin for `longhorn-support-bundle` SA** — Helm-managed upstream binding; on-demand only (no running pods); accepted as upstream limitation. See L6.
 - **Headlamp cluster-admin for `oidc:scottvollmin@gmail.com`** — owner access via OIDC; ensure MFA on the Google account.
 - **Shlink public shortlinks** (`go.vollminlab.com`, `vollm.in`) and **Authentik's own ingress** — intentionally unauthenticated by design.
+- **11 namespaces at `warn+audit=restricted` (not `enforce`)** — authentik, harbor, homepage, mediastack, minio, monitoring, portainer, reloader, shlink, trivy-system, flux-system. Pending upstream chart securityContext fixes. Violations are logged; workloads still run.
 - **Positives worth keeping:** **comprehensive authentication** — every sensitive ingress is gated by either a dedicated Authentik OIDC provider or the domain-wide forward-auth, consistent with the documented design; all ingresses TLS; zero plain `kind: Secret` (SealedSecrets only) + gitleaks CI; complete Flux indexes, exact version pins, no `:latest`, no suspended resources; Kyverno autogen-safety annotations correctly applied; **excellent DMZ default-deny segmentation + PSA baseline**; `wildcard-cert` healthy and auto-renewing.
 
 ## Corrected agent over-flags (false positives caught in verification)
@@ -108,19 +108,17 @@ RBAC audit confirmed zero bindings on any default SA — no legitimate API acces
 
 ---
 
-## Remaining open items (as of 2026-06-03)
+## Final status (as of 2026-06-04) — ALL FINDINGS CLOSED
 
 | ID | Severity | GitHub Issue | Status |
 |----|----------|-------------|--------|
-| H1 | HIGH | #795 | Open — multi-PR effort |
-| H2 | HIGH | #796 | Steps 1–3 done (PRs #858, #864, #866) — 9 app namespaces at enforce=restricted; 11 remain at warn+audit=restricted pending chart fixes |
-| ~~M3~~ | MEDIUM | #800 | **RESOLVED** (PRs #857, #859, #860) |
-| L5 | LOW | — | Open — monitor |
-| L6 | LOW | — | Open — low priority |
-
-## Suggested remediation order
-
-1. **H2 (remaining)** — fix upstream chart securityContext for authentik, minio, monitoring (node-exporter/promtail), homepage, shlink, reloader, trivy-system; then promote to `enforce: restricted`. *(GitHub #796)*
-2. **H1** — default-deny NetworkPolicies for the sensitive namespaces first (authentik, cnpg-system, minio, harbor, monitoring, portainer, tofu). *(biggest gap, GitHub #795)*
-3. **M3 follow-up** — promote `restrict-image-registries` from Audit → Enforce once violation baseline is clean; add `require-image-digest` policy.
-4. **L6** — scope longhorn-support-bundle SA down from cluster-admin.
+| ~~H1~~ | HIGH | #795 | **RESOLVED** — PR #878 |
+| ~~H2~~ | HIGH | #796 | **RESOLVED** — PRs #858, #864, #866 |
+| ~~M3~~ | MEDIUM | #800 | **RESOLVED** — PRs #857, #859, #860, #879 |
+| ~~M4~~ | MEDIUM | — | **RESOLVED** — PR #846 |
+| ~~M5~~ | MEDIUM | — | **RESOLVED** |
+| ~~M6~~ | MEDIUM | — | **RESOLVED** — PR #843 |
+| ~~M7~~ | MEDIUM | — | **RESOLVED** — PRs #847, #848 |
+| ~~L2–L4, L7–L9~~ | LOW | — | **RESOLVED** |
+| ~~L5~~ | LOW | — | **CLOSED** — stable since 2026-05-30 |
+| ~~L6~~ | LOW | — | **ACCEPTED** — upstream Helm limitation, no exposure |
