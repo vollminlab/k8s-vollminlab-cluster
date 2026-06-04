@@ -118,7 +118,12 @@ spec:
         - protocol: TCP
           port: 9090
 ---
-# Allow kube-apiserver (CP nodes) to call prometheus-operator admission webhook (port 443)
+# Allow kube-apiserver (CP nodes) to call prometheus-operator admission webhook.
+# Container port is 10250 (named "https"); service maps 443→10250. Port 443 is NOT
+# a container port and must not appear here.
+#
+# ipBlock is NOT used — see cnpg-system allow-webhook-ingress for the explanation.
+# Calico IPIP + rp_filter=2 silently drops host→pod ipBlock rules for cross-node traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -133,16 +138,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - from:
-        - ipBlock:
-            cidr: 192.168.152.8/32
-        - ipBlock:
-            cidr: 192.168.152.9/32
-        - ipBlock:
-            cidr: 192.168.152.10/32
-      ports:
-        - protocol: TCP
-          port: 443
+    - ports:
         - protocol: TCP
           port: 10250
 ---

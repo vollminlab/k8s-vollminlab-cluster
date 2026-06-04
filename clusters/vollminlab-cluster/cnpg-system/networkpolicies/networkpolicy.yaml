@@ -44,6 +44,13 @@ spec:
 # Allow kube-apiserver (CP nodes) to call CNPG admission webhook.
 # Service port is 443 but container (webhook-server) listens on 9443 — NetworkPolicy
 # is evaluated post-DNAT at the pod interface, so container port must be used.
+#
+# ipBlock is NOT used here even though only CP nodes call the webhook. Calico IPIP
+# encapsulation causes the kernel to evaluate rp_filter on the tunl0 interface before
+# nftables chains run; strict RPF (rp_filter=2) drops the decapsulated inner packet
+# when the source IP's return route uses the physical NIC rather than tunl0. This
+# silently kills all host→pod ipBlock rules for cross-node traffic. Open from: [] is
+# safe because the webhook is TLS-authenticated and kube-apiserver is the only caller.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -58,14 +65,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - from:
-        - ipBlock:
-            cidr: 192.168.152.8/32
-        - ipBlock:
-            cidr: 192.168.152.9/32
-        - ipBlock:
-            cidr: 192.168.152.10/32
-      ports:
+    - ports:
         - protocol: TCP
           port: 9443
 ---
