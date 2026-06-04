@@ -8,6 +8,7 @@ metadata:
     category: observability
 resources:
   - namespace.yaml
+  - networkpolicies
   - harbor-vollminlab-pull-externalsecret.yaml
   - b2-exporter/app
   - kube-prometheus-stack/app

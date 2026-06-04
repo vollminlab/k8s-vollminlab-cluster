@@ -4,5 +4,6 @@ metadata:
   name: portainer
 resources:
   - namespace.yaml
+  - networkpolicies
   - pvc.yaml
   - portainer
