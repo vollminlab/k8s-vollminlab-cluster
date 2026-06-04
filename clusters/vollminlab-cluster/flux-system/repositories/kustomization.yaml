@@ -30,6 +30,7 @@ resources:
   - kyverno-policyreporter-helmrepository.yaml
   - local-path-provisioner-gitrepository.yaml
   - longhorn-helmrepository.yaml
+  - longhorn-rebalancing-controller-ocirepository.yaml
   - metallb-helmrepository.yaml
   - metrics-server-helmrepository.yaml
   - minecraft-helmrepository.yaml

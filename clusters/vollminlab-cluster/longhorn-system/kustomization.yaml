@@ -6,3 +6,4 @@ resources:
   - namespace.yaml
   - ./longhorn/app
   - ./longhorn-trim/app
+  - ./longhorn-rebalancing-controller/app
