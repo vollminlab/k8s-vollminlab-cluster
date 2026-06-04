@@ -66,6 +66,9 @@ spec:
 # Allow external access via LoadBalancer (192.168.152.245). Harbor has no Ingress resource
 # — all traffic enters through the LoadBalancer. externalTrafficPolicy: Cluster means kube-proxy
 # SNATs external clients to the node IP, so source appears as 192.168.152.0/24 at the pod.
+# Pod-originated VIP traffic (e.g. ARC runners) takes a different path: kube-proxy KUBE-EXT
+# chain DNATs the VIP then masquerades using the tunl0 interface IP (172.18.x.x, Calico IPIP
+# tunnel, pod CIDR 172.18.0.0/16) — NOT the node eth0 IP. The second rule covers this case.
 # Harbor nginx container ports are 8080 (HTTP) and 8443 (HTTPS).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -87,6 +90,12 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+        - protocol: TCP
+          port: 8443
+    - from:
+        - ipBlock:
+            cidr: 172.18.0.0/16
+      ports:
         - protocol: TCP
           port: 8443
 ---
