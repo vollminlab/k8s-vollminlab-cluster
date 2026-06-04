@@ -40,16 +40,24 @@ spec:
       ports:
         - port: 6443
           protocol: TCP
-    # Harbor registry — target harbor namespace pods directly.
-    # Calico evaluates NetworkPolicy after kube-proxy DNAT, so ipBlock on the
-    # LoadBalancer VIP (192.168.152.245) never matches — the destination is already
-    # rewritten to the harbor-nginx pod IP (172.18.x.x) before Calico sees the packet.
+    # Harbor registry — two rules required because MetalLB L2 and ClusterIP have different DNAT timing.
+    # ClusterIP (10.102.38.65): kube-proxy DNAT rewrites 443→8443 locally before Calico evaluates;
+    # Calico sees post-DNAT pod IP → covered by the namespaceSelector rule.
+    # MetalLB VIP (192.168.152.245): ARP routes the packet to the MetalLB speaker node before local
+    # kube-proxy DNAT can fire; Calico sees the pre-DNAT destination (192.168.152.245:443) on the
+    # originating node → must use ipBlock on the VIP with the pre-DNAT service port (443).
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: harbor
       ports:
         - port: 8443
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 192.168.152.245/32
+      ports:
+        - port: 443
           protocol: TCP
     # Public internet — GitHub, OCI registries, apt mirrors, etc.
     # All RFC 1918 ranges blocked to prevent accessing internal cluster services.
