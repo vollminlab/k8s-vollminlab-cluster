@@ -64,8 +64,9 @@ spec:
     - to:
         - podSelector: {}
 ---
-# Allow ingress-nginx to reach Grafana (80), Prometheus (9090), AlertManager (9093),
-# VictoriaMetrics (8428)
+# Allow ingress-nginx to reach Grafana (3000), Prometheus (9090), AlertManager (9093),
+# VictoriaMetrics (8428). Grafana's container port is 3000 (service maps 80→3000;
+# ingress-nginx connects to the container port directly via EndpointSlices).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -86,7 +87,7 @@ spec:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
         - protocol: TCP
-          port: 80
+          port: 3000
         - protocol: TCP
           port: 8428
         - protocol: TCP
