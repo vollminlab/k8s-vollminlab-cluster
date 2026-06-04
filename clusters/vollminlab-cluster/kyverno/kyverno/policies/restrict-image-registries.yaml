@@ -12,14 +12,13 @@ metadata:
       ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io,
       oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev. Short names
       without an explicit registry domain (defaulting to docker.io) are
-      also permitted. Running in Audit mode — violations are reported but
-      not blocked.
+      also permitted.
   labels:
     app: kyverno
     env: production
     category: security
 spec:
-  validationFailureAction: Audit
+  validationFailureAction: Enforce
   background: true
   rules:
     - name: restrict-image-registries-containers
