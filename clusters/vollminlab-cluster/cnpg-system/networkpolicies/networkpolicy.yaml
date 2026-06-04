@@ -41,7 +41,9 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# Allow kube-apiserver (CP nodes) to call CNPG admission webhook (cnpg-webhook-service:443)
+# Allow kube-apiserver (CP nodes) to call CNPG admission webhook.
+# Service port is 443 but container (webhook-server) listens on 9443 — NetworkPolicy
+# is evaluated post-DNAT at the pod interface, so container port must be used.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -65,7 +67,7 @@ spec:
             cidr: 192.168.152.10/32
       ports:
         - protocol: TCP
-          port: 443
+          port: 9443
 ---
 # Allow Prometheus scraping from monitoring namespace
 apiVersion: networking.k8s.io/v1
@@ -124,3 +126,25 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+---
+# Allow CNPG operator to reach instance manager status API (port 8000) on database
+# pods in any namespace (authentik, harbor, mediastack, shlink, etc.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-instance-status-egress
+  namespace: cnpg-system
+  labels:
+    app: cnpg
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
