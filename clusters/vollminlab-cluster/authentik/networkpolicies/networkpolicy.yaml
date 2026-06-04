@@ -63,7 +63,9 @@ spec:
     - to:
         - podSelector: {}
 ---
-# Allow ingress-nginx to reach web UI (80/443) and auth-url proxy (9000)
+# Allow ingress-nginx to reach authentik. NetworkPolicy is post-DNAT at the pod,
+# so container ports apply: 9000 (HTTP), 9443 (HTTPS passthrough), 9300 (metrics).
+# Ports 80/443 are service-level; no container listens on them.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -83,10 +85,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
       ports:
-        - protocol: TCP
-          port: 80
-        - protocol: TCP
-          port: 443
         - protocol: TCP
           port: 9000
         - protocol: TCP
