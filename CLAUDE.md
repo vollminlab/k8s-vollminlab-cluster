@@ -13,6 +13,7 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 - `.claude/rules/storage.md` — Longhorn capacity check before PVC sizing, replica math, online resize
 - `.claude/rules/velero.md` — backup schedules, circular backup check, kopia GC, status commands
 - `.claude/rules/git-workflow.md` — branch naming, session hygiene, /compact reminders
+- `.claude/rules/networkpolicy.md` — container port verification, per-namespace port table, pre-PR checklist
 
 **Operational runbooks** (reference when needed, not loaded every session):
 `docs/runbooks/` — flux-templates, kyverno-recovery, homepage, external-dns, incidents

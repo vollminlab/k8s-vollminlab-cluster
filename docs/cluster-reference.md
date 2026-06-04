@@ -737,6 +737,29 @@ Two separate tunnels are deployed — one per externally-accessible media servic
 
 ---
 
+## CNPG (CloudNative-PG)
+
+Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink).
+
+### Container ports — cnpg-system operator pod
+
+| Port | Name | Purpose | NetworkPolicy rule |
+|------|------|---------|-------------------|
+| 9443 | `webhook-server` | Admission webhook — kube-apiserver calls this when validating CNPG CRs | `allow-webhook-ingress` ingress from CP node IPs |
+| 8080 | `metrics` | Prometheus metrics scrape | `allow-monitoring-scrape` ingress from `monitoring` ns |
+
+### Container ports — CNPG instance pods (all namespaces)
+
+| Port | Name | Purpose | NetworkPolicy rule |
+|------|------|---------|-------------------|
+| 5432 | `postgresql` | Client connections | per-namespace allow rule |
+| 9187 | `metrics` | Prometheus metrics | per-namespace allow rule |
+| 8000 | `status` | Instance manager status API — polled by CNPG operator | `allow-instance-status-egress` egress from cnpg-system |
+
+**Important**: `cnpg-webhook-service` exposes port `443` → `targetPort: 9443`. NetworkPolicies must use the container port `9443`, not the service port `443`. See `.claude/rules/networkpolicy.md` for the port-trap explanation.
+
+---
+
 ## Media Stack
 
 All apps in the `mediastack` namespace. Shared SMB storage mounted at the namespace level. App configs stored on Longhorn (5Gi RWO each, except Tautulli at 1Gi).
