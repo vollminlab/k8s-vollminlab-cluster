@@ -1,0 +1,170 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow all monitoring pods to communicate (Prometheus↔AlertManager, promtail→Loki,
+# Prometheus→VictoriaMetrics remote-write, Grafana→Prometheus datasource)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Allow ingress-nginx to reach Grafana (3000), Prometheus (9090), AlertManager (9093),
+# VictoriaMetrics (8428). Grafana's container port is 3000 (service maps 80→3000;
+# ingress-nginx connects to the container port directly via EndpointSlices).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 8428
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9093
+---
+# Allow homepage to query Prometheus for dashboard widgets (prometheusmetric widget)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homepage-prometheus
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: homepage
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+# Allow kube-apiserver (CP nodes) to call prometheus-operator admission webhook (port 443)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webhook-ingress
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.168.152.8/32
+        - ipBlock:
+            cidr: 192.168.152.9/32
+        - ipBlock:
+            cidr: 192.168.152.10/32
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 10250
+---
+# Allow all egress: Prometheus scrapes pods in all namespaces and node-level endpoints
+# (kubelet 10250, node-exporter 9100, etcd 2381, kube-apiserver 6443);
+# AlertManager sends webhook alerts; vmware-exporter calls vCenter; b2-exporter calls B2 API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
