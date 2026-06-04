@@ -334,15 +334,15 @@ data:
                   url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
                   metrics:
                     - label: Firing
-                      query: count(ALERTS{alertstate="firing"}) or vector(0)
+                      query: count(ALERTS{alertstate="firing",alertname!~"Watchdog|InfoInhibitor"}) or vector(0)
                       format:
                         type: number
                     - label: Critical
-                      query: count(ALERTS{alertstate="firing",severity="critical"}) or vector(0)
+                      query: count(ALERTS{alertstate="firing",severity="critical",alertname!~"Watchdog|InfoInhibitor"}) or vector(0)
                       format:
                         type: number
                     - label: Warning
-                      query: count(ALERTS{alertstate="firing",severity="warning"}) or vector(0)
+                      query: count(ALERTS{alertstate="firing",severity="warning",alertname!~"Watchdog|InfoInhibitor"}) or vector(0)
                       format:
                         type: number
         - Tools:
