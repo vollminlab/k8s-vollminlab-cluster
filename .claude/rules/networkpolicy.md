@@ -75,6 +75,7 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `flux-system` | `source-controller` | 9090 | artifact serving | allow-source-controller-ingress ingress |
 | `monitoring` | `kube-prometheus-stack-operator` | 10250 | prometheus-operator admission webhook | allow-webhook-ingress ingress (open source) |
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
+| `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
