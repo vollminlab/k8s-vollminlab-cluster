@@ -181,7 +181,8 @@ spec:
         - protocol: TCP
           port: 9000
 ---
-# Allow external egress: Cloudflare tunnel (443), SMTP (587/465), OIDC providers
+# Allow external egress: Cloudflare tunnel (7844 QUIC/http2 + 443 fallback),
+# SMTP (587/465), OIDC providers (443)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -199,6 +200,14 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+    # cloudflared connects to the Cloudflare edge on 7844 (QUIC over UDP,
+    # http2 over TCP). Without this, the tunnel falls back to a single
+    # TCP-443 connection and Cloudflare reports it degraded (1/4 HA conns).
+    - ports:
+        - protocol: TCP
+          port: 7844
+        - protocol: UDP
+          port: 7844
     - ports:
         - protocol: TCP
           port: 587
