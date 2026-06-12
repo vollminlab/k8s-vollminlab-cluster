@@ -113,9 +113,19 @@ Deploy the OpenTelemetry Operator + a collector pipeline:
 - Export to Grafana Tempo (preferred for Grafana integration)
 - Foundation for distributed tracing across the service mesh
 
+### 2.5 VictoriaMetrics — Long-Term Metrics Store
+
+**Status:** `done` — PRs #812 (design spec), #831, #837
+
+VictoriaMetrics single-node (`victoria-metrics-single`) deployed in the `monitoring` namespace as the long-term metrics store.
+
+- kube-prometheus-stack `remote_write`s into VM; Prometheus local retention trimmed to 24h while VM holds long-term history
+- Grafana's `prometheus` datasource UID points at VM, so existing dashboards query the long-term store transparently
+- VM self-metrics scraped via ServiceMonitor (PR #837)
+
 ---
 
-## Phase 2.5 — Flux Upgrade (v2.4 → v2.8)
+## Phase 2.6 — Flux Upgrade (v2.4 → v2.8)
 
 **Status:** `done`
 
@@ -228,14 +238,14 @@ Stakater Reloader deployed in `reloader` namespace, watching all namespaces. Res
 
 ### 3.8 external-secrets + 1Password Connect
 
-**Status:** `planned`
+**Status:** `done` — PRs #818–#830
 
-Replaces the SealedSecrets workflow over time. External Secrets Operator syncs 1Password vault items directly into Kubernetes Secrets and rotates them automatically when the source changes — no `kubeseal` step.
+Replaced the SealedSecrets workflow entirely. External Secrets Operator syncs 1Password vault items directly into Kubernetes Secrets and rotates them automatically when the source changes — no `kubeseal` step.
 
-- Deploy 1Password Connect server (dedicated namespace)
-- Deploy External Secrets Operator with a 1Password `ClusterSecretStore`
-- Migrate namespaces incrementally; SealedSecrets and external-secrets can coexist during transition
-- Long-term: decommission `sealed-secrets` controller once all secrets migrated
+- 1Password Connect server deployed in the `1password` namespace; External Secrets Operator in `external-secrets`
+- `ClusterSecretStore` backed by 1Password Connect; all secrets migrated to `ExternalSecret` CRs incrementally
+- `sealed-secrets` controller **removed 2026-05-31** once all secrets were migrated; cluster is fully on ESO + 1Password Connect
+- Vault item names and field labels are now cluster infrastructure — see the 1Password naming rules in `secrets.md`
 
 ---
 
@@ -336,30 +346,32 @@ Controlled fault injection for resilience testing (pod kill, network partition, 
 
 Normalize all nodes to current versions before the CNI migration. Three sub-items sequenced to allow bundling reboots efficiently.
 
-**Current state (2026-05-19):**
+**Current state (2026-06-12, verified all 9 nodes):**
+
+K8s, kernel, and containerd are now uniform cluster-wide. The only remaining drift is Ubuntu **patch** level on the three control-plane nodes.
 
 | Node | K8s | Kernel | Ubuntu | containerd |
 | --- | --- | --- | --- | --- |
-| k8scp01 | v1.33.12 | 6.8.0-106 | 24.04.2 | 1.7.27 |
-| k8scp02 | v1.33.12 | 6.8.0-85 | 24.04.1 | 1.7.27 |
-| k8scp03 | v1.33.12 | 6.8.0-87 | 24.04.1 | 1.7.27 |
-| k8sworker01 | v1.33.12 | 6.8.0-107 | 24.04.4 | 1.7.27 |
-| k8sworker02 | v1.33.12 | 6.8.0-107 | 24.04.1 | 1.7.27 |
-| k8sworker03 | v1.33.12 | 6.8.0-107 | 24.04.1 | 1.7.27 |
-| k8sworker04 | v1.33.12 | 6.8.0-110 | 24.04.4 | **2.2.3** |
-| k8sworker05 | v1.33.12 | 6.8.0-87 | 24.04.3 | 1.7.27 |
-| k8sworker06 | v1.33.12 | 6.8.0-106 | 24.04.1 | 1.7.27 |
+| k8scp01 | v1.34.8 | 6.8.0-117 | 24.04.2 | 2.2.4 |
+| k8scp02 | v1.34.8 | 6.8.0-117 | 24.04.1 | 2.2.4 |
+| k8scp03 | v1.34.8 | 6.8.0-117 | 24.04.1 | 2.2.4 |
+| k8sworker01 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8sworker02 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8sworker03 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8sworker04 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8sworker05 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8sworker06 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
 
 ### 7.1 Kubernetes upgrade (1.32 → current stable)
 
 **Status:** `in-progress`
 
-Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28 — hops 2–4 must complete before then.
+Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28; the cluster is already off it (on 1.34.8), so the deadline is cleared. Hops 3–4 remain.
 
 | Hop | Target | Method | Status |
 | --- | --- | --- | --- |
 | 1 | 1.33.12 | Manual node-by-node | `done` — 2026-05-19 |
-| 2 | 1.34.x | Ansible `k8s-upgrade.yml` | `planned` |
+| 2 | 1.34.8 | Ansible `k8s-upgrade.yml` | `done` — all 9 nodes |
 | 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` |
 | 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` |
 
@@ -375,11 +387,11 @@ All 9 nodes are on containerd **v2.2.4** (docker.com apt repo). The 6 workers we
 
 ### 7.3 Kernel and OS normalization
 
-**Status:** `planned` (bundle with 7.2)
+**Status:** `in-progress` — kernel done; only CP userspace `apt upgrade` remains
 
 Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
 
-> **Status (2026-05-30, verified all 9 nodes):** kernel is already uniform at **6.8.0-117-generic** across every node (the prior 6.8.0-85→110 spread is closed — likely the 2026-05-30 maintenance reboots). Only Ubuntu **patch** levels still vary: 24.04.1 (k8scp02/03), 24.04.2 (k8scp01), 24.04.4 (all workers). Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace.
+> **Status (2026-06-12, re-verified all 9 nodes):** kernel is uniform at **6.8.0-117-generic** across every node and containerd is uniform at **v2.2.4** — those are done. The only remaining drift is Ubuntu **patch** level: the three control-plane nodes are on 24.04.1 (k8scp02/03) / 24.04.2 (k8scp01) while all six workers are on 24.04.4. Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace (one at a time, Longhorn health gate between reboots).
 
 - One node at a time; same Longhorn health gate as the other node-maintenance playbooks
 
@@ -483,3 +495,6 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Trivy Operator | PRs #721–#722, #724 — runtime vulnerability + config audit scanning, all nodes tolerated |
 | Stakater Reloader | This PR — auto rolling restarts on ConfigMap/Secret changes, opt-in via annotation |
 | Harbor Docker Hub pull-through cache | `dockerhub-proxy` Harbor proxy-cache project (authenticated read-only PAT) + containerd registry mirror on all 9 nodes routing `docker.io` through Harbor; eliminates anonymous 429 `ImagePullBackOff` storms on mass reschedule. k8s repo PR #809 (Harbor proxy via tofu) + ansible-playbooks PRs #9/#10 (containerd mirror playbook). Runbook: `docs/runbooks/harbor-dockerhub-proxy-cache.md` |
+| external-secrets + 1Password Connect | PRs #818–#830 — ESO + 1Password Connect replaced SealedSecrets entirely; `sealed-secrets` controller removed 2026-05-31 |
+| VictoriaMetrics long-term metrics store | PRs #812/#831/#837 — `victoria-metrics-single` in `monitoring`; Prometheus remote_write + 24h retention, Grafana datasource swap, self-metrics ServiceMonitor |
+| K8s upgrade hop 2 (1.33.12 → 1.34.8) | All 9 nodes upgraded via hardened Ansible `k8s-upgrade.yml` (`serial:1`, `--disable-eviction`, Longhorn health gate); cleared the 1.33 EOL deadline |
