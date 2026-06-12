@@ -10,7 +10,7 @@ Spawn a Plan agent before acting when **two or more** of these are true:
 
 - The task touches 3+ files across different namespaces or directories
 - You don't know which files need to change
-- The task involves risk (SealedSecrets, Kyverno policies, Flux bootstrap, RBAC)
+- The task involves risk (ExternalSecrets/ESO, Kyverno policies, Flux bootstrap, RBAC)
 - There are sequential dependencies that aren't obvious
 
 **Skip the Plan agent for:** single-file edits, chart version bumps, label fixes, adding one resource to a known namespace — act directly.
@@ -36,7 +36,7 @@ Parallelize when work is genuinely independent:
 - Reading N files before editing → spawn all reads in parallel
 - Independent concerns in one PR → parallel reads, then sequential edits
 
-Never parallelize when step B depends on step A (e.g., seal a secret → then commit it).
+Never parallelize when step B depends on step A (e.g., save a 1Password item → then reference it from an ExternalSecret).
 
 ## Subagent types
 

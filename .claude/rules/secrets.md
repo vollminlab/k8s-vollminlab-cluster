@@ -1,23 +1,47 @@
 ---
-description: SealedSecrets workflow — how to create, seal, and manage secrets in k8s-vollminlab-cluster
+description: ESO + 1Password Connect workflow — how to create, reference, and manage secrets in k8s-vollminlab-cluster
 ---
 
 # Secrets Rules
 
+## How secrets work in this cluster (ESO + 1Password Connect)
+
+Every Kubernetes secret in this cluster is materialized by the **External Secrets Operator (ESO)**
+from **1Password** via **1Password Connect**. The migration off SealedSecrets is complete
+(controller removed 2026-05-31) — **there are no SealedSecrets in the repo and none may be added.**
+
+The chain:
+
+```
+1Password (Homelab vault)
+   └─ 1Password Connect  (1password ns: onepassword-connect HelmRelease)
+        └─ ClusterSecretStore  (onepassword-cluster-store)
+             └─ ExternalSecret  (one per app, in the app's own namespace)
+                  └─ Secret      (materialized by ESO, creationPolicy: Owner)
+                       └─ consumed by the app via secretKeyRef / valuesFrom
+```
+
+- **Source of truth = 1Password.** The repo holds only `ExternalSecret` CRs that *reference*
+  vault items by name — never the secret values themselves.
+- ESO is deployed in the `external-secrets` namespace; 1Password Connect in the `1password`
+  namespace. The `onepassword-cluster-store` `ClusterSecretStore` is cluster-scoped, so any
+  namespace's `ExternalSecret` can reference it.
+
 ## Hard rules — enforced by CI (gitleaks) and must never be violated
 
-- **Never commit a plain `kind: Secret`** — only `SealedSecret` (bitnami.com/v1alpha1)
+- **Never commit a plain `kind: Secret`** — only `ExternalSecret` (external-secrets.io/v1)
+- **Never commit a `SealedSecret`** — the controller is gone; a committed SealedSecret will never reconcile
 - **Never commit API keys, passwords, tokens, or any credential** in any file — YAML, shell script, markdown, or otherwise
-- **Never put a secret value in a ConfigMap** — use `secretKeyRef` to reference it from a SealedSecret
+- **Never put a secret value in a ConfigMap** — reference it from an ESO-materialized Secret via `secretKeyRef`
 - **Never log or echo a secret value** in a CI step or script
 
 The CI runs gitleaks on every PR as a required check ("Secret Scanning"). If it fires, the PR cannot merge. If you generated a value that was accidentally committed, treat it as compromised and rotate it immediately.
 
-Credentials belong in **1Password** (Homelab vault). Kubernetes secrets belong in **SealedSecrets**.
+Credentials belong in **1Password** (Homelab vault). Kubernetes secrets are **materialized from 1Password by ESO** — never created by hand, never sealed, never committed.
 
-## 1Password — save before you seal
+## 1Password — save before you wire
 
-Every API key, password, or token generated when setting up a new service **must be saved to 1Password before it is sealed or used anywhere else**. This is the source of truth for credential recovery.
+Every API key, password, or token generated when setting up a new service **must be saved to 1Password before it is referenced or used anywhere else**. This is the source of truth for credential recovery *and* the live source ESO reads from — if it isn't in 1Password, the ExternalSecret has nothing to sync.
 
 **When adding a new service**, save to 1Password at the point the credential is generated (not after):
 
@@ -61,7 +85,7 @@ When a service supports API key authentication, use it — never rely on usernam
 |-----------|-----|
 | Prowlarr → Radarr/Sonarr/Readarr | API key (configured via Terraform `prowlarr_application_*`) |
 | Readarr/Radarr/Sonarr → SABnzbd | API key (configured via Terraform `download_client_sabnzbd`) |
-| Homepage widgets | API key via `homepage-env-vars` SealedSecret |
+| Homepage widgets | API key via the `homepage-env-vars` ExternalSecret |
 | Terraform providers | API key (never username/password if both are offered) |
 | Monitoring exporters (Exportarr, etc.) | API key |
 | Claude sessions accessing apps | API key via `op` CLI — never interactive login |
@@ -69,35 +93,96 @@ When a service supports API key authentication, use it — never rely on usernam
 **When adding a new service:**
 1. Generate or locate the API key
 2. Save it to 1Password (see above)
-3. Wire it into the relevant Terraform module or SealedSecret
+3. Wire it into the relevant Terraform module or `ExternalSecret`
 4. Never hardcode it, never use the UI login as a substitute
 
 If a service does not expose an API key, use the minimum-privilege local account and store credentials in 1Password.
 
-## Creating a sealed secret
+## Creating an ExternalSecret
 
-```bash
-# 1. Fetch the current sealing certificate
-kubeseal --fetch-cert \
-  --controller-namespace sealed-secrets \
-  --controller-name sealed-secrets-controller > pub-cert.pem
+1. **Save the credential to the Homelab vault in 1Password first** (see naming convention above).
+2. **Write an `ExternalSecret` CR** in the app's directory, referencing the vault item by name. ESO
+   materializes a Secret with the same `target.name` in the same namespace.
 
-# 2. Create and seal (pipe, never write the plain secret to disk)
-kubectl create secret generic my-secret -n my-namespace \
-  --from-literal=key=value \
-  --dry-run=client -o yaml | \
-  kubeseal --cert pub-cert.pem --format yaml > my-secret-sealedsecret.yaml
+There are two common shapes.
 
-# 3. Delete pub-cert.pem when done (it's public, but no need to keep it)
+**`dataFrom.extract`** — pull every field of a vault item into one Secret (use when the app
+consumes a bag of env vars, like Homepage):
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: homepage-env-vars
+  namespace: homepage
+  labels:
+    app: homepage
+    env: production
+    category: apps
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: onepassword-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: homepage-env-vars
+    creationPolicy: Owner
+  dataFrom:
+    - extract:
+        key: "Homepage Env Vars"      # the 1Password item title
 ```
 
-## Sealing key backup
+**`data` with `remoteRef`** — map specific vault fields to specific Secret keys (use when the
+app/HelmRelease expects named keys):
 
-The controller's sealing key is backed up in **1Password** as **"Sealed Secrets Sealing Key"** (Homelab vault). Must be restored before running Flux bootstrap on a rebuilt cluster. Procedure documented in `bootstrap/sealed-secrets/`.
+```yaml
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: onepassword-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: my-app-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: password               # key in the resulting k8s Secret
+      remoteRef:
+        key: "My App DB Password"       # 1Password item title
+        property: password              # field label within the item
+```
+
+3. **Add the file to the directory's `kustomization.yaml`** (Flux uses explicit lists, not globs).
+4. **Verify after Flux reconciles:**
+
+```bash
+kubectl get externalsecret <name> -n <namespace>     # STATUS / READY=True
+kubectl get secret <target-name> -n <namespace>      # the materialized Secret exists
+```
+
+`READY=True` with `SecretSynced` means ESO pulled the value and created the Secret. A `SecretSyncedError`
+usually means the item title or field `property` doesn't match 1Password exactly.
+
+## Disaster recovery — the 1Password Connect credentials are the new root secret
+
+The old sealing-key model is gone. The single bootstrap secret that everything else now depends on is
+the **1Password Connect** credentials: the `onepassword-connect` Secret in the `1password` namespace,
+holding `1password-credentials.json` and `token`. ESO cannot read 1Password without it, and it is
+**not** managed by Flux (it would be a chicken-and-egg dependency).
+
+- Both the credentials JSON and the Connect token are stored in **1Password** (Homelab vault).
+- On a rebuilt cluster they must be applied **before** Flux bootstrap, so 1Password Connect and ESO
+  come up able to sync everything else. Bootstrap order: control plane → Calico CNI → apply the
+  `onepassword-connect` Secret → bootstrap Flux (deploys 1Password Connect + ESO, which then
+  materialize every other Secret from the vault).
+
+> `bootstrap/sealed-secrets/` is retained only as historical reference for the pre-2026-05-31
+> SealedSecrets setup. It is no longer part of the live DR path.
 
 ## Referencing secrets in HelmRelease values
 
-Use `valuesFrom` with a `Secret` kind — but the secret itself must be sealed:
+The secret is materialized by ESO; HelmReleases consume it exactly as before.
+
+Use `valuesFrom` with a `Secret` kind (the Secret is created by the app's `ExternalSecret`):
 
 ```yaml
 valuesFrom:
@@ -119,17 +204,18 @@ extraEnv:
 
 ## Naming convention
 
-- `metadata.name`: `{app-name}-{purpose}` — never use `-secret` as a suffix (it's redundant; the kind already says Secret)
-- Filename: `{metadata.name}-sealedsecret.yaml` — the filename base **must exactly equal** `metadata.name`
+- `ExternalSecret` `metadata.name` (and `target.name`): `{app-name}-{purpose}` — never use `-secret`
+  as a suffix (it's redundant; the kind already says Secret)
+- Filename: `{metadata.name}-externalsecret.yaml` — the filename base **must exactly equal** `metadata.name`
 - Common purpose suffixes: `-credentials`, `-token`, `-apikey`, `-config`, `-env-vars`
 
 Examples: `harbor-db-credentials`, `renovate-token`, `alertmanager-pushover-config`
 
-Wrong: `harbor-admin-sealedsecret.yaml` containing `metadata.name: harbor-admin-credentials` — the base (`harbor-admin`) doesn't match the name (`harbor-admin-credentials`).
+Wrong: `harbor-admin-externalsecret.yaml` containing `metadata.name: harbor-admin-credentials` — the base (`harbor-admin`) doesn't match the name (`harbor-admin-credentials`).
 
 ## 1Password vault item naming — cluster infrastructure
 
-After ESO migration, vault item names and field labels are cluster infrastructure:
+Vault item names and field labels are cluster infrastructure — an `ExternalSecret` references them by exact string:
 
 - Never rename a vault item referenced by an ExternalSecret without first updating the
   ExternalSecret CR and merging the PR

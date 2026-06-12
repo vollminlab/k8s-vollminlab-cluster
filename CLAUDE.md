@@ -8,7 +8,7 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 
 - `.claude/rules/flux.md` — repo layout, HelmRelease conventions, reconciliation commands
 - `.claude/rules/kyverno.md` — required labels, enforce/audit policies, DMZ rules, autogen danger
-- `.claude/rules/secrets.md` — SealedSecrets workflow, never plain Secrets
+- `.claude/rules/secrets.md` — ESO + 1Password Connect workflow (ExternalSecrets), never plain Secrets
 - `.claude/rules/subagents.md` — when to spawn agents vs. act directly
 - `.claude/rules/storage.md` — Longhorn capacity check before PVC sizing, replica math, online resize
 - `.claude/rules/velero.md` — backup schedules, circular backup check, kopia GC, status commands
@@ -20,7 +20,7 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 
 ## Hard constraints
 
-- Never commit a plain `kind: Secret`. Use `SealedSecret` only.
+- Never commit a plain `kind: Secret`. Use `ExternalSecret` (sourced from 1Password via ESO) only. SealedSecrets are retired — the controller was removed 2026-05-31.
 - Never push directly to `main`. PR required (branch protection enforced via GitHub repository settings).
 - Never touch `bootstrap/calico/` with Flux. CNI changes are manual + verified.
 - Never use `:latest` image or chart version tags. Kyverno blocks them.
@@ -33,6 +33,6 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 `bootstrap/` is **not** Flux-managed. It contains manual DR reference manifests:
 - `bootstrap/calico/` — CNI, must be applied before Flux bootstrap
 - `bootstrap/coredns/` — CoreDNS custom config
-- `bootstrap/sealed-secrets/` — sealing key restore procedure
+- `bootstrap/sealed-secrets/` — historical reference only; SealedSecrets are retired (controller removed 2026-05-31), no longer part of the live DR path
 
-Sealing key is backed up in 1Password as **"Sealed Secrets Sealing Key"**.
+Secrets are now provided by **ESO + 1Password Connect** (see `.claude/rules/secrets.md`). The DR-critical root secret is the `onepassword-connect` Secret (`1password-credentials.json` + `token`) in the `1password` namespace — **not** Flux-managed, backed up in 1Password, and must be applied **before** Flux bootstrap so ESO can materialize every other Secret from the vault.

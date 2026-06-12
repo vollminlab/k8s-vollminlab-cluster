@@ -26,7 +26,7 @@ configmap.yaml         # Required — Helm values via valuesFrom ConfigMap
 kustomization.yaml     # Required — lists all resources in this dir
 ingress.yaml           # Optional
 pvc-*.yaml             # Optional
-*-sealedsecret.yaml    # Optional (never plain Secret)
+*-externalsecret.yaml  # Optional (ESO + 1Password — never plain Secret)
 networkpolicy.yaml     # Optional (required in dmz/)
 ```
 
@@ -83,10 +83,10 @@ Every resource kind follows a predictable pattern. Use this table when creating 
 | Namespace | `{namespace-dir}` | `namespace.yaml` |
 | ConfigMap (Helm values) | `{app-name}-values` | `configmap.yaml` |
 | Ingress | `{app-name}-ingress` (add qualifier for split ingresses: `{app-name}-{qualifier}-ingress`) | `ingress.yaml` or `ingress-{qualifier}.yaml` |
-| SealedSecret | `{app-name}-{purpose}` — never use `-secret` as suffix (redundant) | `{metadata.name}-sealedsecret.yaml` |
+| ExternalSecret | `{app-name}-{purpose}` — never use `-secret` as suffix (redundant) | `{metadata.name}-externalsecret.yaml` |
 | Flux Kustomization CR | `{namespace}-{app}` | `{app}-kustomization.yaml` |
 
-**SealedSecret filename rule**: the filename base **must exactly equal** `metadata.name`. Stripping `-sealedsecret.yaml` from the filename must give you the object name. See `secrets.md` for the full SealedSecret workflow.
+**ExternalSecret filename rule**: the filename base **must exactly equal** `metadata.name`. Stripping `-externalsecret.yaml` from the filename must give you the object name. See `secrets.md` for the full ESO + 1Password workflow.
 
 ## Critical rules
 
