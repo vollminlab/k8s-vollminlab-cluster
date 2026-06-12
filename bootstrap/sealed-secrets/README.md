@@ -1,5 +1,12 @@
 # Sealed Secrets — Bootstrap Reference
 
+> **⚠️ RETIRED (2026-05-31).** SealedSecrets are no longer used in this cluster. The
+> sealed-secrets controller has been removed and all secrets are now provided by **ESO +
+> 1Password Connect** — see `.claude/rules/secrets.md`. The DR-critical root secret is now the
+> `onepassword-connect` Secret (`1password-credentials.json` + `token`) in the `1password`
+> namespace, not the sealing key. This document is kept for historical reference only and is
+> **not** part of the live disaster-recovery path.
+
 **The sealing key is NOT managed by Flux.** The sealed-secrets controller is deployed via Flux, but the sealing key secret must be backed up and restored manually. If the controller is ever reinstalled without restoring this key first, all existing SealedSecrets become permanently unreadable.
 
 The sealing key is backed up in 1Password as a Secure Note: **"Sealed Secrets Sealing Key"**.
