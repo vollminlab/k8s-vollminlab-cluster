@@ -118,6 +118,32 @@ spec:
         - protocol: TCP
           port: 9090
 ---
+# Allow the homepage dashboard to reach Grafana for its status widget.
+# Homepage calls http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80,
+# which DNATs to container port 3000. Without this the request is dropped by
+# default-deny and the widget reports "API Error: connect ETIMEDOUT".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homepage-grafana
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: homepage
+      ports:
+        - protocol: TCP
+          port: 3000
+---
 # Allow kube-apiserver (CP nodes) to call prometheus-operator admission webhook.
 # Container port is 10250 (named "https"); service maps 443→10250. Port 443 is NOT
 # a container port and must not appear here.
