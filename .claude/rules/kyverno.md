@@ -27,7 +27,7 @@ Every HelmRelease and pod must use one of:
 | Category        | Apps                                                           |
 | --------------- | -------------------------------------------------------------- |
 | `core`          | Flux, Headlamp, Kyverno                                        |
-| `security`      | cert-manager, sealed-secrets, Kyverno policy-reporter          |
+| `security`      | cert-manager, external-secrets, 1Password Connect, Kyverno policy-reporter |
 | `storage`       | Longhorn, local-path-provisioner, smb-csi-driver               |
 | `networking`    | ingress-nginx, MetalLB, external-dns                           |
 | `observability` | metrics-server, kube-prometheus-stack, Grafana, Loki           |
