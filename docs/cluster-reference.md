@@ -629,6 +629,31 @@ Two separate tunnels are deployed — one per externally-accessible media servic
 
 **DNS split:** Internal requests resolve via Pi-hole to `192.168.152.244` (ingress VIP). External requests hit Cloudflare edge → tunnel → cluster service. No inbound ports on the router.
 
+#### cloudflared-authentik (Authentik SSO tunnel)
+
+| Parameter | Value |
+|---|---|
+| Deployment | `cloudflared-authentik` in `authentik` |
+| Image | `cloudflare/cloudflared:2026.3.0` |
+| Tunnel token | SealedSecret `cloudflared-authentik-tunnel-credentials` (1Password: "Cloudflare Authentik Tunnel") |
+| Protocol | `--protocol http2` (pinned; keeps all edge connections on TCP) |
+| CPU | req: 50m, limits: 200m |
+| Memory | req: 64Mi, limits: 128Mi |
+
+| Hostname | Internal target |
+|---|---|
+| `authentik.vollminlab.com` | nginx ingress VIP (forward-auth outpost) |
+
+**Egress requirement — port 7844:** unlike the `mediastack` tunnels, the `authentik`
+namespace runs a default-deny egress NetworkPolicy. cloudflared connects to the
+Cloudflare edge on **port 7844** (QUIC over UDP *and* http2 over TCP), so the
+`allow-external-egress` policy must permit **TCP + UDP 7844** — not just 443.
+Forcing `--protocol http2` does **not** avoid this; http2 also dials 7844, just over
+TCP. With 7844 blocked the tunnel degrades to a single TCP-443 fallback connection
+(1/4 HA) and Cloudflare reports it degraded; pod logs show `dial tcp <edge-ip>:7844:
+i/o timeout`. Fixed in PR #889. See `.claude/rules/networkpolicy.md` for the
+per-namespace port table.
+
 ---
 
 ### metrics-server
