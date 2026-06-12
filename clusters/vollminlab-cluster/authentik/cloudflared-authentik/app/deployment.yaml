@@ -25,10 +25,10 @@ spec:
           args:
             - tunnel
             - --no-autoupdate
-            # Force http2 (TCP) transport. The default `auto` protocol left this
-            # pod stuck retrying QUIC with "timeout: no recent network activity"
-            # on 3 of 4 edge connections (Cloudflare reported the tunnel degraded).
-            # http2 avoids UDP/7844 entirely and is sufficient for HTTP forward-auth.
+            # Pin http2 (TCP) transport. The real cause of the degraded tunnel
+            # was the authentik egress NetworkPolicy blocking port 7844 (fixed in
+            # allow-external-egress); http2 keeps the edge connections on TCP and
+            # is sufficient for HTTP forward-auth — no UDP/QUIC path needed.
             - --protocol
             - http2
             - run
