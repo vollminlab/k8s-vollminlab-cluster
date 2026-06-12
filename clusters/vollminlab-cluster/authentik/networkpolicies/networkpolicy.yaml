@@ -92,6 +92,32 @@ spec:
         - protocol: TCP
           port: 9443
 ---
+# Allow the homepage dashboard to reach authentik-server for its status widget.
+# Homepage calls http://authentik-server.authentik.svc.cluster.local (svc port 80),
+# which DNATs to container port 9000. Without this the request is dropped by
+# default-deny and the widget reports "API Error: connect ETIMEDOUT".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homepage
+  namespace: authentik
+  labels:
+    app: authentik
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: homepage
+      ports:
+        - protocol: TCP
+          port: 9000
+---
 # Allow CNPG operator (cnpg-system) to manage authentik-db.
 # Port 5432: PostgreSQL connections. Port 8000: instance manager status API
 # (CNPG operator polls /pg/status on each database pod for health/fencing decisions).
