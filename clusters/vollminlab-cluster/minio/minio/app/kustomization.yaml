@@ -10,3 +10,4 @@ resources:
   - minio-credentials-externalsecret.yaml
   - minio-oidc-credentials-externalsecret.yaml
   - servicemonitor.yaml
+  - prometheusrule.yaml

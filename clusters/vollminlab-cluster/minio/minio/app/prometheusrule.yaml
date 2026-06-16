@@ -1,0 +1,58 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: minio-rules
+  namespace: minio
+  labels:
+    app: minio
+    env: production
+    category: storage
+    # Required for the kube-prometheus-stack Prometheus to select this rule.
+    # ruleSelector matches release=kube-prometheus-stack; ruleNamespaceSelector
+    # is empty (all namespaces), so a rule in the minio namespace is picked up.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: minio.drives
+      rules:
+        # On 2026-06-16 a Longhorn engine reconnect (triggered by an etcd
+        # storage-latency storm) severed MinIO's mount of /export. MinIO's
+        # process kept running (0 restarts) so nothing crashed or alerted, but
+        # it served 503 SlowDownWrite to every client — velero, terraform-state,
+        # CNPG backups, loki compactor — for ~3h until loki crashlooped and
+        # surfaced it. This is a single-drive (EC:0) deployment, so any offline
+        # drive means MinIO is entirely unwritable. The metric stayed reliable
+        # and the scrape stayed up throughout the outage, so this alert would
+        # have fired at ~17:35 instead of the failure surfacing at 20:40.
+        - alert: MinIODriveOffline
+          expr: minio_cluster_drive_offline_total > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MinIO has {{ $value }} drive(s) offline — writes are failing silently"
+            description: >-
+              minio_cluster_drive_offline_total={{ $value }} for >10m. This is a
+              single-drive deployment, so MinIO is returning 503 to all clients
+              (velero, terraform-state, CNPG backups, loki). Likely a stale Longhorn
+              mount: check `mc admin info` and `ls /export` for I/O errors; recover
+              by scaling minio to 0, waiting for the Longhorn volume to detach, then
+              back to 1.
+
+        # Complementary failure mode: a drive that is still counted "online" but
+        # actively throwing I/O errors (flaky storage, severed handle mid-flight).
+        # During the 2026-06-16 incident this counter climbed from 0 to ~18,480.
+        # rate() handles the counter reset on pod restart.
+        - alert: MinIODriveIOErrors
+          expr: rate(minio_node_drive_errors_ioerror[5m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MinIO drive is logging I/O errors"
+            description: >-
+              minio_node_drive_errors_ioerror is incrementing for >10m on
+              {{ $labels.server }}. The underlying drive (Longhorn volume) is
+              throwing I/O errors even if not yet marked offline — investigate the
+              volume mount and Longhorn replica health before it degrades to fully
+              offline.
