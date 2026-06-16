@@ -31,7 +31,13 @@ spec:
             severity: critical
           annotations:
             summary: "MinIO has {{ $value }} drive(s) offline — writes are failing silently"
-            description: "minio_cluster_drive_offline_total={{ $value }} for >10m. This is a single-drive deployment, so MinIO is returning 503 to all clients (velero, terraform-state, CNPG backups, loki). Likely a stale Longhorn mount: check `mc admin info` and `ls /export` for I/O errors; recover by scaling minio to 0, waiting for the Longhorn volume to detach, then back to 1."
+            description: >-
+              minio_cluster_drive_offline_total={{ $value }} for >10m. This is a
+              single-drive deployment, so MinIO is returning 503 to all clients
+              (velero, terraform-state, CNPG backups, loki). Likely a stale Longhorn
+              mount: check `mc admin info` and `ls /export` for I/O errors; recover
+              by scaling minio to 0, waiting for the Longhorn volume to detach, then
+              back to 1.
 
         # Complementary failure mode: a drive that is still counted "online" but
         # actively throwing I/O errors (flaky storage, severed handle mid-flight).
@@ -44,4 +50,9 @@ spec:
             severity: warning
           annotations:
             summary: "MinIO drive is logging I/O errors"
-            description: "minio_node_drive_errors_ioerror is incrementing for >10m on {{ $labels.server }}. The underlying drive (Longhorn volume) is throwing I/O errors even if not yet marked offline — investigate the volume mount and Longhorn replica health before it degrades to fully offline."
+            description: >-
+              minio_node_drive_errors_ioerror is incrementing for >10m on
+              {{ $labels.server }}. The underlying drive (Longhorn volume) is
+              throwing I/O errors even if not yet marked offline — investigate the
+              volume mount and Longhorn replica health before it degrades to fully
+              offline.
