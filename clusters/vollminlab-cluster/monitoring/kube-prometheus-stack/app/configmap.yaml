@@ -214,3 +214,23 @@ data:
         app: kube-state-metrics
         env: production
         category: observability
+      # Kyverno requires CPU+memory requests and limits on every pod. The subchart
+      # ships with resources: {} (none), so KSM ran unbounded. Sized from observed
+      # usage: ~43Mi steady, ~127Mi 24h peak — 256Mi limit gives ~2x headroom.
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      # Relax the liveness probe so a brief kube-apiserver blip does not crash-loop
+      # KSM. /livez makes a live API call; the default 5s timeout / 3 failures (~30s)
+      # is too tight on this cluster, which sees occasional shared-storage etcd
+      # latency spikes that briefly stall the apiserver. 10s timeout / 5 failures
+      # (~50s) rides out a transient stall without restarting. Readiness is left at
+      # default — a brief readiness failure only drops KSM from its Service (a short
+      # metrics gap), it does not restart the pod.
+      livenessProbe:
+        failureThreshold: 5
+        timeoutSeconds: 10
