@@ -55,11 +55,14 @@ spec:
         # job (e.g. a PSS violation) never creates a pod, so those counters stay 0 and the
         # alerts are structurally blind — exactly how the renovate and kyverno cronjobs
         # died silently for weeks. last_successful_time is the only signal that survives
-        # admission rejection. Every cronjob here runs at least daily; 26h > daily period
-        # + grace, so this fires only on genuine missed runs, never on normal scheduling.
+        # admission rejection. The 26h threshold assumes a cronjob runs at least daily
+        # (26h > daily period + grace), so it fires only on genuine missed runs. Jobs
+        # that legitimately run less than daily must be excluded by name, otherwise the
+        # gap between their normal runs trips the threshold — e.g. kube-system's monthly
+        # kubeadm-cert-monitor (`0 9 1 * *`) would false-fire for ~30 days between runs.
         - alert: CronJobNotSucceededRecently
           expr: |
-            (time() - kube_cronjob_status_last_successful_time) > 93600
+            (time() - kube_cronjob_status_last_successful_time{cronjob!="kubeadm-cert-monitor"}) > 93600
           for: 15m
           labels:
             severity: warning
