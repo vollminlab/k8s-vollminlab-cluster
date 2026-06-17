@@ -21,6 +21,14 @@ spec:
           restartPolicy: OnFailure
           serviceAccountName: kyverno-webhook-patch
           terminationGracePeriodSeconds: 10
+          # Pod-level security context — required to satisfy PSS "restricted"
+          # enforced on the kyverno namespace. alpine/kubectl defaults to root,
+          # so pin a non-root uid explicitly.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           tolerations:
             - key: node-role.kubernetes.io/control-plane
               operator: Exists
@@ -31,6 +39,18 @@ spec:
             - name: kubectl
               image: docker.io/alpine/kubectl:1.33.4
               imagePullPolicy: Always
+              # Container-level security context — PSS "restricted" requires
+              # allowPrivilegeEscalation: false and all capabilities dropped.
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                # kubectl writes its discovery cache under $HOME; /root is not
+                # writable as uid 1000, so redirect to a writable path.
+                - name: HOME
+                  value: /tmp
               resources:
                 requests:
                   cpu: 10m

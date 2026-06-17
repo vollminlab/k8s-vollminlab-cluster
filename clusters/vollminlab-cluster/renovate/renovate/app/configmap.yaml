@@ -20,6 +20,13 @@ data:
         env: production
         category: apps
 
+    # Pod-level security context — required to satisfy PSS "restricted" enforced
+    # on the renovate namespace (runAsNonRoot + RuntimeDefault seccomp).
+    securityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
     resources:
       requests:
         cpu: 200m
@@ -33,6 +40,16 @@ data:
           name: renovate-token
 
     renovate:
+      # Container-level security context — PSS "restricted" requires
+      # allowPrivilegeEscalation: false and all capabilities dropped.
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       config: |
         {
           "platform": "github",
