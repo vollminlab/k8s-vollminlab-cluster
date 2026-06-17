@@ -27,7 +27,11 @@ spec:
             severity: warning
           annotations:
             summary: "Flux resource not ready"
-            description: "{{ $labels.customresource_kind }} {{ $labels.name }} in namespace {{ $labels.exported_namespace }} has had a failing Ready condition (reason: {{ $labels.reason }}) for 15 minutes. Flux is not reconciling it — check `flux get {{ $labels.customresource_kind | toLower }} -A`."
+            description: >-
+              {{ $labels.customresource_kind }} {{ $labels.name }} in namespace
+              {{ $labels.exported_namespace }} has had a failing Ready condition
+              (reason: {{ $labels.reason }}) for 15 minutes. Flux is not
+              reconciling it — check `flux get {{ $labels.customresource_kind | toLower }} -A`.
         # tofu-controller Terraform resources. DriftDetected is intentionally excluded:
         # authentik-config and b2-config carry permanent known drift on this cluster
         # (provider/server version skew) and re-plan every reconcile — that is noise,
@@ -41,7 +45,11 @@ spec:
             severity: warning
           annotations:
             summary: "Terraform workspace failing"
-            description: "Terraform {{ $labels.name }} in namespace {{ $labels.exported_namespace }} has a failing Ready condition (reason: {{ $labels.reason }}) for 30 minutes. This is a real apply/plan failure, not known drift — check `kubectl describe terraform {{ $labels.name }} -n {{ $labels.exported_namespace }}`."
+            description: >-
+              Terraform {{ $labels.name }} in namespace {{ $labels.exported_namespace }}
+              has a failing Ready condition (reason: {{ $labels.reason }}) for 30
+              minutes. This is a real apply/plan failure, not known drift — check
+              `kubectl describe terraform {{ $labels.name }} -n {{ $labels.exported_namespace }}`.
         # CronJob silent-death detector. The existing KubeJobFailed / KubeJobNotCompleted
         # alerts key on kube_job_failed / kube_job_status_active, but an admission-rejected
         # job (e.g. a PSS violation) never creates a pod, so those counters stay 0 and the
@@ -57,4 +65,8 @@ spec:
             severity: warning
           annotations:
             summary: "CronJob has not succeeded in over 26h"
-            description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} last completed successfully {{ $value | humanizeDuration }} ago. A daily job that has not succeeded in 26h is failing silently — check for admission rejection (PSS/Kyverno) or a stuck Forbid-policy job: `kubectl get jobs -n {{ $labels.namespace }}`."
+            description: >-
+              CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} last completed
+              successfully {{ $value | humanizeDuration }} ago. A daily job that has
+              not succeeded in 26h is failing silently — check for admission rejection
+              (PSS/Kyverno) or a stuck Forbid-policy job: `kubectl get jobs -n {{ $labels.namespace }}`.
