@@ -364,7 +364,11 @@ data:
                 icon: shlink.png
                 namespace: shlink
                 app: shlink-web
-            - Homelab Repo:
+            - Vollminlab Org:
+                description: All Vollminlab repositories
+                href: https://github.com/vollminlab
+                icon: github.png
+            - Cluster Repo:
                 description: This Kubernetes cluster repo
                 href: https://github.com/vollminlab/k8s-vollminlab-cluster
                 icon: github.png
