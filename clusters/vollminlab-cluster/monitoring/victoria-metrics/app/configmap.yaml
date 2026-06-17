@@ -13,7 +13,9 @@ data:
     fullnameOverride: victoria-metrics-single
 
     server:
-      retentionPeriod: 90d
+      # 30d local retention. 90d on longhorn-r2 (2 replicas) projected to ~145GB on-disk —
+      # far past the 30Gi PVC. 30d steady-state (~1.6GB/day → ~48GB) fits the 60Gi PVC below.
+      retentionPeriod: 30d
 
       # mode: statefulSet (not deployment) so the RWO Longhorn volume is handled via a
       # volumeClaimTemplate and there is no rolling-update detach trap.
@@ -24,7 +26,10 @@ data:
         storageClassName: longhorn-r2
         accessModes:
           - ReadWriteOnce
-        size: 30Gi
+        # 60Gi headroom over the ~48GB 30d steady-state. NOTE: volumeClaimTemplate is
+        # immutable — bumping this does NOT resize the live PVC. After merge, online-patch
+        # the PVC + recreate the STS --cascade=orphan so Flux re-templates at 60Gi.
+        size: 60Gi
 
       podLabels:
         app: victoria-metrics
