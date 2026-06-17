@@ -166,3 +166,35 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+---
+# Allow egress to the *arr apps in mediastack so the radarr/sonarr/readarr/
+# prowlarr Terraform providers can reach each app's HTTP API. The apps serve
+# plain HTTP on their own ports (not 443), so allow-https-egress doesn't cover
+# them. Ports are the container ports (== service targetPort for every arr app).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mediastack-arr-egress
+  namespace: tofu
+  labels:
+    app: tofu
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mediastack
+      ports:
+        - protocol: TCP
+          port: 7878  # radarr
+        - protocol: TCP
+          port: 8989  # sonarr
+        - protocol: TCP
+          port: 8787  # readarr
+        - protocol: TCP
+          port: 9696  # prowlarr
