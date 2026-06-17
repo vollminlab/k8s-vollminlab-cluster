@@ -1,0 +1,60 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gitops-control-plane-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: gitops-control-plane
+      rules:
+        # Flux GitOps Toolkit resources (Kustomization, HelmRelease, source CRs).
+        # gotk_resource_info is produced by kube-state-metrics Custom Resource State
+        # (configured in the KSM values; Flux v2.8 no longer exposes a per-resource
+        # readiness gauge of its own). ready="False" means the Ready condition is
+        # False; suspended resources are excluded (intentionally paused, not failing).
+        # Terraform CRs are excluded here — they get their own rule below so drift can
+        # be filtered out.
+        - alert: FluxResourceNotReady
+          expr: |
+            gotk_resource_info{customresource_group!="infra.contrib.fluxcd.io", ready="False", suspended!="true"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux resource not ready"
+            description: "{{ $labels.customresource_kind }} {{ $labels.name }} in namespace {{ $labels.exported_namespace }} has had a failing Ready condition (reason: {{ $labels.reason }}) for 15 minutes. Flux is not reconciling it — check `flux get {{ $labels.customresource_kind | toLower }} -A`."
+        # tofu-controller Terraform resources. DriftDetected is intentionally excluded:
+        # authentik-config and b2-config carry permanent known drift on this cluster
+        # (provider/server version skew) and re-plan every reconcile — that is noise,
+        # not a failure. This catches the real failure modes (plan/apply errors,
+        # missing dependencies) that left 5 tofu workspaces broken with no alert.
+        - alert: TerraformResourceNotReady
+          expr: |
+            gotk_resource_info{customresource_group="infra.contrib.fluxcd.io", ready="False", reason!~"DriftDetected.*", suspended!="true"} == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Terraform workspace failing"
+            description: "Terraform {{ $labels.name }} in namespace {{ $labels.exported_namespace }} has a failing Ready condition (reason: {{ $labels.reason }}) for 30 minutes. This is a real apply/plan failure, not known drift — check `kubectl describe terraform {{ $labels.name }} -n {{ $labels.exported_namespace }}`."
+        # CronJob silent-death detector. The existing KubeJobFailed / KubeJobNotCompleted
+        # alerts key on kube_job_failed / kube_job_status_active, but an admission-rejected
+        # job (e.g. a PSS violation) never creates a pod, so those counters stay 0 and the
+        # alerts are structurally blind — exactly how the renovate and kyverno cronjobs
+        # died silently for weeks. last_successful_time is the only signal that survives
+        # admission rejection. Every cronjob here runs at least daily; 26h > daily period
+        # + grace, so this fires only on genuine missed runs, never on normal scheduling.
+        - alert: CronJobNotSucceededRecently
+          expr: |
+            (time() - kube_cronjob_status_last_successful_time) > 93600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CronJob has not succeeded in over 26h"
+            description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} last completed successfully {{ $value | humanizeDuration }} ago. A daily job that has not succeeded in 26h is failing silently — check for admission rejection (PSS/Kyverno) or a stuck Forbid-policy job: `kubectl get jobs -n {{ $labels.namespace }}`."

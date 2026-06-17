@@ -15,6 +15,7 @@ resources:
   - grafana-admin-credentials-externalsecret.yaml
   - prometheusrule-custom.yaml
   - prometheusrule-eso.yaml
+  - prometheusrule-gitops.yaml
   - nodes-dashboard-configmap.yaml
   - longhorn-dashboard-configmap.yaml
   - minio-dashboard-configmap.yaml
