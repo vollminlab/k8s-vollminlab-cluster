@@ -80,9 +80,16 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
+| `tofu` | n/a (egress target → mediastack) | 7878/8989/8787/9696 | radarr/sonarr/readarr/prowlarr API (arr Terraform providers) | allow-mediastack-arr-egress egress |
+| `tofu` | n/a (egress target → harbor) | 8443 | Harbor API; svc 443→**8443**, egress evaluated post-DNAT so 443 ≠ enough | allow-harbor-egress egress |
 
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
 truth — do not rely on service port numbers.
+
+**The port trap applies to egress too.** A `tofu`-namespace example: the harbor provider dials the
+Harbor VIP on `:443`, but the LoadBalancer remaps `443→8443` and egress policy is evaluated
+post-DNAT — so an egress `allow ... :443` rule never matches and the connection times out. Use the
+destination **container port** (8443) in the egress rule, exactly as for ingress.
 
 ## Checklist — before opening any NetworkPolicy PR
 

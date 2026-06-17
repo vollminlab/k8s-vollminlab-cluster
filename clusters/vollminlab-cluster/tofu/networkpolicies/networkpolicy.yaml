@@ -148,7 +148,10 @@ spec:
         - protocol: TCP
           port: 9000
 ---
-# Allow external HTTPS egress (Terraform provider downloads, API calls to Harbor/Authentik/Cloudflare)
+# Allow external HTTPS egress (Terraform provider downloads, API calls to
+# Authentik/Cloudflare/B2 on real :443). NOTE: this does NOT cover Harbor —
+# Harbor's LoadBalancer remaps 443->8443, and egress policy is evaluated
+# post-DNAT, so the harbor provider needs the dedicated rule below.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -198,3 +201,32 @@ spec:
           port: 8787  # readarr
         - protocol: TCP
           port: 9696  # prowlarr
+---
+# Allow egress to Harbor so the harbor-config Terraform provider can reach the
+# Harbor API. The provider targets https://harbor.vollminlab.com (LoadBalancer
+# VIP 192.168.152.245:443), but Harbor's LB remaps 443 -> container port 8443.
+# Egress policy is evaluated post-DNAT at the pod interface, so the effective
+# destination port is 8443, NOT 443 — allow-https-egress (443 only) never
+# matches. This is the egress side of the container-port-vs-service-port trap
+# documented in .claude/rules/networkpolicy.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-harbor-egress
+  namespace: tofu
+  labels:
+    app: tofu
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: harbor
+      ports:
+        - protocol: TCP
+          port: 8443  # harbor-nginx HTTPS container port (svc 443 -> 8443)
