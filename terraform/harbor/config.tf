@@ -7,11 +7,11 @@ resource "harbor_config_auth" "oidc" {
   # Harbor reports the username claim it actually onboarded with
   # (preferred_username). Declaring it here matches live state; omitting it
   # let the provider default (name) plan a perpetual oidc_user_claim -> null.
-  oidc_user_claim    = "preferred_username"
-  oidc_scope         = "openid,profile,email,groups"
-  oidc_groups_claim  = "groups"
-  oidc_admin_group   = "Harbor Admins"
-  oidc_auto_onboard  = true
-  oidc_verify_cert   = true
-  primary_auth_mode  = true
+  oidc_user_claim   = "preferred_username"
+  oidc_scope        = "openid,profile,email,groups"
+  oidc_groups_claim = "groups"
+  oidc_admin_group  = "Harbor Admins"
+  oidc_auto_onboard = true
+  oidc_verify_cert  = true
+  primary_auth_mode = true
 }
