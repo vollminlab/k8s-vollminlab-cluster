@@ -15,4 +15,12 @@ resource "portainer_settings" "main" {
     oauth_auto_create_users = true
     default_team_id         = 0
   }
+
+  # Portainer's API does not persist hide_internal_auth (it reads back false),
+  # so every reconcile re-sent the value and drifted again 10 minutes later.
+  # That futile re-apply loop was the source of the authentik-config drift
+  # churn (and CNPG WAL bloat). Keep the declared intent but stop the loop.
+  lifecycle {
+    ignore_changes = [oauth_settings[0].hide_internal_auth]
+  }
 }
