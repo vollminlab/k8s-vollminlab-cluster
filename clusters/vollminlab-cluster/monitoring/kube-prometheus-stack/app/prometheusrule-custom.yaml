@@ -174,7 +174,16 @@ spec:
             severity: critical
           annotations:
             summary: "Self-healer not coping: {{ $labels.namespace }}/{{ $labels.pod }} still crash-looping"
-            description: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $value | printf \"%.0f\" }} times in the last hour and is still crash-looping past the longhorn-mount-healer window. The automated scale-0 -> wait-detached -> scale-up cure has not resolved it. Check `kubectl get events -n {{ $labels.namespace }} --field-selector reason=HealedStaleMountTimeout` (the healer emits this in the affected namespace) and the healer CronJob logs (`kubectl logs -n kube-system -l app=longhorn-mount-healer --tail=100`); if it is a stale Longhorn mount, run the manual runbook (scale the Deployment to 0, wait for the Longhorn volume to report detached, scale it back up)."
+            description: >-
+              Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+              has restarted {{ $value | printf "%.0f" }} times in the last hour and is still
+              crash-looping past the longhorn-mount-healer window. The automated scale-0 ->
+              wait-detached -> scale-up cure has not resolved it. Check
+              `kubectl get events -n {{ $labels.namespace }} --field-selector reason=HealedStaleMountTimeout`
+              (the healer emits this in the affected namespace) and the healer CronJob logs
+              (`kubectl logs -n kube-system -l app=longhorn-mount-healer --tail=100`); if it
+              is a stale Longhorn mount, run the manual runbook (scale the Deployment to 0,
+              wait for the Longhorn volume to report detached, scale it back up).
 
         - alert: PodNotReady
           expr: |
