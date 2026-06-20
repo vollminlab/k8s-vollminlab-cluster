@@ -62,5 +62,19 @@ assert_eq "$(longhorn_rwo_volume mediastack radarr-x)" "pvc-abc123" "longhorn RW
 assert_eq "$(longhorn_rwo_volume mediastack prowlarr-y)" "" "smb pod -> no volume"
 assert_eq "$(owner_deployment mediastack radarr-x)" "radarr" "pod -> owning Deployment"
 
+# --- wait_detached: stub kc to report 'detached' immediately ---
+kc() {
+  case "$*" in
+    "get volumes.longhorn.io pvc-abc123 -n longhorn-system -o jsonpath={.status.state}")
+      echo "detached" ;;
+    *) echo "" ;;
+  esac
+}
+wait_detached pvc-abc123 10 1; assert_rc "$?" "0" "wait_detached returns 0 when state=detached"
+
+# stub kc to never detach -> times out fast (timeout 1s, interval 1s)
+kc() { echo "attached"; }
+wait_detached pvc-stuck 1 1; assert_rc "$?" "1" "wait_detached returns 1 on timeout"
+
 printf '\n%s failures\n' "$FAILS"
 [ "$FAILS" = "0" ]

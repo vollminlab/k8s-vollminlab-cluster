@@ -78,6 +78,76 @@ owner_deployment() {
   kc get rs "$rs" -n "$ns" -o jsonpath='{.metadata.ownerReferences[?(@.kind=="Deployment")].name}'
 }
 
+# wait_detached: poll the Longhorn volume until state=detached or timeout.
+# $1=vol $2=timeout_seconds $3=interval_seconds. exit 0 if detached.
+wait_detached() {
+  vol="$1"; timeout="$2"; interval="$3"; elapsed=0
+  while [ "$elapsed" -lt "$timeout" ]; do
+    state=$(kc get volumes.longhorn.io "$vol" -n longhorn-system -o jsonpath='{.status.state}' 2>/dev/null)
+    [ "$state" = "detached" ] && return 0
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+  return 1
+}
+
+# emit_event: best-effort core/v1 Event on the Deployment. Never fails the run.
+# $1=ns $2=deploy $3=reason $4=type(Normal|Warning) $5=message
+emit_event() {
+  ens="$1"; edep="$2"; ereason="$3"; etype="$4"; emsg="$5"
+  euid=$(kc get deploy "$edep" -n "$ens" -o jsonpath='{.metadata.uid}' 2>/dev/null)
+  ets=$(date -u +%FT%TZ)
+  ename="${edep}.$(date -u +%s)"
+  kc create -f - >/dev/null 2>&1 <<EOF || log "WARN: event emit failed for $ens/$edep"
+apiVersion: v1
+kind: Event
+metadata:
+  name: ${ename}
+  namespace: ${ens}
+involvedObject:
+  apiVersion: apps/v1
+  kind: Deployment
+  name: ${edep}
+  namespace: ${ens}
+  uid: ${euid}
+reason: ${ereason}
+message: "${emsg}"
+type: ${etype}
+source:
+  component: longhorn-mount-healer
+firstTimestamp: ${ets}
+lastTimestamp: ${ets}
+count: 1
+EOF
+}
+
+# heal_workload: the runbook. $1=ns $2=deploy $3=vol
+heal_workload() {
+  ns="$1"; dep="$2"; vol="$3"
+  replicas=$(kc get deploy "$dep" -n "$ns" -o jsonpath='{.spec.replicas}')
+  if [ -z "$replicas" ] || [ "$replicas" -le 0 ] 2>/dev/null; then
+    log "skip $ns/$dep: replicas=$replicas (nothing to heal)"; return 0
+  fi
+  if [ "$DRY_RUN" = "true" ]; then
+    log "DRY_RUN: would heal $ns/$dep (vol=$vol): scale 0 -> wait-detached -> $replicas"; return 0
+  fi
+  log "healing $ns/$dep (vol=$vol, replicas=$replicas)"
+  kc annotate deploy "$dep" -n "$ns" "$ANN_ORIG=$replicas" --overwrite
+  kc scale deploy "$dep" -n "$ns" --replicas=0
+  if wait_detached "$vol" "$DETACH_TIMEOUT_SECONDS" "$POLL_INTERVAL_SECONDS"; then
+    kc scale deploy "$dep" -n "$ns" --replicas="$replicas"
+    log "healed $ns/$dep (restored to $replicas)"
+    emit_event "$ns" "$dep" HealedStaleMount Normal "Cleared stale Longhorn mount on $vol via scale-0/wait-detached/scale-$replicas"
+  else
+    kc scale deploy "$dep" -n "$ns" --replicas="$replicas"
+    log "WARN: $vol did not detach within ${DETACH_TIMEOUT_SECONDS}s; restored $ns/$dep to $replicas anyway"
+    emit_event "$ns" "$dep" HealedStaleMountTimeout Warning "Volume $vol did not detach within ${DETACH_TIMEOUT_SECONDS}s; restored replicas to $replicas, manual check needed"
+  fi
+  # clear the original-replicas marker (restore done) and stamp cooldown
+  kc annotate deploy "$dep" -n "$ns" "${ANN_ORIG}-" >/dev/null 2>&1 || true
+  kc annotate deploy "$dep" -n "$ns" "$ANN_LAST=$(date -u +%s)" --overwrite
+}
+
 main() {
   log "longhorn-mount-healer placeholder main"
 }
