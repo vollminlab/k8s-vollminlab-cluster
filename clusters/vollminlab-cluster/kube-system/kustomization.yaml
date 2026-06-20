@@ -8,5 +8,6 @@ resources:
   - ./etcd-defrag/app
   - ./kubeadm-cert-monitor/app
   - ./kubeadm-cert-renew/app
+  - ./longhorn-mount-healer/app
   - ./metrics-server/app
   - ./smb-csi-driver/app
