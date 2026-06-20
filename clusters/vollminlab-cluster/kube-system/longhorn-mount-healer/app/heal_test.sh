@@ -141,5 +141,49 @@ kc() {
 find_and_heal_one >/dev/null
 assert_eq "$HEAL_COUNT" "0" "cooldown suppresses re-heal"
 
+# --- restore_orphans ---
+
+# Test A: parked-at-0 orphan is restored
+HEAL_NAMESPACES="mediastack"
+DRY_RUN="false"
+RESTORED=""
+CLEARED=""
+kc() {
+  case "$*" in
+    "get deploy -n mediastack -o jsonpath={.items[*].metadata.name}")
+      echo "radarr" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.metadata.annotations.mount-healer\\.vollminlab\\.com/original-replicas}")
+      echo "2" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.spec.replicas}")
+      echo "0" ;;
+    "scale deploy radarr -n mediastack --replicas=2")
+      RESTORED="radarr->2" ;;
+    "annotate deploy radarr -n mediastack mount-healer.vollminlab.com/original-replicas-")
+      CLEARED="yes" ;;
+    *) : ;;
+  esac
+}
+restore_orphans >/dev/null
+assert_eq "$RESTORED" "radarr->2" "restore_orphans rescales parked deployment"
+assert_eq "$CLEARED" "yes" "restore_orphans clears original-replicas annotation"
+
+# Test B: deployment already running is not restored
+RESTORED2=""
+kc() {
+  case "$*" in
+    "get deploy -n mediastack -o jsonpath={.items[*].metadata.name}")
+      echo "radarr" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.metadata.annotations.mount-healer\\.vollminlab\\.com/original-replicas}")
+      echo "2" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.spec.replicas}")
+      echo "2" ;;
+    "scale deploy radarr -n mediastack --replicas=2")
+      RESTORED2="radarr->2" ;;
+    *) : ;;
+  esac
+}
+restore_orphans >/dev/null
+assert_eq "$RESTORED2" "" "restore_orphans skips an already-running deployment"
+
 printf '\n%s failures\n' "$FAILS"
 [ "$FAILS" = "0" ]
