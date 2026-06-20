@@ -148,8 +148,77 @@ heal_workload() {
   kc annotate deploy "$dep" -n "$ns" "$ANN_LAST=$(date -u +%s)" --overwrite
 }
 
+# restore_orphans: repair any Deployment a prior interrupted heal left at 0.
+# Runs FIRST every invocation so a dead healer pod can't park a workload down.
+restore_orphans() {
+  for ns in $HEAL_NAMESPACES; do
+    deps=$(kc get deploy -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    for dep in $deps; do
+      [ -n "$dep" ] || continue
+      orig=$(kc get deploy "$dep" -n "$ns" -o jsonpath="{.metadata.annotations.$JP_ORIG}" 2>/dev/null)
+      [ -n "$orig" ] || continue
+      cur=$(kc get deploy "$dep" -n "$ns" -o jsonpath='{.spec.replicas}')
+      if [ "$cur" = "0" ] && [ "$orig" != "0" ]; then
+        log "orphan-restore $ns/$dep -> $orig"
+        [ "$DRY_RUN" = "true" ] && continue
+        kc scale deploy "$dep" -n "$ns" --replicas="$orig"
+        kc annotate deploy "$dep" -n "$ns" "${ANN_ORIG}-" >/dev/null 2>&1 || true
+        kc annotate deploy "$dep" -n "$ns" "$ANN_LAST=$(date -u +%s)" --overwrite
+        emit_event "$ns" "$dep" RestoredAfterInterrupt Warning "Restored replicas to $orig after an interrupted heal"
+      fi
+    done
+  done
+}
+
+# pod_mount_wedged: exit 0 if pod is Pending with a FailedMount 'busy' event
+# (the post-scale reattach race). $1=ns $2=pod
+pod_mount_wedged() {
+  ns="$1"; pod="$2"
+  phase=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.phase}')
+  [ "$phase" = "Pending" ] || return 1
+  msgs=$(kc get events -n "$ns" --field-selector "involvedObject.name=$pod,reason=FailedMount" -o jsonpath='{.items[*].message}' 2>/dev/null)
+  case "$msgs" in
+    *"already mounted or mount point busy"*) return 0 ;;
+    *"volume is already exclusively attached"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# find_and_heal_one: heal at most ONE stuck workload, gated by cooldown.
+find_and_heal_one() {
+  now=$(date -u +%s)
+  for ns in $HEAL_NAMESPACES; do
+    pods=$(kc get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+    for pod in $pods; do
+      [ -n "$pod" ] || continue
+      restarts=$(pod_crashloop_restarts "$ns" "$pod")
+      if [ "$restarts" -gt "$RESTART_THRESHOLD" ]; then
+        :
+      elif pod_mount_wedged "$ns" "$pod"; then
+        :
+      else
+        continue
+      fi
+      vol=$(longhorn_rwo_volume "$ns" "$pod")
+      [ -n "$vol" ] || continue
+      dep=$(owner_deployment "$ns" "$pod")
+      [ -n "$dep" ] || { log "skip $ns/$pod: no Deployment owner"; continue; }
+      last=$(kc get deploy "$dep" -n "$ns" -o jsonpath="{.metadata.annotations.$JP_LAST}" 2>/dev/null)
+      if in_cooldown "$last" "$now" "$COOLDOWN_SECONDS"; then
+        log "skip $ns/$dep: in cooldown (last-healed=$last)"; continue
+      fi
+      heal_workload "$ns" "$dep" "$vol"
+      return 0
+    done
+  done
+  log "no stuck workloads found"
+}
+
 main() {
-  log "longhorn-mount-healer placeholder main"
+  log "longhorn-mount-healer start (ns='$HEAL_NAMESPACES' threshold=$RESTART_THRESHOLD dry_run=$DRY_RUN)"
+  restore_orphans
+  find_and_heal_one
+  log "longhorn-mount-healer done"
 }
 
 [ -n "${HEAL_TEST:-}" ] || main "$@"

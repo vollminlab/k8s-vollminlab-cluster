@@ -76,5 +76,70 @@ wait_detached pvc-abc123 10 1; assert_rc "$?" "0" "wait_detached returns 0 when 
 kc() { echo "attached"; }
 wait_detached pvc-stuck 1 1; assert_rc "$?" "1" "wait_detached returns 1 on timeout"
 
+# --- find_and_heal_one: healthy cluster -> no heal ---
+# Single namespace with one healthy pod; stub heal_workload to record calls.
+HEAL_NAMESPACES="mediastack"
+HEALED=""
+heal_workload() { HEALED="$1/$2 vol=$3"; }
+kc() {
+  case "$*" in
+    "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "prowlarr-y" ;;
+    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "" ;;
+    "get pod prowlarr-y -n mediastack -o jsonpath={.status.phase}") echo "Running" ;;
+    *) echo "" ;;
+  esac
+}
+out=$(find_and_heal_one)
+assert_eq "$HEALED" "" "healthy cluster -> nothing healed"
+case "$out" in *"no stuck workloads found"*) assert_rc 0 0 "logs no-stuck message" ;; *) assert_rc 1 0 "logs no-stuck message" ;; esac
+
+# --- find_and_heal_one: one stuck radarr -> heal exactly once ---
+HEALED=""
+HEAL_COUNT=0
+heal_workload() { HEAL_COUNT=$((HEAL_COUNT+1)); HEALED="$1/$2 vol=$3"; }
+kc() {
+  case "$*" in
+    "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "radarr-x sonarr-z" ;;
+    # radarr: crashlooping over threshold, longhorn RWO
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}") echo "37 " ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}") echo "radarr-config" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.storageClassName}") echo "longhorn" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.accessModes[*]}") echo "ReadWriteOnce" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.volumeName}") echo "pvc-abc123" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"ReplicaSet\")].name}") echo "radarr-5d9" ;;
+    "get rs radarr-5d9 -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"Deployment\")].name}") echo "radarr" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.metadata.annotations.mount-healer\\.vollminlab\\.com/last-healed}") echo "" ;;
+    # sonarr would also be stuck, but we must stop after the first heal
+    *) echo "" ;;
+  esac
+}
+find_and_heal_one >/dev/null
+assert_eq "$HEAL_COUNT" "1" "exactly one workload healed per run"
+assert_eq "$HEALED" "mediastack/radarr vol=pvc-abc123" "healed the stuck radarr"
+
+# --- cooldown suppresses re-heal ---
+HEAL_COUNT=0
+kc_inner() { :; }
+# same as above but last-healed is 'now' -> in cooldown
+NOWEPOCH=$(date -u +%s)
+kc() {
+  case "$*" in
+    "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "radarr-x" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}") echo "37 " ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}") echo "radarr-config" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.storageClassName}") echo "longhorn" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.accessModes[*]}") echo "ReadWriteOnce" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.volumeName}") echo "pvc-abc123" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"ReplicaSet\")].name}") echo "radarr-5d9" ;;
+    "get rs radarr-5d9 -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"Deployment\")].name}") echo "radarr" ;;
+    "get deploy radarr -n mediastack -o jsonpath={.metadata.annotations.mount-healer\\.vollminlab\\.com/last-healed}") echo "$NOWEPOCH" ;;
+    *) echo "" ;;
+  esac
+}
+find_and_heal_one >/dev/null
+assert_eq "$HEAL_COUNT" "0" "cooldown suppresses re-heal"
+
 printf '\n%s failures\n' "$FAILS"
 [ "$FAILS" = "0" ]
