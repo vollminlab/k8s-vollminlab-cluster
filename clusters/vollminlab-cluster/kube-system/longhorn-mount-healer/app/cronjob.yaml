@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: longhorn-mount-healer
+  namespace: kube-system
+  labels:
+    app: longhorn-mount-healer
+    env: production
+    category: storage
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: longhorn-mount-healer
+            env: production
+            category: storage
+        spec:
+          serviceAccountName: longhorn-mount-healer
+          restartPolicy: Never
+          containers:
+            - name: longhorn-mount-healer
+              image: docker.io/alpine/kubectl:1.33.4
+              command: ["/bin/sh", "/scripts/heal.sh"]
+              env:
+                - name: HEAL_NAMESPACES
+                  value: "mediastack monitoring harbor"
+                - name: RESTART_THRESHOLD
+                  value: "5"
+                - name: COOLDOWN_SECONDS
+                  value: "21600"
+                - name: DETACH_TIMEOUT_SECONDS
+                  value: "180"
+                - name: POLL_INTERVAL_SECONDS
+                  value: "5"
+                - name: DRY_RUN
+                  value: "false"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+          volumes:
+            - name: script
+              configMap:
+                name: longhorn-mount-healer-script
