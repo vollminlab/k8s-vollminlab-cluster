@@ -40,6 +40,44 @@ in_cooldown() {
   [ "$delta" -lt "$cd" ]
 }
 
+# pod_crashloop_restarts: echo summed restartCount IF a container/init is in
+# CrashLoopBackOff, else echo 0. $1=ns $2=pod
+pod_crashloop_restarts() {
+  ns="$1"; pod="$2"
+  reasons=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}')
+  case "$reasons" in
+    *CrashLoopBackOff*) ;;
+    *) echo 0; return 0 ;;
+  esac
+  restarts=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}')
+  sum_ints $restarts
+}
+
+# longhorn_rwo_volume: echo the PV name of the first longhorn RWO PVC the pod
+# mounts, else empty. $1=ns $2=pod
+longhorn_rwo_volume() {
+  ns="$1"; pod="$2"
+  claims=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.spec.volumes[*].persistentVolumeClaim.claimName}')
+  for claim in $claims; do
+    [ -n "$claim" ] || continue
+    sc=$(kc get pvc "$claim" -n "$ns" -o jsonpath='{.spec.storageClassName}')
+    case "$sc" in longhorn*) ;; *) continue ;; esac
+    modes=$(kc get pvc "$claim" -n "$ns" -o jsonpath='{.spec.accessModes[*]}')
+    case " $modes " in *" ReadWriteOnce "*) ;; *) continue ;; esac
+    pv=$(kc get pvc "$claim" -n "$ns" -o jsonpath='{.spec.volumeName}')
+    [ -n "$pv" ] && { echo "$pv"; return 0; }
+  done
+}
+
+# owner_deployment: echo the Deployment that owns the pod (via its ReplicaSet),
+# else empty. $1=ns $2=pod
+owner_deployment() {
+  ns="$1"; pod="$2"
+  rs=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.metadata.ownerReferences[?(@.kind=="ReplicaSet")].name}')
+  [ -n "$rs" ] || return 0
+  kc get rs "$rs" -n "$ns" -o jsonpath='{.metadata.ownerReferences[?(@.kind=="Deployment")].name}'
+}
+
 main() {
   log "longhorn-mount-healer placeholder main"
 }

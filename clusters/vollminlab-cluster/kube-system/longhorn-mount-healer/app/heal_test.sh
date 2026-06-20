@@ -25,5 +25,42 @@ in_cooldown "100" "150" "60"; assert_rc "$?" "0" "in_cooldown true when delta<co
 in_cooldown "100" "200" "60"; assert_rc "$?" "1" "in_cooldown false when delta>cooldown"
 in_cooldown "" "200" "60";    assert_rc "$?" "1" "in_cooldown false when no last-healed"
 
+# --- detection helpers: stub kc as a dispatcher over fixtures ---
+# A crashlooping radarr pod on a longhorn RWO PVC.
+kc() {
+  case "$*" in
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}")
+      echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}")
+      echo "37 " ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}")
+      echo "radarr-config" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.storageClassName}")
+      echo "longhorn" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.accessModes[*]}")
+      echo "ReadWriteOnce" ;;
+    "get pvc radarr-config -n mediastack -o jsonpath={.spec.volumeName}")
+      echo "pvc-abc123" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"ReplicaSet\")].name}")
+      echo "radarr-5d9" ;;
+    "get rs radarr-5d9 -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"Deployment\")].name}")
+      echo "radarr" ;;
+    # a healthy pod (no waiting reason) on an smb PVC
+    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}")
+      echo "" ;;
+    "get pod prowlarr-y -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}")
+      echo "media-share" ;;
+    "get pvc media-share -n mediastack -o jsonpath={.spec.storageClassName}")
+      echo "smb" ;;
+    *) echo "" ;;
+  esac
+}
+
+assert_eq "$(pod_crashloop_restarts mediastack radarr-x)" "37" "crashlooping pod -> summed restarts"
+assert_eq "$(pod_crashloop_restarts mediastack prowlarr-y)" "0" "healthy pod -> 0 restarts"
+assert_eq "$(longhorn_rwo_volume mediastack radarr-x)" "pvc-abc123" "longhorn RWO pod -> PV name"
+assert_eq "$(longhorn_rwo_volume mediastack prowlarr-y)" "" "smb pod -> no volume"
+assert_eq "$(owner_deployment mediastack radarr-x)" "radarr" "pod -> owning Deployment"
+
 printf '\n%s failures\n' "$FAILS"
 [ "$FAILS" = "0" ]
