@@ -197,11 +197,39 @@ kube-state-metrics series — no dependency on the descheduler's unscrapeable Cr
 Layer 1 (the cure) is its own concern and stands alone. Per the one-concern-per-PR rule, the proposed
 split is:
 
-1. **PR 1 — Layer 1 healer** (primary; lands the cure).
+1. **PR 1 — Layer 1 healer** (primary; lands the cure). **MERGED** as PR #916 (commit f9dc891).
 2. **PR 2 — Layers 2 + 3** (frequency nudge + symptom alert), as a follow-up.
 
 (If review prefers a single PR for all three, that is acceptable — they are one coherent resiliency
 concern — but the default is to land the cure first.)
+
+### PR 2 as-built (de-scoped after investigation)
+
+Investigation while building PR 2 found most of the originally-specified scope was **already
+satisfied**, so PR 2 collapsed to a single new alert:
+
+- **Layer 2 — SKIPPED, already in place.** The two explicit StorageClasses that the design would
+  have touched — `clusterwide/storageclass-longhorn-r2.yaml` and `storageclass-longhorn-dmz.yaml` —
+  **already set `dataLocality: best-effort`**. The chart-generated default `longhorn` StorageClass
+  explicitly sets `dataLocality: disabled` (Helm chart default), which *overrides* the global
+  `default-data-locality` setting for any volume created from it — so flipping the global setting
+  would be inert for the default-SC apps, and StorageClass `parameters` are immutable (would require
+  SC recreation). The zero-risk declarative nudge therefore offered no incremental benefit worth the
+  churn; deferred entirely to the tracked node-RAM rework (`project_worker02_memory_pressure`), which
+  is the real frequency fix. (Resolves open question #4: best-effort lives at the StorageClass
+  parameter; the global setting is inert behind explicit per-SC values.)
+- **Layer 3 — REFINED to one alert, `StorageHealerNotCoping`.** The generic symptom alert the design
+  described (`kube_pod_container_status_restarts_total` rising → warning) **already exists** as
+  `PodCrashLooping` in `prometheusrule-custom.yaml`, and healer-CronJob death is already covered by
+  `CronJobNotSucceededRecently` (`prometheusrule-gitops.yaml`). The only non-duplicative, additive
+  signal is the design's "if the alert keeps firing despite the healer running, the healer isn't
+  coping" case. PR 2 adds exactly that as `StorageHealerNotCoping` (added to the existing
+  `pod-health` group in `prometheusrule-custom.yaml`): `critical`, scoped to the healer's
+  `HEAL_NAMESPACES` allowlist (`mediastack|monitoring|harbor`), firing when a pod there is still
+  crash-looping an hour later (`increase(...[1h]) > 6` `for: 1h`). A successful heal recreates the
+  pod with a new name, resetting the per-pod counter series, so the alert only fires when the
+  automated cure failed (detach timeout) or the 6h per-workload cooldown is masking a genuine
+  application bug. No Flux wiring change — the alert lands in an already-indexed file.
 
 ## Verification
 
