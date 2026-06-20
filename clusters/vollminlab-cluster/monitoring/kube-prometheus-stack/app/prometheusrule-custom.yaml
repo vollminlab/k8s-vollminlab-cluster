@@ -158,6 +158,33 @@ spec:
             summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
             description: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $value | printf \"%.0f\" }} times in the last 30 minutes."
 
+        # Escalated sibling of PodCrashLooping, scoped to the namespaces the longhorn-mount-healer
+        # CronJob (kube-system) covers. The healer runs */10 and clears a stale Longhorn mount via
+        # scale-0 -> wait-detached -> scale-up within ~10-20m; a fresh pod after a heal resets this
+        # counter. A crashloop still accruing restarts an hour later means the automated cure did
+        # not take -- a detach timeout (HealedStaleMountTimeout) or the healer's 6h per-workload
+        # cooldown suppressing what is actually an application bug. Either way a human is needed.
+        # NOTE: keep this namespace regex in sync with the healer's HEAL_NAMESPACES allowlist
+        # (clusters/vollminlab-cluster/kube-system/longhorn-mount-healer/app/heal.sh).
+        - alert: StorageHealerNotCoping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"mediastack|monitoring|harbor"}[1h]) > 6
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Self-healer not coping: {{ $labels.namespace }}/{{ $labels.pod }} still crash-looping"
+            description: >-
+              Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+              has restarted {{ $value | printf "%.0f" }} times in the last hour and is still
+              crash-looping past the longhorn-mount-healer window. The automated scale-0 ->
+              wait-detached -> scale-up cure has not resolved it. Check
+              `kubectl get events -n {{ $labels.namespace }} --field-selector reason=HealedStaleMountTimeout`
+              (the healer emits this in the affected namespace) and the healer CronJob logs
+              (`kubectl logs -n kube-system -l app=longhorn-mount-healer --tail=100`); if it
+              is a stale Longhorn mount, run the manual runbook (scale the Deployment to 0,
+              wait for the Longhorn volume to report detached, scale it back up).
+
         - alert: PodNotReady
           expr: |
             (
