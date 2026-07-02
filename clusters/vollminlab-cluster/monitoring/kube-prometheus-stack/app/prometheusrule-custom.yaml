@@ -120,6 +120,26 @@ spec:
               stuck backup blocks kopia GC and will fill MinIO. Check 'velero backup get'
               and repo maintenance.
 
+        # Same escalation guard for the off-site daily-b2 schedule. daily-b2 shares the
+        # same failure surface (a wedged/PartiallyFailed backup pins kopia blocks the B2
+        # repo's full maintenance can't GC) — it just fills Backblaze instead of MinIO,
+        # and leaves the retention tier stale. daily-b2 has its own 72h guard because a
+        # per-schedule threshold is required: monthly-b2 legitimately runs monthly, so it
+        # can't share this alert (its last-success age exceeds 72h by design).
+        - alert: VeleroB2BackupPersistentlyFailing
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-daily-b2"} > 72 * 3600
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero daily-b2 has had no successful backup in 72 hours"
+            description: >-
+              Last fully-successful daily-b2 (off-site Backblaze) backup was
+              {{ $value | humanizeDuration }} ago — a backup may be wedged InProgress or
+              repeatedly PartiallyFailed, pinning kopia blocks in B2 and leaving the
+              off-site retention tier stale. Check 'velero backup get' and repo maintenance.
+
         - alert: KubeJobFailed
           expr: |
             (kube_job_failed{namespace!="velero"} > 0)
