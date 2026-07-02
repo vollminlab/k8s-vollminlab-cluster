@@ -114,7 +114,11 @@ spec:
             severity: critical
           annotations:
             summary: "Velero daily-full has had no successful backup in 72 hours"
-            description: "Last fully-successful daily-full backup was {{ $value | humanizeDuration }} ago — a backup may be wedged InProgress or repeatedly PartiallyFailed. A stuck backup blocks kopia GC and will fill MinIO. Check 'velero backup get' and repo maintenance."
+            description: >-
+              Last fully-successful daily-full backup was {{ $value | humanizeDuration }}
+              ago — a backup may be wedged InProgress or repeatedly PartiallyFailed. A
+              stuck backup blocks kopia GC and will fill MinIO. Check 'velero backup get'
+              and repo maintenance.
 
         - alert: KubeJobFailed
           expr: |
