@@ -146,7 +146,12 @@ data:
         schedule: "0 3 * * *"
         useOwnerReferencesInBackup: false
         template:
-          ttl: 168h
+          # Local MinIO copy is a fast-restore CACHE, not the retention tier: the same
+          # data lands in B2 daily (daily-b2, 90d) and monthly (monthly-b2, 365d), only
+          # ~1h behind. 96h (4 days) covers a long-weekend "noticed it Monday" restore at
+          # LAN speed while keeping steady-state headroom on the 100Gi MinIO volume.
+          # Anything older is rare and served from B2. (Was 168h; trimmed 2026-07-02.)
+          ttl: 96h
           storageLocation: minio
           defaultVolumesToFsBackup: true
           excludedNamespaces:

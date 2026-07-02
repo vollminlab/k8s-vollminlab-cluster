@@ -100,6 +100,22 @@ spec:
             summary: "Velero daily-full backup partially failed"
             description: "A daily-full backup has PartiallyFailed in the last 26 hours. Check velero backup describe."
 
+        # Escalation guard. VeleroBackupNotAttempted/PartiallyFailed are warnings that can be
+        # tolerated for days — on 2026-07-02 a wedged InProgress backup left daily-full
+        # PartiallyFailed for 4 days, silently pinning kopia blocks (maintenance can't GC an
+        # in-use snapshot) until MinIO hit 100%. This fires critical when NO fully-successful
+        # daily-full has completed in 72h, forcing action before a stuck/degraded backup fills
+        # the volume. Reuses the restart-immune velero_backup_last_successful_timestamp gauge.
+        - alert: VeleroBackupPersistentlyFailing
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-daily-full"} > 72 * 3600
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero daily-full has had no successful backup in 72 hours"
+            description: "Last fully-successful daily-full backup was {{ $value | humanizeDuration }} ago — a backup may be wedged InProgress or repeatedly PartiallyFailed. A stuck backup blocks kopia GC and will fill MinIO. Check 'velero backup get' and repo maintenance."
+
         - alert: KubeJobFailed
           expr: |
             (kube_job_failed{namespace!="velero"} > 0)
