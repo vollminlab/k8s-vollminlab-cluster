@@ -161,6 +161,11 @@ the old CP datastore):
 2. Unmount / delete the datastore (or repurpose the space back to the shared ZFS pool). This is the
    space reclaim — no more storage permanently tied up for CP nodes on the shared pool.
 
+> **Done 2026-07-07.** All three CP VMs are on local NVMe. The old `ds-k8s-cp-ssd` VMFS datastore —
+> carved from the interim `pool_1/vmstorage/k8s-control-plane` zvol (125 GiB) — was unmounted and the
+> zvol destroyed, returning that space to the shared ZFS pool. See **Results** below for the
+> latency observed across the removal (zero perturbation).
+
 ## Verification (the point of the whole exercise)
 
 Re-run the WAL fsync p99 query **during the next nightly Velero `daily-full` window (~03:00 UTC)**,
@@ -179,6 +184,56 @@ This runbook is one of two shock absorbers for the same incident class; the othe
 widening and leader-election timeout widening) live in the ansible `harden-cp-probes` work and cover
 the case where a latency blip still occurs. Storage isolation removes the trigger; the ansible
 hardening tolerates any residual blip.
+
+## Results — verified 2026-07-07
+
+All three CP VMs are running from local NVMe. Steady-state WAL fsync latency has collapsed to
+**~1 ms** on every member — roughly two to three orders of magnitude better than the shared-pool
+floor that triggered the incident class.
+
+| Era | Storage | WAL fsync p99 |
+|-----|---------|---------------|
+| Original (incident) | Shared ZFS pool, contended | **350–385 ms** |
+| Interim fix | Dedicated `pool_1` zvol (`ds-k8s-cp-ssd`) | 7.6–57 ms |
+| **Now (local NVMe)** | Per-host local NVMe | **~1 ms** |
+
+Post-migration steady-state (instant `histogram_quantile(0.99, …)`, last / max over a 30 m window):
+
+| Member | WAL fsync p99 (last / max) | backend commit p99 |
+|--------|----------------------------|--------------------|
+| `192.168.152.8` (k8scp01) | 1.15 / 2.89 ms | 1.0–4.65 ms |
+| `192.168.152.9` (k8scp02) | 0.99 / 1.52 ms | 1.0–4.65 ms |
+| `192.168.152.10` (k8scp03) | 1.00 / 1.05 ms | 1.0–4.65 ms |
+
+Cluster health across the whole window: **3/3 members reporting a leader, 0 leader changes.**
+
+**Zero perturbation from the datastore removal.** The old `ds-k8s-cp-ssd` datastore was unmounted and
+its `pool_1` zvol destroyed while etcd was watched live (five consecutive clean reads, ~04:52–05:02
+UTC). fsync p99 stayed ~1–3 ms throughout the unmount / iSCSI rescan — the CP VMs no longer touch
+that storage path at all, so removing it was a no-op for etcd.
+
+> **Caveat — the during-backup-window measurement is still pending a clean nightly capture.** The
+> success criterion above (p99 < 10 ms *through* the 03:00 UTC Velero `daily-full` window) could not
+> be freshly sampled on 2026-07-07: Prometheus was recovering from a WAL-fill outage (2026-07-03 →
+> 07) and its history only reaches back to ~04:42 UTC, after that night's backup window had already
+> passed. The ~1 ms steady-state and the zero-perturbation observation strongly imply the window will
+> be clean, but confirm it against the next unaffected `daily-full` run before closing this out.
+
+### Query method (for re-running the above)
+
+The Prometheus pod image is distroless (no shell / wget). Query it via the Grafana pod, which has
+`/usr/bin/wget` and network access to Prometheus as a datasource:
+
+```bash
+GRAFANA_POD=$(kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana \
+  -o jsonpath='{.items[0].metadata.name}')
+# URL-encode the PromQL, then:
+kubectl exec -n monitoring "$GRAFANA_POD" -c grafana -- \
+  wget -qO- 'http://kube-prometheus-stack-prometheus:9090/api/v1/query?query=<encoded-promql>'
+```
+
+Results nest under `data.result` (not top-level `result`). The etcd fsync series carry
+`job="kube-etcd"`, `instance="192.168.152.{8,9,10}:2381"`.
 
 ## Rollback
 
