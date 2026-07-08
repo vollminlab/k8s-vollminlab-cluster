@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-qbittorrent-config
   trigger:
-    schedule: "0 3 * * *"
+    schedule: "0 1 * * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-qbittorrent-config-restic
