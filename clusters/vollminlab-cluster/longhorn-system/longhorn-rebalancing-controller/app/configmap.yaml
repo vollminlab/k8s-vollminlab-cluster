@@ -19,6 +19,9 @@ data:
 
     config:
       dryRun: false
+      rebalance:
+        maxEvictionsPerDay: 4
+        smallestFirst: false
 
     resources:
       requests:
