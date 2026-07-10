@@ -15,6 +15,20 @@ data:
       sbomReport:
         enabled: false
       scanJobsConcurrentLimit: 1
+      # scanJobTolerations MUST live under operator: — in the trivy-operator
+      # chart this key is operator.scanJobTolerations. A top-level
+      # scanJobTolerations is silently dropped by Helm, so scan pods get no
+      # tolerations and cannot schedule onto the tainted CP/DMZ nodes. With the
+      # 4 general workers CPU-request-saturated, that produced FailedScheduling
+      # -> BackoffLimitExceeded. (nodeCollector is a genuine top-level block.)
+      scanJobTolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: dmz
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       resources:
         requests:
           cpu: 100m
@@ -42,15 +56,6 @@ data:
         limits:
           cpu: 500m
           memory: 1Gi
-
-    scanJobTolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
-      - key: dmz
-        operator: Equal
-        value: "true"
-        effect: NoSchedule
 
     nodeCollector:
       tolerations:
