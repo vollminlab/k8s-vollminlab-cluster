@@ -40,7 +40,9 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        cpu: 200m
+        # VPA target ~15m; keep a 100m floor for par2/unrar CPU bursts on download
+        # completion. Request 200m→100m. Limit unchanged (500m).
+        cpu: 100m
         memory: 256Mi
       limits:
         cpu: 500m
