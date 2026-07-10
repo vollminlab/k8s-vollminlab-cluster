@@ -16,7 +16,10 @@ data:
 
     resources:
       requests:
-        cpu: 500m
+        # VPA target/upperBound ~11m; server is idle between backup runs. Request
+        # right-sized 500m→100m so the scheduler stops reserving idle cores on the
+        # general workers. Limit unchanged — bursts during backups still allowed.
+        cpu: 100m
         memory: 512Mi
       limits:
         cpu: 1000m
@@ -127,7 +130,9 @@ data:
           effect: NoSchedule
       resources:
         requests:
-          cpu: 100m
+          # VPA target ~15m; node-agent idles except during kopia FSB. Request
+          # 100m→50m (DaemonSet ×6). Limit unchanged so backups still burst.
+          cpu: 50m
           memory: 512Mi
         limits:
           cpu: 1000m
