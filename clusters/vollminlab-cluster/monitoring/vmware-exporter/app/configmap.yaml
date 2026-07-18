@@ -25,7 +25,8 @@ data:
         cpu: 100m
         memory: 128Mi
       limits:
-        cpu: 400m
+        # 23% avg CFS throttling at 400m (bursty scrapes) — sole recurring CPUThrottlingHigh source
+        cpu: 800m
         memory: 256Mi
 
     service:
