@@ -45,7 +45,7 @@ data:
       # both run longhorn-manager) launch concurrent scans against one shared
       # cache emptyDir and deadlock on the lock -> BackoffLimitExceeded. The
       # memory backend has no on-disk lock, so concurrent same-image scans
-      # succeed. Requires trivy >=0.68.1 (chart default is 0.69.3).
+      # succeed. Requires trivy >=0.68.1 (chart 0.34.0 default is 0.72.0).
       configFile:
         cache:
           backend: memory
