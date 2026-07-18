@@ -10,7 +10,12 @@ metadata:
     release: kube-prometheus-stack
 spec:
   groups:
-    # Slow-fill early-warning for the VictoriaMetrics data PVC.
+    # Slow-fill early-warning for the VictoriaMetrics data PVCs.
+    #
+    # Covers BOTH VM instances: the hot tier (server-volume-victoria-metrics-single-server-0,
+    # 60Gi Longhorn, 30d) and the cold tier (server-volume-victoria-metrics-lt-server-0, 750Gi
+    # local PV on the pool_0 VMDK, 395d). The recording rules keep the persistentvolumeclaim
+    # label, so every series and alert below is evaluated per-PVC and names the affected tier.
     #
     # The stock KubePersistentVolumeFillingUp alert only looks ~4 days ahead. This group
     # projects weeks ahead so a creeping fill (e.g. cardinality growth outrunning retention)
@@ -24,12 +29,15 @@ spec:
     #   stays silent on its own. The ratio gate suppresses the (known, healthy) ramp by only
     #   firing once free space has fallen *below the expected steady-state plateau*.
     #
-    #   Expected plateau at 60Gi / 30d retention (~1.63 GB/day): ~13 GB free ≈ 21% free.
-    #   Gates are set below that (warn <10%, crit <6%) so the normal ramp/plateau never trips
-    #   them; only a genuine drift below plateau does.
-    #   >>> Revisit these gate fractions if the PVC size or retentionPeriod changes. <<<
+    #   Both tiers ingest the same ~1.63 GB/day (Prometheus fans out the same remote-write
+    #   stream to each), so their expected plateaus are:
+    #     hot  60Gi  / 30d  -> ~13 GB free  ≈ 21% free
+    #     cold 750Gi / 395d -> ~147 GB free ≈ 18% free   (395d × 1.63 GB/day ≈ 644 GB used)
+    #   Gates are set below both plateaus (warn <10%, crit <6%) so the normal ramp/plateau on
+    #   either tier never trips them; only a genuine drift below plateau does.
+    #   >>> Revisit these gate fractions if either PVC size or retentionPeriod changes. <<<
     #
-    # Series are pre-aggregated (max without volatile labels) so deriv() stays continuous if the
+    # Series are pre-aggregated (max without volatile labels) so deriv() stays continuous if a
     # VM pod is rescheduled to a different node (the instance/node labels would otherwise change).
     - name: victoria-metrics-storage
       interval: 5m
@@ -37,13 +45,13 @@ spec:
         - record: victoriametrics:pvc_available_bytes
           expr: |
             max without (endpoint, instance, job, metrics_path, node, prometheus, prometheus_replica, service) (
-              kubelet_volume_stats_available_bytes{namespace="monitoring", persistentvolumeclaim="server-volume-victoria-metrics-single-server-0"}
+              kubelet_volume_stats_available_bytes{namespace="monitoring", persistentvolumeclaim=~"server-volume-victoria-metrics-(single|lt)-server-0"}
             )
 
         - record: victoriametrics:pvc_capacity_bytes
           expr: |
             max without (endpoint, instance, job, metrics_path, node, prometheus, prometheus_replica, service) (
-              kubelet_volume_stats_capacity_bytes{namespace="monitoring", persistentvolumeclaim="server-volume-victoria-metrics-single-server-0"}
+              kubelet_volume_stats_capacity_bytes{namespace="monitoring", persistentvolumeclaim=~"server-volume-victoria-metrics-(single|lt)-server-0"}
             )
 
         - record: victoriametrics:pvc_available_ratio
@@ -69,9 +77,9 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VictoriaMetrics PVC projected to fill within {{ $value | printf \"%.0f\" }} days"
+            summary: "VictoriaMetrics PVC {{ $labels.persistentvolumeclaim }} projected to fill within {{ $value | printf \"%.0f\" }} days"
             description: >-
-              server-volume-victoria-metrics-single-server-0 is below 10% free and
+              {{ $labels.persistentvolumeclaim }} is below 10% free and
               trending to full in {{ $value | printf "%.0f" }} days at the current 12h
               rate. Free space has dropped below the expected retention plateau — check
               active-series cardinality and retentionPeriod before it reaches the
@@ -86,9 +94,10 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "VictoriaMetrics PVC will fill in < 7 days"
+            summary: "VictoriaMetrics PVC {{ $labels.persistentvolumeclaim }} will fill in < 7 days"
             description: >-
-              server-volume-victoria-metrics-single-server-0 is below 6% free and
-              trending to full in {{ $value | printf "%.0f" }} days. Expand the PVC
-              (Longhorn online resize) or cut retentionPeriod now — a full data dir
-              takes VictoriaMetrics read-only and drops new samples.
+              {{ $labels.persistentvolumeclaim }} is below 6% free and
+              trending to full in {{ $value | printf "%.0f" }} days. Expand the volume
+              (hot tier: Longhorn online resize; cold tier: grow the VMDK in vCenter +
+              resize2fs) or cut retentionPeriod now — a full data dir takes
+              VictoriaMetrics read-only and drops new samples.

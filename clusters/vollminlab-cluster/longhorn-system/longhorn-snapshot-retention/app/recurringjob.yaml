@@ -1,0 +1,25 @@
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: snapshot-retention
+  namespace: longhorn-system
+  labels:
+    app: longhorn-snapshot-retention
+    env: production
+    category: storage
+spec:
+  name: snapshot-retention
+  # VolSync's copyMethod: Clone leaves one internal source-volume snapshot per
+  # nightly run that Longhorn never cleans up (617 orphans accumulated
+  # 2026-05-30 -> 2026-07-18). snapshot-delete purges snapshots beyond `retain`
+  # on every volume in the default group (= all volumes without explicit
+  # recurring-job labels), capping growth at 3 per volume.
+  task: snapshot-delete
+  # Midday, far from the 00:00-05:30 backup window and the 06:00 trim job —
+  # purge/coalesce is real replica I/O on the shared pool.
+  cron: "0 12 * * *"
+  retain: 3
+  concurrency: 2
+  groups:
+    - default
+  labels: {}

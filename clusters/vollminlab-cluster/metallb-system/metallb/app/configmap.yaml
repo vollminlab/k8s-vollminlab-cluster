@@ -28,7 +28,9 @@ data:
         frr:
           resources:
             requests:
-              cpu: 100m
+              # VPA target/upperBound ~11m (BGP daemon is near-idle). Request
+              # 100m→50m (DaemonSet on every node). No limit block — unchanged.
+              cpu: 50m
               memory: 128Mi
         frrMetrics:
           resources:
