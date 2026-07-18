@@ -16,7 +16,10 @@ data:
 
     resources:
       requests:
-        cpu: 500m
+        # VPA target/upperBound ~11m; server is idle between backup runs. Request
+        # right-sized 500m→100m so the scheduler stops reserving idle cores on the
+        # general workers. Limit unchanged — bursts during backups still allowed.
+        cpu: 100m
         memory: 512Mi
       limits:
         cpu: 1000m
@@ -127,7 +130,9 @@ data:
           effect: NoSchedule
       resources:
         requests:
-          cpu: 100m
+          # VPA target ~15m; node-agent idles except during kopia FSB. Request
+          # 100m→50m (DaemonSet ×6). Limit unchanged so backups still burst.
+          cpu: 50m
           memory: 512Mi
         limits:
           cpu: 1000m
@@ -146,9 +151,25 @@ data:
         schedule: "0 3 * * *"
         useOwnerReferencesInBackup: false
         template:
-          ttl: 168h
+          # Local MinIO copy is a fast-restore CACHE, not the retention tier: the same
+          # data lands in B2 daily (daily-b2, 90d) and monthly (monthly-b2, 365d), only
+          # ~1h behind. 96h (4 days) covers a long-weekend "noticed it Monday" restore at
+          # LAN speed while keeping steady-state headroom on the 100Gi MinIO volume.
+          # Anything older is rare and served from B2. (Was 168h; trimmed 2026-07-02.)
+          ttl: 96h
           storageLocation: minio
           defaultVolumesToFsBackup: true
+          # Throttle kopia's per-snapshot file read parallelism. The default is the
+          # node CPU count (4 on general workers), and all worker VMDKs sit on the
+          # same shared datastore — a full FSB pass drives PSI full I/O-stall to
+          # 26-48% on every general worker simultaneously, which liveness-kills pods
+          # on whichever node hosts the most attached volumes (restart storms on
+          # k8sworker02, nightly 03:00-04:30). node-agent loadConcurrency is already
+          # at its minimum (1 per node), so this is the remaining throttle knob.
+          # 2 halves the concurrent pool readers while keeping daily-full (~20 min)
+          # well clear of the 04:00 daily-b2 slot.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -179,6 +200,9 @@ data:
           ttl: 2160h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -209,6 +233,9 @@ data:
           ttl: 8760h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -239,6 +266,9 @@ data:
           ttl: 2160h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           includedNamespaces:
             - monitoring
           labelSelector:
