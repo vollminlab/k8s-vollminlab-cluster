@@ -45,11 +45,11 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        # VPA target ~35m / upperBound ~50m. Request 100m→50m. Limit unchanged (500m).
+        # VPA target ~35m / upperBound ~50m. Request 100m→50m.
         cpu: 50m
         memory: 256Mi
       limits:
-        cpu: 500m
+        cpu: 1000m
         memory: 512Mi
     podLabels:
       app: readarr
