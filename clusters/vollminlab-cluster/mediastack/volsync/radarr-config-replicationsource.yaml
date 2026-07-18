@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-radarr-config
   trigger:
-    schedule: "0 3 * * *"
+    schedule: "10 1 * * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-radarr-config-restic

@@ -52,7 +52,10 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        cpu: 500m
+        # VPA target ~109m / upperBound ~128m. Request 500m→200m keeps a floor
+        # above the observed peak while freeing 300m of scheduler reservation.
+        # Limit unchanged (4000m) so transcodes still burst hard.
+        cpu: 200m
         memory: 512Mi
       limits:
         cpu: 4000m
