@@ -159,6 +159,17 @@ data:
           ttl: 96h
           storageLocation: minio
           defaultVolumesToFsBackup: true
+          # Throttle kopia's per-snapshot file read parallelism. The default is the
+          # node CPU count (4 on general workers), and all worker VMDKs sit on the
+          # same shared datastore — a full FSB pass drives PSI full I/O-stall to
+          # 26-48% on every general worker simultaneously, which liveness-kills pods
+          # on whichever node hosts the most attached volumes (restart storms on
+          # k8sworker02, nightly 03:00-04:30). node-agent loadConcurrency is already
+          # at its minimum (1 per node), so this is the remaining throttle knob.
+          # 2 halves the concurrent pool readers while keeping daily-full (~20 min)
+          # well clear of the 04:00 daily-b2 slot.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -189,6 +200,9 @@ data:
           ttl: 2160h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -219,6 +233,9 @@ data:
           ttl: 8760h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           excludedNamespaces:
             - kyverno
             - longhorn-system
@@ -249,6 +266,9 @@ data:
           ttl: 2160h
           storageLocation: b2
           defaultVolumesToFsBackup: true
+          # Throttle kopia file read parallelism — see daily-full for rationale.
+          uploaderConfig:
+            parallelFilesUpload: 2
           includedNamespaces:
             - monitoring
           labelSelector:
