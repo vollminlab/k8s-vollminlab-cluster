@@ -45,7 +45,8 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        cpu: 100m
+        # VPA target ~35m / upperBound ~50m. Request 100m→50m. Limit unchanged (500m).
+        cpu: 50m
         memory: 256Mi
       limits:
         cpu: 500m

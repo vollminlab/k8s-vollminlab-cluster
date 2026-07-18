@@ -27,7 +27,7 @@ data:
           httpPort: 80
           httpsPort: 443
         annotations:
-          metallb.universe.tf/loadBalancerIPs: "192.168.152.245"
+          metallb.io/loadBalancerIPs: "192.168.152.245"
           external-dns.alpha.kubernetes.io/hostname: harbor.vollminlab.com
         sourceRanges: []
 

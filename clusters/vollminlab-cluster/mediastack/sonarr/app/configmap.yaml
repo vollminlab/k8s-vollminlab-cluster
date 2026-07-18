@@ -24,7 +24,8 @@ data:
         mountPath: /tv
     resources:
       requests:
-        cpu: 100m
+        # VPA target/upperBound ~23m. Request 100m→50m. Limit unchanged (500m).
+        cpu: 50m
         memory: 256Mi
       limits:
         cpu: 500m
