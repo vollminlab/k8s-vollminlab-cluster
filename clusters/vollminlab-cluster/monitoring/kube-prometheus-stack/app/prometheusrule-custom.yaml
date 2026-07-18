@@ -225,6 +225,29 @@ spec:
               is a stale Longhorn mount, run the manual runbook (scale the Deployment to 0,
               wait for the Longhorn volume to report detached, scale it back up).
 
+        # Escalated sibling of PodCrashLooping for user-facing namespaces: a crashloop
+        # still accruing restarts after 30 minutes there is an outage in progress, not a
+        # transient blip. severity=critical routes to the priority-1 Pushover receiver
+        # (route lives in the "Alertmanager Config" 1Password item), which repeats every
+        # 4h instead of 12h. The plain PodCrashLooping warning keeps firing alongside —
+        # this adds escalation, it suppresses nothing. Context: the 2026-07-13 shlink
+        # crashloop ran ~30h because it only ever surfaced as a quiet priority-0 warning.
+        - alert: UserFacingPodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"shlink|mediastack|homepage|authentik"}[30m]) > 3
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "User-facing pod {{ $labels.namespace }}/{{ $labels.pod }} crash-looping for 30m+"
+            description: >-
+              Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+              has restarted {{ $value | printf "%.0f" }} times in the last 30 minutes and the
+              loop has persisted past the 30-minute escalation window. Treat as a user-facing
+              outage: check `kubectl describe pod` and recent events in the namespace, and if
+              it is a stale Longhorn mount follow the scale-0 -> wait-detached -> scale-up
+              runbook.
+
         - alert: PodNotReady
           expr: |
             (
