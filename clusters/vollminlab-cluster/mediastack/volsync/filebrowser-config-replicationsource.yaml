@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-filebrowser-config
   trigger:
-    schedule: "0 3 * * *"
+    schedule: "30 0 * * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-filebrowser-config-restic

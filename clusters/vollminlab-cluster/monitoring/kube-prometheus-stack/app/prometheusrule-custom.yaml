@@ -100,6 +100,46 @@ spec:
             summary: "Velero daily-full backup partially failed"
             description: "A daily-full backup has PartiallyFailed in the last 26 hours. Check velero backup describe."
 
+        # Escalation guard. VeleroBackupNotAttempted/PartiallyFailed are warnings that can be
+        # tolerated for days — on 2026-07-02 a wedged InProgress backup left daily-full
+        # PartiallyFailed for 4 days, silently pinning kopia blocks (maintenance can't GC an
+        # in-use snapshot) until MinIO hit 100%. This fires critical when NO fully-successful
+        # daily-full has completed in 72h, forcing action before a stuck/degraded backup fills
+        # the volume. Reuses the restart-immune velero_backup_last_successful_timestamp gauge.
+        - alert: VeleroBackupPersistentlyFailing
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-daily-full"} > 72 * 3600
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero daily-full has had no successful backup in 72 hours"
+            description: >-
+              Last fully-successful daily-full backup was {{ $value | humanizeDuration }}
+              ago — a backup may be wedged InProgress or repeatedly PartiallyFailed. A
+              stuck backup blocks kopia GC and will fill MinIO. Check 'velero backup get'
+              and repo maintenance.
+
+        # Same escalation guard for the off-site daily-b2 schedule. daily-b2 shares the
+        # same failure surface (a wedged/PartiallyFailed backup pins kopia blocks the B2
+        # repo's full maintenance can't GC) — it just fills Backblaze instead of MinIO,
+        # and leaves the retention tier stale. daily-b2 has its own 72h guard because a
+        # per-schedule threshold is required: monthly-b2 legitimately runs monthly, so it
+        # can't share this alert (its last-success age exceeds 72h by design).
+        - alert: VeleroB2BackupPersistentlyFailing
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-daily-b2"} > 72 * 3600
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero daily-b2 has had no successful backup in 72 hours"
+            description: >-
+              Last fully-successful daily-b2 (off-site Backblaze) backup was
+              {{ $value | humanizeDuration }} ago — a backup may be wedged InProgress or
+              repeatedly PartiallyFailed, pinning kopia blocks in B2 and leaving the
+              off-site retention tier stale. Check 'velero backup get' and repo maintenance.
+
         - alert: KubeJobFailed
           expr: |
             (kube_job_failed{namespace!="velero"} > 0)
@@ -184,6 +224,29 @@ spec:
               (`kubectl logs -n kube-system -l app=longhorn-mount-healer --tail=100`); if it
               is a stale Longhorn mount, run the manual runbook (scale the Deployment to 0,
               wait for the Longhorn volume to report detached, scale it back up).
+
+        # Escalated sibling of PodCrashLooping for user-facing namespaces: a crashloop
+        # still accruing restarts after 30 minutes there is an outage in progress, not a
+        # transient blip. severity=critical routes to the priority-1 Pushover receiver
+        # (route lives in the "Alertmanager Config" 1Password item), which repeats every
+        # 4h instead of 12h. The plain PodCrashLooping warning keeps firing alongside —
+        # this adds escalation, it suppresses nothing. Context: the 2026-07-13 shlink
+        # crashloop ran ~30h because it only ever surfaced as a quiet priority-0 warning.
+        - alert: UserFacingPodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"shlink|mediastack|homepage|authentik"}[30m]) > 3
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "User-facing pod {{ $labels.namespace }}/{{ $labels.pod }} crash-looping for 30m+"
+            description: >-
+              Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }}
+              has restarted {{ $value | printf "%.0f" }} times in the last 30 minutes and the
+              loop has persisted past the 30-minute escalation window. Treat as a user-facing
+              outage: check `kubectl describe pod` and recent events in the namespace, and if
+              it is a stale Longhorn mount follow the scale-0 -> wait-detached -> scale-up
+              runbook.
 
         - alert: PodNotReady
           expr: |

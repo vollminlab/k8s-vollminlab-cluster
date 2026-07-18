@@ -19,7 +19,9 @@ data:
 
     resources:
       requests:
-        cpu: 200m
+        # VPA target ~15m; controller idles between reconciles (runners do the work).
+        # Request 200m→75m. Limit unchanged (1000m) for reconcile bursts.
+        cpu: 75m
         memory: 256Mi
       limits:
         cpu: 1000m

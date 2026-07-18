@@ -17,7 +17,17 @@ data:
         scrapeInterval: 30s
         retention: 24h
         remoteWrite:
+          # #1 hot tier (30d, SSD) — the default Grafana datasource.
           - url: http://victoria-metrics-single-server.monitoring.svc.cluster.local:8428/api/v1/write
+          # #2 cold tier (395d, pool_0 spinning disk). Its own queue isolates the
+          # slow endpoint: if pool_0 falls behind, only the LT shard queue backs up
+          # — the hot write and scraping are unaffected.
+          - url: http://victoria-metrics-lt-server.monitoring.svc.cluster.local:8428/api/v1/write
+            name: vm-lt
+            queueConfig:
+              capacity: 10000
+              maxShards: 10
+              maxSamplesPerSend: 2000
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
         serviceMonitorNamespaceSelector: {}
@@ -106,6 +116,14 @@ data:
           uid: prometheus-live
           access: proxy
           url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          isDefault: false
+          jsonData:
+            timeInterval: 30s
+        - name: VictoriaMetrics (long-term)
+          type: prometheus
+          uid: victoriametrics-lt
+          access: proxy
+          url: http://victoria-metrics-lt-server.monitoring.svc.cluster.local:8428
           isDefault: false
           jsonData:
             timeInterval: 30s

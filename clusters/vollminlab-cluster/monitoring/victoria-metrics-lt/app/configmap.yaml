@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victoria-metrics-lt-values
+  namespace: monitoring
+  labels:
+    app: victoria-metrics-lt
+    env: production
+    category: observability
+data:
+  values.yaml: |
+    # Cold tier: a SECOND victoria-metrics-single, ~13 months retention, on cheap
+    # pool_0 spinning disk (local PV) — everything older than the hot tier's 30d
+    # lives here, off Longhorn. Prometheus remoteWrite fans out to both instances.
+    # Distinct service -> victoria-metrics-lt-server.monitoring.svc:8428
+    fullnameOverride: victoria-metrics-lt
+
+    server:
+      # 395d = 13 months. At the measured ~1.63 GB/day this is ~645GB on-disk;
+      # the 750Gi PV below has headroom.
+      retentionPeriod: 395d
+
+      # statefulSet: the RWO local PV is bound via a volumeClaimTemplate, avoiding
+      # the rolling-update detach trap (same reason as the hot tier).
+      mode: statefulSet
+
+      persistentVolume:
+        enabled: true
+        # Binds the pre-created static local PV (storageclass.yaml + pv.yaml).
+        storageClassName: local-vm-lt
+        accessModes:
+          - ReadWriteOnce
+        size: 750Gi
+
+      # LOAD-BEARING label: this MUST be victoria-metrics-lt, NOT victoria-metrics.
+      # The velero victoria-metrics-b2 schedule selects app=victoria-metrics; a
+      # matching label would sweep this 750Gi cold volume into a daily B2 backup —
+      # the opposite of intent. Backup here is TrueNAS ZFS snapshots of the pool_0
+      # dataset, not Velero.
+      podLabels:
+        app: victoria-metrics-lt
+        env: production
+        category: observability
+
+      resources:
+        requests:
+          cpu: 100m
+          # Higher floor than the hot tier: year-range queries touch far more
+          # blocks. Tune after observing real usage.
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+
+      # Scrape VM's own /metrics so cold-tier health (ingestion rate, disk growth,
+      # uptime) is visible in Grafana. Prometheus scrapes all ServiceMonitors.
+      serviceMonitor:
+        enabled: true
+        extraLabels:
+          app: victoria-metrics-lt
+          env: production
+          category: observability

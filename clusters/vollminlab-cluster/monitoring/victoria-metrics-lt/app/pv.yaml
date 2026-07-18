@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: victoria-metrics-lt-data
+  labels:
+    app: victoria-metrics-lt
+    env: production
+    category: observability
+spec:
+  capacity:
+    storage: 750Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  # Retain: never auto-wipe a year of history if the PVC/STS is deleted.
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-vm-lt
+  local:
+    # ext4 mount of the pool_0-VMDK on the pinned node (Phase 0, step 0.7).
+    # PV `local` type is NOT a pod hostPath volume — the "no hostPath" Kyverno
+    # policy targets Pod specs, not PersistentVolumes, so this passes.
+    path: /mnt/vm-lt
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            # Pins the cold-tier pod to the node holding the VMDK mount.
+            # Default k8sworker01; change here if the VMware step landed the
+            # NFS datastore on a different ESXi host / worker.
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - k8sworker01
