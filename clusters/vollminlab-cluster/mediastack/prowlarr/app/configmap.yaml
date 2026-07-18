@@ -41,7 +41,9 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        cpu: 100m
+        # VPA target ~11m but upperBound ~64m (bursty indexer syncs). Request
+        # 100m→75m keeps the floor above the observed peak. Limit unchanged (500m).
+        cpu: 75m
         memory: 256Mi
       limits:
         cpu: 500m

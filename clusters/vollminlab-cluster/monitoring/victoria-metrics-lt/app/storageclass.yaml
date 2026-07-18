@@ -1,0 +1,16 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-vm-lt
+  labels:
+    app: victoria-metrics-lt
+    env: production
+    category: observability
+# Static local storage for the cold-tier VictoriaMetrics volume. The backing
+# disk is a 750Gi VMDK on a pool_0 (spinning-disk) NFS datastore, mounted ext4
+# on one worker (see docs/superpowers/plans/victoriametrics-cold-tier.md, Phase 0).
+# no-provisioner + WaitForFirstConsumer: the PV is pre-created by hand (pv.yaml);
+# binding is deferred until the pod schedules on the node the PV is pinned to.
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain

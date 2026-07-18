@@ -1,25 +1,24 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: metrics-server
-  namespace: kube-system
+  name: victoria-metrics-lt
+  namespace: monitoring
   labels:
-    app: metrics-server
+    app: victoria-metrics-lt
     env: production
     category: observability
 spec:
   interval: 5m
+  releaseName: victoria-metrics-lt
   chart:
     spec:
-      chart: metrics-server
-      version: 3.13.1
+      chart: victoria-metrics-single
+      version: 0.39.0
       sourceRef:
         kind: HelmRepository
-        name: metrics-server-repo
+        name: victoria-metrics-repo
         namespace: flux-system
-  install:
-    createNamespace: false
   valuesFrom:
     - kind: ConfigMap
-      name: metrics-server-values
+      name: victoria-metrics-lt-values
       valuesKey: values.yaml
