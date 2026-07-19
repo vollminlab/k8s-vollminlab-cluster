@@ -86,7 +86,10 @@ spec:
             severity: warning
           annotations:
             summary: "Velero daily-full has had no successful backup in 26 hours"
-            description: "Last fully-successful daily-full backup was {{ $value | humanizeDuration }} ago — the nightly run failed, partially failed, or never ran. Check 'velero backup get'. Resolves on the next Completed backup."
+            description: >-
+              Last fully-successful daily-full backup was {{ $value | humanizeDuration }} ago —
+              the nightly run failed, partially failed, or never ran. Check 'velero backup get'.
+              Resolves on the next Completed backup.
 
         # last_status is 0 only when the most recent backup outright Failed (PartiallyFailed
         # reports 1). Gauge-based, so it resolves as soon as any later run does better —
