@@ -37,6 +37,29 @@ data:
             env: production
             category: observability
         evaluationInterval: 2m
+        # Disable the chart's default podAntiAffinity: "soft" preset — the template
+        # appends it under the same affinity: key as the explicit block below,
+        # rendering a duplicate podAntiAffinity mapping key that fails post-render
+        # (broke the 86.3.2 upgrade when the block below merged). The explicit
+        # block already matches prometheus itself, so self-spread is kept.
+        podAntiAffinity: ""
+        # Soft spread of the heavy monitoring set — see victoria-metrics values
+        # for rationale (all heavy monitoring pods were stacked on k8sworker02).
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchExpressions:
+                      - key: app.kubernetes.io/name
+                        operator: In
+                        values:
+                          - prometheus
+                          - loki
+                          - grafana
+                          - victoria-metrics-single
         resources:
           requests:
             cpu: 500m
@@ -77,6 +100,23 @@ data:
         app: grafana
         env: production
         category: observability
+      # Soft spread of the heavy monitoring set — see victoria-metrics values
+      # for rationale (all heavy monitoring pods were stacked on k8sworker02).
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - prometheus
+                        - loki
+                        - grafana
+                        - victoria-metrics-single
       grafana.ini:
         feature_toggles:
           kubernetesDashboards: false
