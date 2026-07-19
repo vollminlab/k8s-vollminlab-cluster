@@ -182,7 +182,7 @@ All volumes are `ReadWriteMany`, `100Gi`, backed by SMB shares at `192.168.150.2
 | Schedule | `0 2 * * *` (2 AM daily) |
 | Image | `alpine/k8s:1.30.3` |
 | Tasks | Delete evicted pods; delete completed/failed pods older than 1 hour |
-| CPU | req: 50m, limits: 200m |
+| CPU | req: 50m, limits: 500m |
 | Memory | req: 64Mi, limits: 128Mi |
 
 ---
