@@ -36,6 +36,27 @@ data:
         env: production
         category: observability
 
+      # Soft spread of the heavy monitoring set (prometheus, loki, grafana, both
+      # VM tiers via app.kubernetes.io/name=victoria-metrics-single). All of
+      # these were stacked on k8sworker02 → NodeMemoryMajorPagesFaults thrash +
+      # backup-window IO concentration. Preferred, not required: 5 heavy pods on
+      # 4 general workers (vm-lt pinned to w01) — a hard rule could not schedule.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - prometheus
+                        - loki
+                        - grafana
+                        - victoria-metrics-single
+
       resources:
         requests:
           cpu: 100m
