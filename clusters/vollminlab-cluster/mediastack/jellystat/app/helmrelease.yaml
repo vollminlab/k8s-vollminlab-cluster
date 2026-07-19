@@ -12,7 +12,7 @@ spec:
   chart:
     spec:
       chart: jellystat
-      version: "0.1.11"
+      version: "0.1.12"
       sourceRef:
         kind: HelmRepository
         name: jellystat-repo
