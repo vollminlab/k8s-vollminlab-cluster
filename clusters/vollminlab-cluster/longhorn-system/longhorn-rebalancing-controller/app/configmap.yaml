@@ -22,6 +22,12 @@ data:
       rebalance:
         maxEvictionsPerDay: 4
         smallestFirst: false
+        # Keep evictions out of the nightly backup window (VolSync 00:00-02:00,
+        # daily-full 03:00, daily-b2 04:00, vm-b2 05:00) — the chart default
+        # 02:00-05:00 sat exactly on top of it, and with smallestFirst:false a
+        # 77GiB MinIO replica rebuild collapsed under the contention on
+        # 2026-07-20 (~02:30), degrading the volume right before daily-full.
+        maintenanceWindow: "13:00-19:00"
 
     resources:
       requests:
