@@ -17,7 +17,7 @@ spec:
         kind: HelmRepository
         name: kyverno-policyreporter-repo
         namespace: flux-system
-      version: 3.7.4
+      version: 3.8.1
   valuesFrom:
     - kind: ConfigMap
       name: policy-reporter-values
