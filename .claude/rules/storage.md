@@ -78,3 +78,13 @@ Longhorn iSCSI volumes conflict with `multipathd` on Ubuntu 24.04 (multipath is 
 **Apply this to every new worker node before it joins the cluster.**
 
 Full procedure: `docs/runbooks/longhorn-multipath-blacklist.md`
+
+## Longhorn health status is not a filesystem check
+
+Longhorn replicates at the block layer and verifies only that replicas agree with each other. A volume with corrupt ext4 metadata still reports `robustness: healthy`, because every replica holds an identical copy of the corruption.
+
+A running pod will not notice — the damaged block is served from page cache. The defect surfaces only on a **cold remount**, when the CSI driver runs `fsck -a`, refuses to repair a corrupt directory, and the mount fails. That means it detonates on a node reboot, upgrade, or reschedule.
+
+**Suspect this when a single PVC's VolSync backup is stale for days while all others succeed, and regenerating the clone doesn't help.** If a freshly regenerated clone fails `fsck` at the *identical* inode/block/offset, the corruption is in the source volume and needs an offline `e2fsck`.
+
+Full procedure: `docs/runbooks/longhorn-ext4-corruption.md`
