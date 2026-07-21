@@ -61,7 +61,7 @@ jobs:
       changed_files: ${{ steps.get-changed-files.outputs.changed_files }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -359,7 +359,7 @@ jobs:
         run: echo "No cluster YAML changed; job succeeds." && exit 0
       - name: Checkout code
         if: needs.validate-changes.outputs.changed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -975,7 +975,7 @@ jobs:
         run: echo "No cluster YAML changed; job succeeds." && exit 0
       - name: Checkout code
         if: needs.validate-changes.outputs.changed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -1197,7 +1197,7 @@ jobs:
         run: echo "No cluster YAML changed; job succeeds." && exit 0
       - name: Checkout code
         if: needs.validate-changes.outputs.changed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -1393,7 +1393,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
