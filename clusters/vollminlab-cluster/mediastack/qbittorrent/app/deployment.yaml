@@ -94,7 +94,7 @@ spec:
               memory: 128Mi
             limits:
               cpu: 200m
-              memory: 256Mi
+              memory: 512Mi
           env:
             - name: VPN_SERVICE_PROVIDER
               value: "private internet access"
@@ -106,6 +106,10 @@ spec:
               value: "on"
             - name: FIREWALL_INPUT_PORTS
               value: "8080"
+            # DoT upstream in gluetun v3.41.x leaks UDP sockets when queries time out
+            # during VPN degradation (upstream #3351/#3377) — DoH is the endorsed workaround
+            - name: DNS_UPSTREAM_RESOLVER_TYPE
+              value: "doh"
           envFrom:
             - secretRef:
                 name: qbittorrent-pia-credentials
