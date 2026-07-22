@@ -321,3 +321,79 @@ spec:
           annotations:
             summary: "MinIO PVC {{ $labels.persistentvolumeclaim }} below 10% free"
             description: "MinIO PVC {{ $labels.persistentvolumeclaim }} has {{ $value | humanizePercentage }} free. Immediate action required — node kubelet eviction threshold is ~10-15%."
+
+    # Harbor is on the image-pull critical path: all 9 nodes proxy docker.io through
+    # the Harbor proxy cache, so an unhealthy Harbor blocks new pod scheduling
+    # cluster-wide once local image caches miss. Metrics come from the harbor-exporter
+    # enabled in the harbor chart values (metrics.enabled + serviceMonitor).
+    - name: harbor
+      rules:
+        # harbor_health is the exporter's overall status gauge (1 healthy / 0 not).
+        # critical because of the image-pull blast radius described above.
+        - alert: HarborUnhealthy
+          expr: |
+            harbor_health == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Harbor is reporting unhealthy"
+            description: >-
+              Harbor's aggregate health check has been failing for 10+ minutes. Image
+              pulls through the docker.io proxy cache will start failing once node-local
+              caches miss. Check component status with the HarborComponentUnhealthy
+              alert / harbor_up, and `kubectl get pods -n harbor`.
+
+        # Per-component gauge (component ∈ core/database/jobservice/portal/redis/
+        # registry/registryctl/trivy). Warning-level early signal — a single sick
+        # component (e.g. trivy) does not necessarily break pulls.
+        - alert: HarborComponentUnhealthy
+          expr: |
+            harbor_up == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Harbor component {{ $labels.component }} unhealthy"
+            description: >-
+              Harbor component {{ $labels.component }} has been reporting unhealthy for
+              15+ minutes. Registry pulls may still work; investigate before it
+              escalates to HarborUnhealthy.
+
+        # Weekly registry GC (tofu harbor-config: Sat 05:00 UTC) guards the 5Gi
+        # registry PVC — GC silently never running is what filled it to 91% on
+        # 2026-07-22. Label values verified against goharbor/harbor source
+        # (src/jobservice/runner/redis.go): type is the job name
+        # "GARBAGE_COLLECTION", status is one of success/fail/stop.
+        - alert: HarborGarbageCollectionFailed
+          expr: |
+            increase(harbor_jobservice_task_total{type="GARBAGE_COLLECTION",status="fail"}[24h]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Harbor garbage collection failed"
+            description: >-
+              A Harbor GC job failed within the last 24h. The registry PVC is only 5Gi
+              (intentionally); check the GC run log in Harbor (Administration ->
+              Clean Up -> Garbage Collection) and the jobservice pod logs.
+
+        # Schedule-broken detector: fires if no GC has *succeeded* in 8 days
+        # (weekly cadence + 1 day slack). Catches the schedule being deleted or
+        # wedged, which a failure counter cannot see. Caveat: if the
+        # status="success" series has never existed (exporter fresh, zero GC runs),
+        # increase() returns no data and this stays silent — the first successful
+        # run arms it.
+        - alert: HarborGarbageCollectionMissing
+          expr: |
+            increase(harbor_jobservice_task_total{type="GARBAGE_COLLECTION",status="success"}[8d]) == 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No successful Harbor GC in 8+ days"
+            description: >-
+              The weekly Harbor garbage collection (Sat 05:00 UTC, managed by the
+              harbor-config tofu module) has not completed successfully in over 8
+              days. Verify the schedule exists in Harbor and check jobservice health
+              before the 5Gi registry PVC fills again.
