@@ -864,49 +864,65 @@ jobs:
           RBAC_SKIPPED=0
           for file in $CHANGED_FILES; do
             if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -q .; then
-              KIND=$(yq eval '.kind' "$file")
+              # A file may hold multiple YAML documents (rbac.yaml bundles
+              # ClusterRole + ClusterRoleBinding, networkpolicy.yaml bundles
+              # several policies, terraform-cr.yaml bundles Terraform + more).
+              # Extracting .kind once per FILE returns a multi-line string that
+              # never matches the skip-list case — skip-listed kinds fell
+              # through to kubectl apply and were only saved by the SA's
+              # Forbidden (which then wrongly RBAC-skipped the whole run).
+              # Iterate per DOCUMENT so every kind is checked individually.
+              LAST_DOC=$(yq eval 'documentIndex' "$file" | grep -v '^---$' | tail -1)
+              for DOC in $(seq 0 "$LAST_DOC"); do
+                KIND=$(yq eval "select(documentIndex == $DOC) | .kind" "$file")
 
-              # Flux source/release kinds have their own passes
-              if [[ "$KIND" == "OCIRepository" || "$KIND" == "HelmRepository" || "$KIND" == "HelmRelease" ]]; then
-                continue
-              fi
-
-              # Skip cluster-scoped resources and Flux Kustomizations.
-              # Also skip kinds that must never be test-applied by the runner SA:
-              # Role/RoleBinding (RBAC escalation — the SA would need every verb it
-              # grants), Policy/PolicyException (Kyverno policy injection/bypass;
-              # kyverno-cli validates these statically), Terraform (tf-controller
-              # would run real tofu plans), Connector/ClusterSecretStore
-              # (cluster-scoped — the namespace override has no effect, kubectl
-              # would apply them for real). Ingress: the nginx admission webhook
-              # rejects any host+path already claimed by the live Ingress (which
-              # every existing app's ingress is), and a test Ingress has real
-              # side effects — external-dns creates DNS records from it and the
-              # shlink-ingress-controller mints a vollm.in slug. Static render,
-              # kubeconform, and Kyverno already validate Ingress manifests.
-              case "$KIND" in
-                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore|Ingress)
-                  echo "Skipping $KIND resource: $file"
-                  continue
-                  ;;
-              esac
-
-              echo "Test deploying supporting resource ($KIND, name preserved): $file"
-              APPLY_OUT=$(yq eval ".metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - 2>&1) && echo "$APPLY_OUT" || {
-                if echo "$APPLY_OUT" | grep -qi "forbidden"; then
-                  echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot apply $KIND ($file)"
-                  echo "$APPLY_OUT"
-                  echo "    If this PR widens the runner ClusterRole (arc-runners/app/rbac.yaml),"
-                  echo "    the grant only takes effect after merge + Flux reconcile — the static"
-                  echo "    render step above already validated this manifest. Otherwise, add the"
-                  echo "    missing grant to arc-runners/app/rbac.yaml."
-                  RBAC_SKIPPED=1
+                # Empty/comment-only documents have no kind
+                if [[ -z "$KIND" || "$KIND" == "null" ]]; then
                   continue
                 fi
-                echo "❌ Failed to deploy: $file"
-                echo "$APPLY_OUT"
-                exit 1
-              }
+
+                # Flux source/release kinds have their own passes
+                if [[ "$KIND" == "OCIRepository" || "$KIND" == "HelmRepository" || "$KIND" == "HelmRelease" ]]; then
+                  continue
+                fi
+
+                # Skip cluster-scoped resources and Flux Kustomizations.
+                # Also skip kinds that must never be test-applied by the runner SA:
+                # Role/RoleBinding (RBAC escalation — the SA would need every verb it
+                # grants), Policy/PolicyException (Kyverno policy injection/bypass;
+                # kyverno-cli validates these statically), Terraform (tf-controller
+                # would run real tofu plans), Connector/ClusterSecretStore
+                # (cluster-scoped — the namespace override has no effect, kubectl
+                # would apply them for real). Ingress: the nginx admission webhook
+                # rejects any host+path already claimed by the live Ingress (which
+                # every existing app's ingress is), and a test Ingress has real
+                # side effects — external-dns creates DNS records from it and the
+                # shlink-ingress-controller mints a vollm.in slug. Static render,
+                # kubeconform, and Kyverno already validate Ingress manifests.
+                case "$KIND" in
+                  ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore|Ingress)
+                    echo "Skipping $KIND resource (doc $DOC): $file"
+                    continue
+                    ;;
+                esac
+
+                echo "Test deploying supporting resource ($KIND doc $DOC, name preserved): $file"
+                APPLY_OUT=$(yq eval "select(documentIndex == $DOC) | .metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - 2>&1) && echo "$APPLY_OUT" || {
+                  if echo "$APPLY_OUT" | grep -qi "forbidden"; then
+                    echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot apply $KIND ($file doc $DOC)"
+                    echo "$APPLY_OUT"
+                    echo "    If this PR widens the runner ClusterRole (arc-runners/app/rbac.yaml),"
+                    echo "    the grant only takes effect after merge + Flux reconcile — the static"
+                    echo "    render step above already validated this manifest. Otherwise, add the"
+                    echo "    missing grant to arc-runners/app/rbac.yaml."
+                    RBAC_SKIPPED=1
+                    continue
+                  fi
+                  echo "❌ Failed to deploy: $file"
+                  echo "$APPLY_OUT"
+                  exit 1
+                }
+              done
             fi
           done
 
