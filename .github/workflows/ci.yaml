@@ -47,7 +47,7 @@ defaults:
     shell: bash
 
 env:
-  KUBERNETES_VERSION: "1.30.2"
+  KUBERNETES_VERSION: "1.34.8"
   RUN_SUFFIX: ${{ github.run_id }}-${{ github.run_number }}
   TRIVY_CACHE_DIR: /tmp/trivy-cache
 
@@ -129,20 +129,71 @@ jobs:
             echo "📋 Push Mode: Comparing $HEAD_SHA against $BASE_SHA"
           fi
           
-          # Get all changed YAML files in clusters/ directory
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '\.(yaml|yml)$' | grep '^clusters/' || echo "")
-          
+          # All changed YAML files, then scoped subsets
+          CHANGED_YAML=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '\.(yaml|yml)$' || echo "")
+
+          # Lint scope: clusters/ + bootstrap/ (bootstrap is in the workflow
+          # triggers but was previously filtered out and never validated)
+          LINT_FILES=$(printf '%s\n' "$CHANGED_YAML" | grep -E '^(clusters|bootstrap)/' || echo "")
+
+          # Deploy scope: clusters/ only
+          DIRECT_FILES=$(printf '%s\n' "$CHANGED_YAML" | grep '^clusters/' || echo "")
+
           echo "🔍 All changed files in this PR/push:"
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true
-          
+
+          # Expand each changed file to its full app unit (the .../app/ directory).
+          # A HelmRelease renders together with its sibling values ConfigMap, so
+          # changing one without the other must still test the pair (PR #960: a
+          # configmap.yaml-only change broke the Harbor Helm upgrade untested).
+          EXPANDED=""
+          if [[ -n "$DIRECT_FILES" ]]; then
+            EXPANDED=$(
+              printf '%s\n' "$DIRECT_FILES" | while IFS= read -r f; do
+                echo "$f"
+                if [[ "$f" == */app/* ]]; then
+                  UNIT="${f%%/app/*}/app"
+                  [[ -d "$UNIT" ]] && find "$UNIT" -maxdepth 1 \( -name '*.yaml' -o -name '*.yml' \)
+                fi
+              done | sort -u
+            )
+          fi
+
+          # Pull in the source repository file for any HelmRelease in scope, so
+          # the chart source can be validated even when only the HR changed
+          REPO_FILES=""
+          if [[ -n "$EXPANDED" ]]; then
+            REPO_FILES=$(
+              printf '%s\n' "$EXPANDED" | while IFS= read -r f; do
+                [[ -f "$f" ]] || continue
+                yq eval '.kind' "$f" 2>/dev/null | grep -qi '^HelmRelease$' || continue
+                SRC_NAME=$(yq eval '.spec.chartRef.name // .spec.chart.spec.sourceRef.name // ""' "$f")
+                [[ -n "$SRC_NAME" ]] || continue
+                for rf in clusters/vollminlab-cluster/flux-system/repositories/*.yaml; do
+                  if [[ "$(yq eval '.metadata.name' "$rf" 2>/dev/null)" == "$SRC_NAME" ]]; then
+                    echo "$rf"
+                  fi
+                done
+              done | sort -u
+            )
+          fi
+
+          CHANGED_FILES=$(printf '%s\n%s\n' "$EXPANDED" "$REPO_FILES" | sed '/^$/d' | sort -u)
+
           echo ""
-          echo "🔍 Changed YAML files in clusters/:"
+          echo "🔍 Files in validation scope (changed + app-unit closure):"
           if [[ -n "$CHANGED_FILES" ]]; then
             printf '%s\n' "$CHANGED_FILES"
           else
             echo "(none)"
           fi
-          
+
+          {
+            echo "LINT_FILES<<EOF"
+            printf '%s\n' "$LINT_FILES"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "✅ No YAML files changed in clusters directory"
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -150,9 +201,11 @@ jobs:
           else
             echo "📋 Found changed cluster files - will run deployment validation"
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "changed_files<<EOF" >> $GITHUB_OUTPUT
-            printf '%s\n' "$CHANGED_FILES"
-            echo "EOF" >> $GITHUB_OUTPUT
+            {
+              echo "changed_files<<EOF"
+              printf '%s\n' "$CHANGED_FILES"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
             {
               echo "CHANGED_FILES<<EOF"
               printf '%s\n' "$CHANGED_FILES"
@@ -161,19 +214,19 @@ jobs:
           fi
 
       - name: Validate YAML syntax
-        if: env.CHANGED_FILES != ''
+        if: env.LINT_FILES != ''
         run: |
           set -euo pipefail
           echo "🔍 Validating YAML syntax with yamllint..."
-          
+
           # Install yamllint using system package (much faster than pip)
           sudo apt-get update
           sudo apt-get install -y yamllint
-          
+
           # Create yamllint config for Kubernetes files
           cat > .yamllint << 'EOF'
           extends: default
-          
+
           rules:
             document-start:
               present: false
@@ -184,21 +237,9 @@ jobs:
             truthy:
               allowed-values: ['true', 'false', 'on', 'off']
           EOF
-          
-          # Get range for diff
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            RANGE="$BASE_SHA..HEAD"
-          else
-            BASE_SHA="${{ github.event.before }}"
-            if [[ -z "$BASE_SHA" ]]; then
-              BASE_SHA="$(git rev-list --max-parents=0 HEAD | tail -1)"
-            fi
-            RANGE="$BASE_SHA..HEAD"
-          fi
-          
-          # Validate each changed YAML file
-          printf '%s\n' "$CHANGED_FILES" | while IFS= read -r file; do
+
+          # Lint every changed YAML file in clusters/ + bootstrap/
+          printf '%s\n' "$LINT_FILES" | while IFS= read -r file; do
             if [[ -f "$file" ]]; then
               # gotk-components.yaml is generated by flux (DO NOT EDIT) and uses
               # block-sequence indentation that yamllint rejects — skip it.
@@ -208,76 +249,36 @@ jobs:
               fi
 
               echo "Validating: $file"
-
-              # Check if this is a SealedSecret file - they have long encrypted values
-              if grep -q "kind: SealedSecret" "$file"; then
-                echo "  SealedSecret detected - using relaxed line-length rules"
-                # Create a special config for SealedSecret files
-                cat > .yamllint-sealed << 'EOF'
-          extends: default
-          
-          rules:
-            document-start:
-              present: false
-            new-line-at-end-of-file:
-              level: warning
-            line-length: disable  # Sealed secret ciphertext can be arbitrarily long
-            truthy:
-              allowed-values: ['true', 'false', 'on', 'off']
-          EOF
-                yamllint -c .yamllint-sealed "$file" || {
-                  echo "❌ YAML lint error in $file"
-                  exit 1
-                }
-              else
-                yamllint "$file" || {
-                  echo "❌ YAML lint error in $file"
-                  exit 1
-                }
-              fi
+              yamllint "$file" || {
+                echo "❌ YAML lint error in $file"
+                exit 1
+              }
             fi
           done
-          
+
           echo "✅ All YAML files have valid syntax"
 
       - name: Validate Kubernetes schemas
-        if: env.CHANGED_FILES != ''
+        if: env.LINT_FILES != ''
         run: |
           set -euo pipefail
           echo "🔍 Validating Kubernetes schemas with kubeconform..."
-          
+
           # Install kubeconform
           curl -L https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xvzf -
           sudo mv kubeconform /usr/local/bin/
           kubeconform -v
-          
-          # Get range for diff
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            RANGE="$BASE_SHA..HEAD"
-          else
-            BASE_SHA="${{ github.event.before }}"
-            if [[ -z "$BASE_SHA" ]]; then
-              BASE_SHA="$(git rev-list --max-parents=0 HEAD | tail -1)"
-            fi
-            RANGE="$BASE_SHA..HEAD"
-          fi
-          
-          # Validate each changed Kubernetes file
-          printf '%s\n' "$CHANGED_FILES" | while IFS= read -r file; do
+
+          # Validate each changed Kubernetes file. CRD schemas (Flux, Kyverno,
+          # cert-manager, ESO, etc.) come from the datreeio CRDs-catalog — these
+          # kinds were previously skipped entirely and never schema-checked.
+          printf '%s\n' "$LINT_FILES" | while IFS= read -r file; do
             if [[ -f "$file" ]] && grep -q "kind:" "$file" && grep -q "apiVersion:" "$file"; then
-              KIND=$(yq eval '.kind' "$file")
-              
-              # Skip Flux CD resources that don't have schemas
-              case "$KIND" in
-                HelmRelease|OCIRepository|HelmRepository|Kustomization|Policy|ClusterPolicy)
-                  echo "Skipping Flux/Kyverno resource (no schema): $KIND in $file"
-                  continue
-                  ;;
-              esac
-              
               echo "Validating schema for CHANGED file: $file"
-              timeout 30s kubeconform -strict -ignore-missing-schemas -summary "$file" || {
+              timeout 30s kubeconform -strict -ignore-missing-schemas \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                -summary "$file" || {
                 EXIT_CODE=$?
                 if [[ $EXIT_CODE -eq 124 ]]; then
                   echo "❌ Kubernetes schema validation TIMED OUT for CHANGED file: $file (exceeded 30s)"
@@ -288,18 +289,18 @@ jobs:
               }
             fi
           done
-          
+
           echo "✅ All Kubernetes resources have valid schemas"
 
       - name: Scan for secrets (fast file-content check)
-        if: env.CHANGED_FILES != ''
+        if: env.LINT_FILES != '' || env.CHANGED_FILES != ''
         run: |
           set -euo pipefail
           echo "🔍 Scanning changed files for secrets..."
 
           # Install gitleaks
           curl -sL -o gitleaks.tar.gz \
-            "https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz"
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
           tar -xzf gitleaks.tar.gz gitleaks
           sudo mv gitleaks /usr/local/bin/gitleaks
 
@@ -340,7 +341,7 @@ jobs:
             --no-banner \
             --exit-code 1 || {
               echo "❌ Secrets detected. Never commit plain API keys or passwords."
-              echo "Use SealedSecrets for k8s secrets; store credentials in 1Password."
+              echo "Use ExternalSecrets (ESO + 1Password); store credentials in 1Password."
               exit 1
             }
 
@@ -381,16 +382,6 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
           yq --version
 
-      - name: Setup Flux CLI
-        if: needs.validate-changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          echo "📦 Installing Flux CLI..."
-          FLUX_VERSION="2.2.2"
-          curl -L "https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}/flux_${FLUX_VERSION}_linux_amd64.tar.gz" -o flux.tar.gz
-          tar -xzf flux.tar.gz
-          sudo mv flux /usr/local/bin/
-
       - name: Install Helm
         if: needs.validate-changes.outputs.changed == 'true'
         run: |
@@ -398,6 +389,141 @@ jobs:
           echo "📦 Installing Helm..."
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version
+
+      - name: Render charts and check post-render (static)
+        if: needs.validate-changes.outputs.changed == 'true'
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "🔍 Rendering changed HelmReleases with their values ConfigMaps..."
+          # This reproduces what helm-controller does before applying: render the
+          # chart with the real values, then parse the output strictly. PR #960
+          # (duplicate 'app' key in exporter.podLabels) passed every other check
+          # and broke the live Harbor upgrade — this step catches that class.
+
+          # kustomize's strict go-yaml parser rejects duplicate mapping keys with
+          # the same error helm-controller reports; helm template alone does not.
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" | tar xz
+          sudo mv kustomize /usr/local/bin/kustomize
+
+          REPO_DIR="clusters/vollminlab-cluster/flux-system/repositories"
+          HARBOR_LOGIN_DONE=""
+          RENDER_FAILED=0
+
+          while IFS= read -r file; do
+            [[ -f "$file" ]] || continue
+            [[ "$(yq eval '.kind' "$file" 2>/dev/null)" == "HelmRelease" ]] || continue
+
+            RELEASE_NAME=$(yq eval '.metadata.name' "$file")
+            APP_DIR=$(dirname "$file")
+            SRC_NAME=$(yq eval '.spec.chartRef.name // .spec.chart.spec.sourceRef.name // ""' "$file")
+            if [[ -z "$SRC_NAME" ]]; then
+              echo "❌ $file: no chartRef.name or chart.spec.sourceRef.name"
+              RENDER_FAILED=1
+              continue
+            fi
+
+            # Locate the source repository file by metadata.name
+            SRC_FILE=""
+            for rf in "$REPO_DIR"/*.yaml; do
+              if [[ "$(yq eval '.metadata.name' "$rf" 2>/dev/null)" == "$SRC_NAME" ]]; then
+                SRC_FILE="$rf"
+                break
+              fi
+            done
+            if [[ -z "$SRC_FILE" ]]; then
+              echo "❌ $file: source '$SRC_NAME' not found in $REPO_DIR"
+              RENDER_FAILED=1
+              continue
+            fi
+            SRC_KIND=$(yq eval '.kind' "$SRC_FILE")
+            SRC_URL=$(yq eval '.spec.url' "$SRC_FILE")
+
+            # Collect values files from valuesFrom (ConfigMaps only — Secret
+            # values live in the cluster, not the repo; skip with a warning)
+            VALUES_ARGS=()
+            VF_COUNT=$(yq eval '.spec.valuesFrom | length' "$file")
+            [[ "$VF_COUNT" == "null" ]] && VF_COUNT=0
+            for ((i=0; i<VF_COUNT; i++)); do
+              VF_KIND=$(yq eval ".spec.valuesFrom[$i].kind" "$file")
+              VF_NAME=$(yq eval ".spec.valuesFrom[$i].name" "$file")
+              VF_KEY=$(yq eval ".spec.valuesFrom[$i].valuesKey // \"values.yaml\"" "$file")
+              VF_TARGET=$(yq eval ".spec.valuesFrom[$i].targetPath // \"\"" "$file")
+              if [[ "$VF_KIND" != "ConfigMap" ]]; then
+                echo "  ⚠️ $RELEASE_NAME: skipping valuesFrom $VF_KIND/$VF_NAME (not in repo)"
+                continue
+              fi
+              if [[ -n "$VF_TARGET" ]]; then
+                echo "  ⚠️ $RELEASE_NAME: skipping valuesFrom $VF_NAME (targetPath not supported statically)"
+                continue
+              fi
+              CM_FILE=""
+              for cf in "$APP_DIR"/*.yaml; do
+                if [[ "$(yq eval '.kind' "$cf" 2>/dev/null)" == "ConfigMap" ]] && \
+                   [[ "$(yq eval '.metadata.name' "$cf" 2>/dev/null)" == "$VF_NAME" ]]; then
+                  CM_FILE="$cf"
+                  break
+                fi
+              done
+              if [[ -z "$CM_FILE" ]]; then
+                echo "  ⚠️ $RELEASE_NAME: ConfigMap $VF_NAME not found in $APP_DIR — rendering without it"
+                continue
+              fi
+              VF_TMP=$(mktemp)
+              yq eval ".data[\"$VF_KEY\"]" "$CM_FILE" > "$VF_TMP"
+              VALUES_ARGS+=(-f "$VF_TMP")
+            done
+
+            # Harbor OCI login once if needed
+            if [[ "$SRC_URL" == oci://harbor.vollminlab.com* && -z "$HARBOR_LOGIN_DONE" ]]; then
+              echo "$HARBOR_PASSWORD" | helm registry login harbor.vollminlab.com \
+                -u "$HARBOR_USERNAME" --password-stdin
+              HARBOR_LOGIN_DONE=1
+            fi
+
+            RENDER_DIR=$(mktemp -d)
+            echo "  Rendering $RELEASE_NAME (source: $SRC_KIND/$SRC_NAME)..."
+            RENDER_OK=1
+            if [[ "$SRC_KIND" == "OCIRepository" ]]; then
+              CHART_VERSION=$(yq eval '.spec.ref.tag' "$SRC_FILE")
+              helm template "$RELEASE_NAME" "$SRC_URL" --version "$CHART_VERSION" \
+                ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
+            else
+              CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
+              CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
+              if [[ "$SRC_URL" == oci://* ]]; then
+                helm template "$RELEASE_NAME" "${SRC_URL}/${CHART_NAME}" --version "$CHART_VERSION" \
+                  ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
+              else
+                helm template "$RELEASE_NAME" "$CHART_NAME" --repo "$SRC_URL" --version "$CHART_VERSION" \
+                  ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
+              fi
+            fi
+            if [[ "$RENDER_OK" == "0" ]]; then
+              echo "❌ helm template failed for $RELEASE_NAME ($file)"
+              RENDER_FAILED=1
+              continue
+            fi
+
+            # Strict-parse the rendered output the way helm-controller does.
+            printf 'resources:\n  - rendered.yaml\n' > "$RENDER_DIR/kustomization.yaml"
+            if ! kustomize build "$RENDER_DIR" > /dev/null; then
+              echo "❌ Rendered output of $RELEASE_NAME fails strict YAML parsing."
+              echo "   This is the failure mode of PR #960 (duplicate mapping key) —"
+              echo "   the in-cluster Helm upgrade would fail exactly like this."
+              RENDER_FAILED=1
+            else
+              echo "  ✅ $RELEASE_NAME renders and parses cleanly"
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [[ "$RENDER_FAILED" != "0" ]]; then
+            echo "❌ One or more HelmReleases failed static render validation"
+            exit 1
+          fi
+          echo "✅ All changed HelmReleases render and strict-parse cleanly"
 
       - name: Create test namespace
         if: needs.validate-changes.outputs.changed == 'true'
@@ -410,6 +536,10 @@ jobs:
           echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
 
           kubectl create namespace "$TEST_NAMESPACE" || true
+          # Kyverno mutate policies do apiCall lookups on namespace labels —
+          # an unlabeled test namespace fails the fail-closed webhook.
+          kubectl label namespace "$TEST_NAMESPACE" \
+            app=ci-test env=production category=core --overwrite
           echo "✅ Created test namespace: $TEST_NAMESPACE"
 
           # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate.
@@ -453,25 +583,13 @@ jobs:
           
           echo "🔍 Test deploying changed resources..."
           
-          # Get changed files with proper range handling
-            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            RANGE="$BASE_SHA..HEAD"
-          else
-            BASE_SHA="${{ github.event.before }}"
-            if [[ -z "$BASE_SHA" ]]; then
-              BASE_SHA="$(git rev-list --max-parents=0 HEAD | tail -1)"
-            fi
-            RANGE="$BASE_SHA..HEAD"
-          fi
-          
-          CHANGED_FILES=$(git diff --name-only "$RANGE" | grep -E '\.(yaml|yml)$' | grep '^clusters/' || echo "")
-          
+          # CHANGED_FILES comes from the validate-changes job (includes the
+          # app-unit closure) — no local re-derivation, one source of truth
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "✅ No resources to test deploy"
-              exit 0
-            fi
-            
+            exit 0
+          fi
+
           echo "Changed files: $CHANGED_FILES"
           
           # Create OCI mapping file for Flux resources
@@ -709,6 +827,39 @@ jobs:
           
           echo "✅ Changed OCI repositories synced successfully"
 
+          # Deploy supporting namespaced resources (ConfigMaps, ExternalSecrets,
+          # Ingresses, ...) BEFORE HelmReleases, with their ORIGINAL names.
+          # Renaming them broke valuesFrom resolution: the HelmRelease references
+          # the ConfigMap by its real name, so a renamed values ConfigMap meant
+          # every HR was tested WITHOUT its values (how PR #960 escaped CI).
+          # The per-run namespace already provides isolation between runs.
+          for file in $CHANGED_FILES; do
+            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -q .; then
+              KIND=$(yq eval '.kind' "$file")
+
+              # Flux source/release kinds have their own passes
+              if [[ "$KIND" == "OCIRepository" || "$KIND" == "HelmRepository" || "$KIND" == "HelmRelease" ]]; then
+                continue
+              fi
+
+              # Skip cluster-scoped resources and Flux Kustomizations
+              case "$KIND" in
+                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization)
+                  echo "Skipping $KIND resource: $file"
+                  continue
+                  ;;
+              esac
+
+              echo "Test deploying supporting resource ($KIND, name preserved): $file"
+              yq eval ".metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - || {
+                echo "❌ Failed to deploy: $file"
+                exit 1
+              }
+            fi
+          done
+
+          echo "✅ Supporting resources deployed with original names"
+
       - name: Deploy and validate changed HelmReleases
         if: needs.validate-changes.outputs.changed == 'true'
         run: |
@@ -805,17 +956,26 @@ jobs:
                 exit 1
               }
               
-              # Check for required fields
-              CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
-              CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
-              SOURCE_REF=$(yq eval '.spec.chart.spec.sourceRef.name' "$file")
-              
-              if [[ -z "$CHART_NAME" || -z "$CHART_VERSION" || -z "$SOURCE_REF" ]]; then
-                echo "❌ Missing required fields in $file"
-                echo "Chart: $CHART_NAME, Version: $CHART_VERSION, Source: $SOURCE_REF"
-                exit 1
+              # Check for required fields — only for chart.spec HRs. chartRef HRs
+              # (OCIRepository sources) have no .spec.chart, and yq returns the
+              # literal string "null" for missing paths, which passed -z checks
+              # with garbage values.
+              if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
+                echo "  chartRef HelmRelease — chart/version pinned in OCIRepository, skipping field check"
+              else
+                CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
+                CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
+                SOURCE_REF=$(yq eval '.spec.chart.spec.sourceRef.name' "$file")
+
+                if [[ -z "$CHART_NAME" || "$CHART_NAME" == "null" || \
+                      -z "$CHART_VERSION" || "$CHART_VERSION" == "null" || \
+                      -z "$SOURCE_REF" || "$SOURCE_REF" == "null" ]]; then
+                  echo "❌ Missing required fields in $file"
+                  echo "Chart: $CHART_NAME, Version: $CHART_VERSION, Source: $SOURCE_REF"
+                  exit 1
+                fi
               fi
-              
+
               echo "✅ Basic validation passed for $file"
               
               # Try dry-run validation to catch chart version issues
@@ -828,54 +988,6 @@ jobs:
               echo "✅ Dry-run validation passed for $file"
             fi
           done
-          
-          # Advanced validation that requires Flux CRDs
-          if [[ "${FLUX_CRDS_AVAILABLE}" == "true" ]]; then
-            echo "🔍 Validating HelmRepository status..."
-            if kubectl get helmrepository -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-              kubectl wait --for=condition=Ready --timeout=300s helmrepositories.source.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" || {
-                echo "❌ HelmRepository validation failed - this would break production deployment"
-                echo "🔍 Checking HelmRepository status:"
-                kubectl get helmrepositories -n "$TEST_NAMESPACE" -o wide
-                echo "📋 HelmRepository events:"
-                kubectl get events -n "$TEST_NAMESPACE" --field-selector involvedObject.kind=HelmRepository --sort-by='.lastTimestamp' || true
-                echo "📋 Detailed HelmRepository status:"
-                kubectl describe helmrepositories -n "$TEST_NAMESPACE"
-                exit 1
-              }
-              echo "✅ All HelmRepositories are ready and synced"
-            else
-              echo "✅ No HelmRepositories in test namespace (OCI-type repos validated via helm show chart)"
-            fi
-            
-            # Validate that charts are actually available
-            echo "🔍 Validating chart availability..."
-            for file in $CHANGED_FILES; do
-              if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^HelmRelease$'; then
-                CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
-                CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
-                SOURCE_REF=$(yq eval '.spec.chart.spec.sourceRef.name' "$file")
-                
-                if [[ -n "$CHART_NAME" && -n "$CHART_VERSION" && -n "$SOURCE_REF" ]]; then
-                  echo "Checking chart availability: $CHART_NAME version $CHART_VERSION from $SOURCE_REF"
-                  
-                  # Validate that the HelmRepository is ready and has the chart
-                  if ! kubectl get helmrepository "$SOURCE_REF" -n "$TEST_NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -q "True"; then
-                    echo "❌ HelmRepository $SOURCE_REF is not ready"
-                    exit 1
-                  fi
-                  
-                  # Try to validate chart version by attempting a dry-run
-                  echo "Validating chart version with dry-run..."
-                  kubectl apply --dry-run=server -f "$file" || {
-                    echo "❌ Chart validation failed for $CHART_NAME version $CHART_VERSION"
-                    echo "This indicates the chart version does not exist or is invalid"
-                    exit 1
-                  }
-                fi
-              fi
-            done
-          fi
           
           # Validate HelmRelease status after deployment
           if [[ "${FLUX_CRDS_AVAILABLE}" == "true" ]]; then
@@ -897,40 +1009,10 @@ jobs:
             fi
           fi
           
-          # Third pass: Deploy other namespaced resources (skip cluster-scoped and Flux resources)
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -q .; then
-              KIND=$(yq eval '.kind' "$file")
-              
-              # Skip Flux resources (already handled above)
-              if [[ "$KIND" == "OCIRepository" || "$KIND" == "HelmRelease" ]]; then
-                continue
-              fi
-              
-              # Skip cluster-scoped resources and Kustomization (CRD not available in test namespace)
-              case "$KIND" in
-                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization)
-                  echo "Skipping $KIND resource: $file"
-                  continue
-                  ;;
-              esac
-              
-              echo "Test deploying namespaced resource: $file"
-              
-              # Clean filename for DNS-1123 compliance
-              CLEAN_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
-                | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
-              
-            yq eval "
-              .metadata.namespace = \"$TEST_NAMESPACE\" |
-                .metadata.name = \"test-${CLEAN_NAME}-${RUN_SUFFIX}\"
-            " "$file" | kubectl apply -f - || {
-                echo "❌ Failed to deploy: $file"
-              exit 1
-            }
-            fi
-          done
-          
+          # Supporting namespaced resources (ConfigMaps etc.) were deployed with
+          # their original names BEFORE the HelmReleases in the previous step, so
+          # valuesFrom references resolve and the Ready wait above tests the real
+          # chart+values combination.
           echo "✅ Successfully test deployed all changed resources"
 
       - name: Wait for deployments
@@ -1191,6 +1273,8 @@ jobs:
     needs: [validate-changes]
     if: needs.validate-changes.result == 'success'
     timeout-minutes: 5
+    env:
+      CHANGED_FILES: ${{ needs.validate-changes.outputs.changed_files }}
     steps:
       - name: Skip when no cluster files changed
         if: needs.validate-changes.outputs.changed != 'true'
@@ -1221,21 +1305,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "🔍 Validating resources against Kyverno policies..."
-          
-          # Get changed files with proper range handling
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            RANGE="$BASE_SHA..HEAD"
-          else
-            BASE_SHA="${{ github.event.before }}"
-            if [[ -z "$BASE_SHA" ]]; then
-              BASE_SHA="$(git rev-list --max-parents=0 HEAD | tail -1)"
-            fi
-            RANGE="$BASE_SHA..HEAD"
-          fi
-          
-          CHANGED_FILES=$(git diff --name-only "$RANGE" | grep -E '\.(yaml|yml)$' | grep '^clusters/' || echo "")
-          
+
+          # CHANGED_FILES comes from the validate-changes job (includes the
+          # app-unit closure) — no local re-derivation, one source of truth
           if [[ -z "$CHANGED_FILES" ]]; then
             echo "✅ No files to validate against policies"
             exit 0
