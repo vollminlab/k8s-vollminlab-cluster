@@ -863,9 +863,16 @@ jobs:
                 continue
               fi
 
-              # Skip cluster-scoped resources and Flux Kustomizations
+              # Skip cluster-scoped resources and Flux Kustomizations.
+              # Also skip kinds that must never be test-applied by the runner SA:
+              # Role/RoleBinding (RBAC escalation — the SA would need every verb it
+              # grants), Policy/PolicyException (Kyverno policy injection/bypass;
+              # kyverno-cli validates these statically), Terraform (tf-controller
+              # would run real tofu plans), Connector/ClusterSecretStore
+              # (cluster-scoped — the namespace override has no effect, kubectl
+              # would apply them for real).
               case "$KIND" in
-                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization)
+                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore)
                   echo "Skipping $KIND resource: $file"
                   continue
                   ;;

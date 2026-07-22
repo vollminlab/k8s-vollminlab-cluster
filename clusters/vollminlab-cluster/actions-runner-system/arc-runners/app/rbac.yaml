@@ -12,8 +12,14 @@ metadata:
 rules:
   # Core Kubernetes resources - read only
   - apiGroups: [""]
-    resources: ["nodes", "pods", "services", "configmaps", "persistentvolumeclaims", "persistentvolumes"]
+    resources: ["nodes", "pods", "persistentvolumes"]
     verbs: ["get", "list", "watch"]
+  # Core resources CI test-deploys into per-run namespaces (name-preserving
+  # supporting-resource pass, PR #963) — create/patch needed for kubectl apply,
+  # delete for cleanup before namespace teardown
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "serviceaccounts", "persistentvolumeclaims", "resourcequotas"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
   # Namespaces - read + create/delete for CI test namespaces
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -22,26 +28,47 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create", "delete"]
-  # Service accounts - read only
-  - apiGroups: [""]
-    resources: ["serviceaccounts"]
-    verbs: ["get", "list", "watch"]
   # Storage - read only
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
-  # Networking - read only
+  # Networking - CI test-deploys ingresses and networkpolicies (PR #963)
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses", "networkpolicies"]
-    verbs: ["get", "list", "watch"]
-  # Apps - read only
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # Apps - deployments are CI test-deployed; controllers otherwise read only
   - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "daemonsets", "statefulsets"]
     verbs: ["get", "list", "watch"]
   # Batch jobs - minimal permissions (runners may need to create jobs)
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # CRD kinds present in app directories that the CI supporting-resource pass
+  # test-deploys into the per-run namespace (PR #963). Kinds excluded from the
+  # deploy step (Role/RoleBinding, Kyverno Policy/PolicyException, Terraform,
+  # Connector, ClusterSecretStore) are deliberately NOT granted here.
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules", "servicemonitors"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["volsync.backube"]
+    resources: ["replicationsources"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters", "scheduledbackups"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["longhorn.io"]
+    resources: ["recurringjobs"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
   # Flux CD resources - read access for CI validation + create/delete for testing
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["gitrepositories", "ocirepositories", "helmrepositories", "buckets"]
