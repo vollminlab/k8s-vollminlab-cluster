@@ -221,13 +221,18 @@ jobs:
           set -euo pipefail
           echo "🔍 Validating YAML syntax with yamllint..."
 
-          # Self-hosted runner persists packages — only install when missing.
-          # Unconditional apt-get update here once ate the whole 5-minute job
-          # timeout on slow mirrors (canary PR #964).
-          if ! command -v yamllint >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y yamllint
-          fi
+          # ARC runners are ephemeral pods — nothing persists between runs, so
+          # yamllint must be installed every time. apt-get hung after fetching
+          # package lists on two consecutive runs (canary PR #964), eating the
+          # whole job timeout, so install via pip instead. The runner image
+          # ships python3 without pip/ensurepip, hence the get-pip bootstrap.
+          # timeout guards make a hung download fail fast instead of stalling
+          # the job to its timeout.
+          timeout 90 curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+          timeout 90 python3 /tmp/get-pip.py --user --break-system-packages --quiet
+          timeout 90 python3 -m pip install --user --break-system-packages --quiet yamllint
+          export PATH="$HOME/.local/bin:$PATH"
+          yamllint --version
 
           # Create yamllint config for Kubernetes files
           cat > .yamllint << 'EOF'
