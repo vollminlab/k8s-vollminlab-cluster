@@ -546,11 +546,21 @@ jobs:
           TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
           echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
 
-          kubectl create namespace "$TEST_NAMESPACE" || true
           # Kyverno mutate policies do apiCall lookups on namespace labels —
-          # an unlabeled test namespace fails the fail-closed webhook.
-          kubectl label namespace "$TEST_NAMESPACE" \
-            app=ci-test env=production category=core --overwrite
+          # an unlabeled test namespace fails the fail-closed webhook. Labels
+          # must be set at creation time: the runner ServiceAccount can create
+          # and delete namespaces but not patch them, so kubectl label is
+          # forbidden.
+          kubectl create -f - <<EOF
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $TEST_NAMESPACE
+            labels:
+              app: ci-test
+              env: production
+              category: core
+          EOF
           echo "✅ Created test namespace: $TEST_NAMESPACE"
 
           # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate.
@@ -1168,7 +1178,6 @@ jobs:
             --cache-dir "${{ env.TRIVY_CACHE_DIR }}" \
             --skip-files "*.log,*.tmp,*.cache,node_modules/*,.git/*" \
             --timeout 60s \
-            --skip-db-update \
             "$SCAN_DIR" || {
             echo "⚠️ Trivy filesystem scan timed out or failed"
             echo '{"version": "2.1.0", "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json", "runs": [{"tool": {"driver": {"name": "Trivy", "version": "timeout"}}, "results": []}]}' > trivy-results.sarif
@@ -1182,7 +1191,6 @@ jobs:
             --severity HIGH,CRITICAL \
             --cache-dir "${{ env.TRIVY_CACHE_DIR }}" \
             --timeout 60s \
-            --skip-db-update \
             "$SCAN_DIR" || {
             echo "⚠️ Trivy config scan timed out or failed"
             echo '{"version": "2.1.0", "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json", "runs": [{"tool": {"driver": {"name": "Trivy", "version": "timeout"}}, "results": []}]}' > trivy-config-results.sarif
@@ -1204,10 +1212,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "📦 Installing GitHub CLI..."
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
+          # Static release tarball instead of apt — apt hangs on these
+          # ephemeral ARC runners (same failure mode as the yamllint install,
+          # canary PR #964).
+          GH_VERSION=2.76.1
+          timeout 90 curl -fsSL -o /tmp/gh.tar.gz \
+            "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          sudo mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
           gh --version
 
       - name: Upload Trivy SARIF results with retry
