@@ -11,6 +11,6 @@ spec:
   interval: 1h
   url: oci://harbor.vollminlab.com/vollminlab/charts/longhorn-rebalancing-controller
   ref:
-    tag: "0.2.0"
+    tag: "0.3.0"
   secretRef:
     name: harbor-vollminlab-pull
