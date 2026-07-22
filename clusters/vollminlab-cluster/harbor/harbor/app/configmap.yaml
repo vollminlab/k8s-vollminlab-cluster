@@ -109,6 +109,31 @@ data:
           cpu: 500m
           memory: 256Mi
 
+    # The exporter deployment template only applies exporter.podLabels — the global
+    # podLabels below does not reach it, so the Kyverno-required labels must be set here.
+    exporter:
+      podLabels:
+        app: harbor
+        env: production
+        category: storage
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+    # Exposes harbor_health / harbor_up (exporter, :8001) and
+    # harbor_jobservice_task_total (jobservice) for the harbor alert group in
+    # monitoring/kube-prometheus-stack. Prometheus selects all ServiceMonitors
+    # (serviceMonitorSelectorNilUsesHelmValues: false), no extra labels needed.
+    # Scrape ingress from monitoring ns is already open (allow-monitoring-scrape).
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
     podLabels:
       app: harbor
       env: production
