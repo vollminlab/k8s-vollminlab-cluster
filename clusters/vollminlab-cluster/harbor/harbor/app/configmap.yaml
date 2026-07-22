@@ -115,6 +115,7 @@ data:
     # on the pod template; repeating it is a duplicate YAML key that fails Flux post-render.
     exporter:
       podLabels:
+        app: harbor
         env: production
         category: storage
       resources:
