@@ -1041,10 +1041,25 @@ jobs:
 
               echo "✅ Basic validation passed for $file"
               
-              # Try dry-run validation to catch chart version issues
+              # Server-side dry-run to catch schema/admission issues. Rewritten
+              # into the test namespace under a unique name: dry-running the
+              # original file targets the LIVE object, which turns the apply
+              # into a patch the runner SA is (deliberately) not allowed to do.
               echo "🔍 Testing HelmRelease with dry-run..."
-              kubectl apply --dry-run=server -f "$file" || {
+              DRY_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
+              DRY_OUT=$(yq eval "
+                .metadata.namespace = \"$TEST_NAMESPACE\" |
+                .metadata.name = \"dryrun-${DRY_NAME}-${RUN_SUFFIX}\"
+              " "$file" | kubectl apply --dry-run=server -f - 2>&1) && echo "$DRY_OUT" || {
+                if echo "$DRY_OUT" | grep -qi "forbidden"; then
+                  echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot dry-run HelmRelease ($file)"
+                  echo "$DRY_OUT"
+                  echo "    Grant lives in arc-runners/app/rbac.yaml — applies after merge + Flux reconcile."
+                  continue
+                fi
                 echo "❌ HelmRelease dry-run failed for $file"
+                echo "$DRY_OUT"
                 echo "This indicates the chart version or configuration is invalid"
                 exit 1
               }
