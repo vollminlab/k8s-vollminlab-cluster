@@ -53,9 +53,11 @@ env:
 
 jobs:
   validate-changes:
+    # timeout raised 5 → 10 after canary #964: first-run tool installs on a
+    # fresh runner can exceed 5 minutes
     name: Validate Kubernetes Manifests
     runs-on: vollminlab
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       changed: ${{ steps.get-changed-files.outputs.changed }}
       changed_files: ${{ steps.get-changed-files.outputs.changed_files }}
@@ -219,9 +221,18 @@ jobs:
           set -euo pipefail
           echo "🔍 Validating YAML syntax with yamllint..."
 
-          # Install yamllint using system package (much faster than pip)
-          sudo apt-get update
-          sudo apt-get install -y yamllint
+          # ARC runners are ephemeral pods — nothing persists between runs, so
+          # yamllint must be installed every time. apt-get hung after fetching
+          # package lists on two consecutive runs (canary PR #964), eating the
+          # whole job timeout, so install via pip instead. The runner image
+          # ships python3 without pip/ensurepip, hence the get-pip bootstrap.
+          # timeout guards make a hung download fail fast instead of stalling
+          # the job to its timeout.
+          timeout 90 curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+          timeout 90 python3 /tmp/get-pip.py --user --break-system-packages --quiet
+          timeout 90 python3 -m pip install --user --break-system-packages --quiet yamllint
+          export PATH="$HOME/.local/bin:$PATH"
+          yamllint --version
 
           # Create yamllint config for Kubernetes files
           cat > .yamllint << 'EOF'
@@ -535,11 +546,21 @@ jobs:
           TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
           echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
 
-          kubectl create namespace "$TEST_NAMESPACE" || true
           # Kyverno mutate policies do apiCall lookups on namespace labels —
-          # an unlabeled test namespace fails the fail-closed webhook.
-          kubectl label namespace "$TEST_NAMESPACE" \
-            app=ci-test env=production category=core --overwrite
+          # an unlabeled test namespace fails the fail-closed webhook. Labels
+          # must be set at creation time: the runner ServiceAccount can create
+          # and delete namespaces but not patch them, so kubectl label is
+          # forbidden.
+          kubectl create -f - <<EOF
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $TEST_NAMESPACE
+            labels:
+              app: ci-test
+              env: production
+              category: core
+          EOF
           echo "✅ Created test namespace: $TEST_NAMESPACE"
 
           # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate.
@@ -833,6 +854,14 @@ jobs:
           # the ConfigMap by its real name, so a renamed values ConfigMap meant
           # every HR was tested WITHOUT its values (how PR #960 escaped CI).
           # The per-run namespace already provides isolation between runs.
+          #
+          # RBAC bootstrap: a PR that widens the runner SA's own ClusterRole
+          # (arc-runners/app/rbac.yaml) runs its CI under the OLD, live RBAC —
+          # the grant only exists after merge + Flux reconcile. A hard failure
+          # here would deadlock every such PR. Forbidden applies are therefore
+          # warn-and-skip; the static render step remains the hard gate for the
+          # #960 class and needs no cluster RBAC.
+          RBAC_SKIPPED=0
           for file in $CHANGED_FILES; do
             if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -q .; then
               KIND=$(yq eval '.kind' "$file")
@@ -842,23 +871,46 @@ jobs:
                 continue
               fi
 
-              # Skip cluster-scoped resources and Flux Kustomizations
+              # Skip cluster-scoped resources and Flux Kustomizations.
+              # Also skip kinds that must never be test-applied by the runner SA:
+              # Role/RoleBinding (RBAC escalation — the SA would need every verb it
+              # grants), Policy/PolicyException (Kyverno policy injection/bypass;
+              # kyverno-cli validates these statically), Terraform (tf-controller
+              # would run real tofu plans), Connector/ClusterSecretStore
+              # (cluster-scoped — the namespace override has no effect, kubectl
+              # would apply them for real).
               case "$KIND" in
-                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization)
+                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore)
                   echo "Skipping $KIND resource: $file"
                   continue
                   ;;
               esac
 
               echo "Test deploying supporting resource ($KIND, name preserved): $file"
-              yq eval ".metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - || {
+              APPLY_OUT=$(yq eval ".metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - 2>&1) && echo "$APPLY_OUT" || {
+                if echo "$APPLY_OUT" | grep -qi "forbidden"; then
+                  echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot apply $KIND ($file)"
+                  echo "$APPLY_OUT"
+                  echo "    If this PR widens the runner ClusterRole (arc-runners/app/rbac.yaml),"
+                  echo "    the grant only takes effect after merge + Flux reconcile — the static"
+                  echo "    render step above already validated this manifest. Otherwise, add the"
+                  echo "    missing grant to arc-runners/app/rbac.yaml."
+                  RBAC_SKIPPED=1
+                  continue
+                fi
                 echo "❌ Failed to deploy: $file"
+                echo "$APPLY_OUT"
                 exit 1
               }
             fi
           done
 
-          echo "✅ Supporting resources deployed with original names"
+          if [[ "$RBAC_SKIPPED" == "1" ]]; then
+            echo "⚠️ Some supporting resources were RBAC-skipped — HelmRelease live deploy will be skipped too (valuesFrom would not resolve)"
+          else
+            echo "✅ Supporting resources deployed with original names"
+          fi
+          echo "RBAC_SKIPPED=$RBAC_SKIPPED" >> "$GITHUB_ENV"
 
       - name: Deploy and validate changed HelmReleases
         if: needs.validate-changes.outputs.changed == 'true'
@@ -873,7 +925,18 @@ jobs:
           if [[ ! -f "$OCI_MAPPING_FILE" ]]; then
             touch "$OCI_MAPPING_FILE"
           fi
-          
+
+          # If any supporting resource was RBAC-skipped in the previous step,
+          # its valuesFrom ConfigMap/Secret may be missing — a live HR deploy
+          # would fail Ready for the wrong reason. Skip the live deploy (static
+          # render already validated chart+values); basic validation and
+          # server-side dry-run below still run.
+          if [[ "${RBAC_SKIPPED:-0}" == "1" ]]; then
+            echo "⚠️⚠️⚠️ Supporting resources were RBAC-skipped — skipping live HelmRelease deploy + Ready wait"
+            echo "    Full live deploy resumes once the runner RBAC grant is merged and Flux reconciles arc-runners."
+            FLUX_CRDS_AVAILABLE="false"
+          fi
+
           # Wait for repositories to be ready before deploying HelmReleases
           if [[ "${FLUX_CRDS_AVAILABLE}" == "true" ]]; then
             echo "⏳ Waiting for repositories to be ready..."
@@ -909,7 +972,7 @@ jobs:
           for file in $CHANGED_FILES; do
             if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^HelmRelease$'; then
               if [[ "${FLUX_CRDS_AVAILABLE}" != "true" ]]; then
-                echo "Skipping HelmRelease deploy (Flux CRDs unavailable): $file"
+                echo "Skipping HelmRelease live deploy (Flux CRDs unavailable or supporting resources RBAC-skipped): $file"
                 continue
               fi
               echo "Test deploying HelmRelease: $file"
@@ -978,10 +1041,25 @@ jobs:
 
               echo "✅ Basic validation passed for $file"
               
-              # Try dry-run validation to catch chart version issues
+              # Server-side dry-run to catch schema/admission issues. Rewritten
+              # into the test namespace under a unique name: dry-running the
+              # original file targets the LIVE object, which turns the apply
+              # into a patch the runner SA is (deliberately) not allowed to do.
               echo "🔍 Testing HelmRelease with dry-run..."
-              kubectl apply --dry-run=server -f "$file" || {
+              DRY_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
+              DRY_OUT=$(yq eval "
+                .metadata.namespace = \"$TEST_NAMESPACE\" |
+                .metadata.name = \"dryrun-${DRY_NAME}-${RUN_SUFFIX}\"
+              " "$file" | kubectl apply --dry-run=server -f - 2>&1) && echo "$DRY_OUT" || {
+                if echo "$DRY_OUT" | grep -qi "forbidden"; then
+                  echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot dry-run HelmRelease ($file)"
+                  echo "$DRY_OUT"
+                  echo "    Grant lives in arc-runners/app/rbac.yaml — applies after merge + Flux reconcile."
+                  continue
+                fi
                 echo "❌ HelmRelease dry-run failed for $file"
+                echo "$DRY_OUT"
                 echo "This indicates the chart version or configuration is invalid"
                 exit 1
               }
@@ -1157,7 +1235,6 @@ jobs:
             --cache-dir "${{ env.TRIVY_CACHE_DIR }}" \
             --skip-files "*.log,*.tmp,*.cache,node_modules/*,.git/*" \
             --timeout 60s \
-            --skip-db-update \
             "$SCAN_DIR" || {
             echo "⚠️ Trivy filesystem scan timed out or failed"
             echo '{"version": "2.1.0", "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json", "runs": [{"tool": {"driver": {"name": "Trivy", "version": "timeout"}}, "results": []}]}' > trivy-results.sarif
@@ -1171,7 +1248,6 @@ jobs:
             --severity HIGH,CRITICAL \
             --cache-dir "${{ env.TRIVY_CACHE_DIR }}" \
             --timeout 60s \
-            --skip-db-update \
             "$SCAN_DIR" || {
             echo "⚠️ Trivy config scan timed out or failed"
             echo '{"version": "2.1.0", "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json", "runs": [{"tool": {"driver": {"name": "Trivy", "version": "timeout"}}, "results": []}]}' > trivy-config-results.sarif
@@ -1193,10 +1269,14 @@ jobs:
         run: |
           set -euo pipefail
           echo "📦 Installing GitHub CLI..."
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
+          # Static release tarball instead of apt — apt hangs on these
+          # ephemeral ARC runners (same failure mode as the yamllint install,
+          # canary PR #964).
+          GH_VERSION=2.76.1
+          timeout 90 curl -fsSL -o /tmp/gh.tar.gz \
+            "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          sudo mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
           gh --version
 
       - name: Upload Trivy SARIF results with retry
