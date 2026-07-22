@@ -878,9 +878,14 @@ jobs:
               # kyverno-cli validates these statically), Terraform (tf-controller
               # would run real tofu plans), Connector/ClusterSecretStore
               # (cluster-scoped — the namespace override has no effect, kubectl
-              # would apply them for real).
+              # would apply them for real). Ingress: the nginx admission webhook
+              # rejects any host+path already claimed by the live Ingress (which
+              # every existing app's ingress is), and a test Ingress has real
+              # side effects — external-dns creates DNS records from it and the
+              # shlink-ingress-controller mints a vollm.in slug. Static render,
+              # kubeconform, and Kyverno already validate Ingress manifests.
               case "$KIND" in
-                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore)
+                ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore|Ingress)
                   echo "Skipping $KIND resource: $file"
                   continue
                   ;;
