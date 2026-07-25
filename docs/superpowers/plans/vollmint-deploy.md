@@ -504,7 +504,7 @@ Direct copy of longhorn-rebalancing-controller's `build.yml` with names swapped 
     charts/vollmint/templates/service.yaml charts/vollmint/templates/cronjob.yaml
   git commit -m "feat: add Dockerfile, Helm chart, and Harbor release CI"
   ```
-- [ ] **Step 2:** Push and open the PR: `git push -u origin feat/deploy && gh pr create --title "feat: Dockerfile, Helm chart, Harbor release CI" --body "<summary of Part A>"`. Watch CI (`gh pr checks --watch`). Note: if CI jobs sit queued forever, the ARC runner group may not cover the private vollmint repo — report that to Scott (org-settings fix, not a code fix).
+- [ ] **Step 2:** Push and open the PR: `git push -u origin feat/deploy && gh pr create --title "feat: Dockerfile, Helm chart, Harbor release CI" --body "<summary of Part A>"`. Watch CI (`gh pr checks --watch`). Note: if CI jobs sit queued forever, the ARC runner group may not cover the vollmint repo (public as of github-admin PR #16 — the group must allow public repos, as it already does for masters-league) — report that to Scott (org-settings fix, not a code fix).
 - [ ] **Step 3:** **STOP — do not merge.** Merging requires Scott's explicit approval (house rule).
 
 ---
