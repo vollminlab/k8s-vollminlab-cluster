@@ -998,6 +998,27 @@ jobs:
               fi
               echo "Test deploying HelmRelease: $file"
 
+              # ── GUARD B: fullnameOverride/nameOverride escape hatch ──────────
+              # A chart whose values pin a fixed resource name (fullnameOverride
+              # or nameOverride) renders cluster-scoped objects (ClusterRole,
+              # ClusterRoleBinding, …) under that PRODUCTION name regardless of
+              # the test release name. Cluster-scoped objects have no namespace
+              # isolation, so a live test-deploy would adopt/overwrite the prod
+              # object and — when the ci-test namespace is torn down — orphan it.
+              # This is exactly what broke Prometheus service discovery on
+              # 2026-07-24 (kube-prometheus-stack). A pinned fullname cannot be
+              # neutralized by Guard A's release-name rewrite, so such charts are
+              # NEVER live-deployed here. Static render + server-side dry-run
+              # (below) still validate the chart + values.
+              APP_DIR="$(dirname "$file")"
+              if grep -rqsE '^[[:space:]]*(fullnameOverride|nameOverride):' "$APP_DIR"; then
+                echo "⚠️⚠️⚠️ CLUSTER-SCOPE GUARD: $file pins fullnameOverride/nameOverride in $APP_DIR"
+                echo "    Skipping LIVE test-deploy — a fixed resource name would collide with"
+                echo "    production cluster-scoped objects (ClusterRole/ClusterRoleBinding/etc.)."
+                echo "    Static render + server-side dry-run below still validate this chart."
+                continue
+              fi
+
               if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
                 ORIG_SOURCE_REF="$(yq eval '.spec.chartRef.name' "$file")"
               else
@@ -1010,10 +1031,20 @@ jobs:
               CLEAN_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
                 | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
 
+              # ── GUARD A: neutralize the release identity ─────────────────────
+              # Rewrite .spec.releaseName (not just .metadata.name). Charts derive
+              # resource names — including cluster-scoped ones — from the Helm
+              # release name (fullname template falls back to the release name).
+              # Leaving the prod releaseName in place makes the test install
+              # render prod-named ClusterRole/ClusterRoleBinding objects that
+              # collide with production. A per-run test release name isolates them.
+              TEST_RELEASE_NAME="test-${CLEAN_NAME}-${RUN_SUFFIX}"
+
               if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
                 yq eval "
                   .metadata.namespace = \"$TEST_NAMESPACE\" |
                   .metadata.name = \"test-${CLEAN_NAME}-${RUN_SUFFIX}\" |
+                  .spec.releaseName = \"$TEST_RELEASE_NAME\" |
                   .spec.chartRef.name = \"$TEST_SOURCE_REF\" |
                   .spec.chartRef.namespace = \"$TEST_NAMESPACE\"
                 " "$file" | kubectl apply -f - || { echo "❌ Failed: $file"; exit 1; }
@@ -1021,6 +1052,7 @@ jobs:
                 yq eval "
                   .metadata.namespace = \"$TEST_NAMESPACE\" |
                   .metadata.name = \"test-${CLEAN_NAME}-${RUN_SUFFIX}\" |
+                  .spec.releaseName = \"$TEST_RELEASE_NAME\" |
                   .spec.chart.spec.sourceRef.name = \"$TEST_SOURCE_REF\" |
                   .spec.chart.spec.sourceRef.namespace = \"$TEST_NAMESPACE\"
                 " "$file" | kubectl apply -f - || { echo "❌ Failed: $file"; exit 1; }
@@ -1132,6 +1164,25 @@ jobs:
           set -euo pipefail
           TEST_NAMESPACE="$TEST_NAMESPACE"
           
+          # ── GUARD C: cluster-scoped orphan sweep (backstop) ─────────────────
+          # Deleting the namespace does NOT remove cluster-scoped objects a chart
+          # may have rendered (ClusterRole, ClusterRoleBinding, webhooks). If any
+          # slipped past Guards A/B, they would be orphaned and can clobber the
+          # production object of the same name. Delete only objects Helm tagged
+          # as belonging to THIS ephemeral test namespace — prod objects carry
+          # their real namespace in the annotation, so this can never touch them.
+          # Best-effort: tolerates a runner SA without cluster-scoped RBAC.
+          echo "🧹 Sweeping cluster-scoped objects owned by $TEST_NAMESPACE..."
+          for kind in clusterrole clusterrolebinding validatingwebhookconfiguration mutatingwebhookconfiguration; do
+            while IFS=$'\t' read -r name relns; do
+              [[ -z "$name" ]] && continue
+              if [[ "$relns" == "$TEST_NAMESPACE" ]]; then
+                echo "  🧹 Deleting orphaned $kind/$name (Helm release-namespace=$relns)"
+                kubectl delete "$kind" "$name" --ignore-not-found=true || true
+              fi
+            done < <(kubectl get "$kind" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.meta\.helm\.sh/release-namespace}{"\n"}{end}' 2>/dev/null || true)
+          done
+
           echo "🧹 Cleaning up test namespace..."
           kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true || {
             echo "⚠️ Failed to delete namespace (RBAC permissions needed - will be fixed once PR is merged)"
