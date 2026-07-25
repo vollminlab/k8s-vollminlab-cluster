@@ -53,6 +53,7 @@ resources:
   - velero-helmrepository.yaml
   - victoria-metrics-helmrepository.yaml
   - vmware-exporter-helmrepository.yaml
+  - vollmint-ocirepository.yaml
   - volsync-helmrepository.yaml
   - harbor-vollminlab-pull-externalsecret.yaml
   - vollminlab-ocirepository.yaml

@@ -1,0 +1,38 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: vollmint-db
+  namespace: vollmint
+  labels:
+    app: vollmint-db
+    env: production
+    category: apps
+spec:
+  instances: 2
+  inheritedMetadata:
+    labels:
+      app: vollmint-db
+      env: production
+      category: apps
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+  bootstrap:
+    initdb:
+      database: vollmint
+      owner: vollmint
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/vollmint-db
+      endpointURL: http://minio.minio.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+    retentionPolicy: "14d"
