@@ -378,22 +378,28 @@ spec:
               (intentionally); check the GC run log in Harbor (Administration ->
               Clean Up -> Garbage Collection) and the jobservice pod logs.
 
-        # Schedule-broken detector: fires if no GC has *succeeded* in 8 days
-        # (weekly cadence + 1 day slack). Catches the schedule being deleted or
-        # wedged, which a failure counter cannot see. Caveat: if the
-        # status="success" series has never existed (exporter fresh, zero GC runs),
-        # increase() returns no data and this stays silent — the first successful
-        # run arms it.
-        - alert: HarborGarbageCollectionMissing
+        # Registry-fill detector (replaces the old increase()-based
+        # HarborGarbageCollectionMissing, which was a false positive). The GC
+        # counter harbor_jobservice_task_total lives on the jobservice pod and
+        # RESETS on every pod restart, and it is only exported *after* its first
+        # increment — so a healthy weekly GC leaves the success series flat at 1
+        # and increase(...[8d]) reads 0 (the absent->1 arming edge is invisible),
+        # firing for ~a week after any jobservice restart even though GC ran.
+        # There is no last-GC-timestamp gauge in Harbor metrics, so guard the
+        # actual risk instead — the 5Gi registry PVC filling (what GC stopping
+        # would cause). Reset-immune, same pattern as the MinIO PVC alerts above.
+        # HarborGarbageCollectionFailed (above) still catches explicit failures.
+        - alert: HarborRegistryVolumeFilling
           expr: |
-            increase(harbor_jobservice_task_total{type="GARBAGE_COLLECTION",status="success"}[8d]) == 0
+            kubelet_volume_stats_available_bytes{namespace="harbor",persistentvolumeclaim="harbor-registry"}
+              / kubelet_volume_stats_capacity_bytes{namespace="harbor",persistentvolumeclaim="harbor-registry"} < 0.20
           for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "No successful Harbor GC in 8+ days"
+            summary: "Harbor registry PVC below 20% free"
             description: >-
-              The weekly Harbor garbage collection (Sat 05:00 UTC, managed by the
-              harbor-config tofu module) has not completed successfully in over 8
-              days. Verify the schedule exists in Harbor and check jobservice health
-              before the 5Gi registry PVC fills again.
+              The 5Gi harbor-registry PVC has {{ $value | humanizePercentage }} free.
+              Weekly GC (Sat 05:00 UTC, harbor-config tofu) may have stopped reclaiming
+              blobs. Check the GC run log (Administration -> Clean Up -> Garbage
+              Collection) and jobservice health; a manual GC frees orphaned blobs.
