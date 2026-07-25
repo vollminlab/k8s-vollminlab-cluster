@@ -1028,7 +1028,12 @@ jobs:
               TEST_SOURCE_REF="$(grep "^${ORIG_SOURCE_REF}:" "$OCI_MAPPING_FILE" | cut -d: -f2 || true)"
               [[ -z "$TEST_SOURCE_REF" ]] && TEST_SOURCE_REF="test-${ORIG_SOURCE_REF}-${RUN_SUFFIX}"
 
-              CLEAN_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
+              # Derive from metadata.name, not the file basename — every HelmRelease
+              # file in this repo is named helmrelease.yaml, so basenames collide
+              # when a PR touches more than one HR: the second apply becomes a
+              # patch of the first test object, which the runner SA is (by design)
+              # not allowed to do.
+              CLEAN_NAME="$(yq eval '.metadata.name' "$file" | tr '[:upper:]' '[:lower:]' \
                 | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
 
               # ── GUARD A: neutralize the release identity ─────────────────────
