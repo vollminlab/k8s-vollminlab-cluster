@@ -76,12 +76,16 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `monitoring` | `kube-prometheus-stack-operator` | 10250 | prometheus-operator admission webhook | allow-webhook-ingress ingress (open source) |
 | `monitoring` | `grafana` | 3000 | Grafana HTTP (homepage widget) | allow-homepage-grafana ingress (from homepage) |
 | `monitoring` | `prometheus` | 9090 | Prometheus HTTP (homepage widget) | allow-homepage-prometheus ingress (from homepage) |
+| `monitoring` | `karma` | 8080 | karma Alertmanager dashboard UI (svc 80→8080) | allow-ingress-nginx ingress (from ingress-nginx) |
 | `authentik` | `server` | 9000 | authentik-server HTTP (homepage widget) | allow-homepage ingress (from homepage) |
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
+| `minio` | `minio` | 9000 | S3 API — reached by the Helm post-upgrade hook pod (`app: minio-job`) to create buckets/users | allow-post-job-egress (from hook) + allow-post-job-ingress (to minio); intra-namespace |
 | `tofu` | n/a (egress target → mediastack) | 7878/8989/8787/9696 | radarr/sonarr/readarr/prowlarr API (arr Terraform providers) | allow-mediastack-arr-egress egress |
 | `tofu` | n/a (egress target → harbor) | 8443 | Harbor API; svc 443→**8443**, egress evaluated post-DNAT so 443 ≠ enough | allow-harbor-egress egress |
+| `vollmint` | `vollmint` | 8080 | API + SPA (ingress-nginx) | allow-ingress-nginx ingress |
+| `vollmint` | n/a (egress target) | 443 | SimpleFIN Bridge HTTPS (sync CronJob) | allow-external-egress egress |
 
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
 truth — do not rely on service port numbers.

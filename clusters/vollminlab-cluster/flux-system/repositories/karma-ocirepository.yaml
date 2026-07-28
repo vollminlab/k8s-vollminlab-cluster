@@ -1,0 +1,17 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: karma-repo
+  namespace: flux-system
+  labels:
+    app: karma
+    env: production
+    category: observability
+spec:
+  url: oci://ghcr.io/wiremind/wiremind-helm-charts/karma
+  interval: 30m
+  ref:
+    tag: 2.13.1
+  layerSelector:
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
