@@ -31,7 +31,7 @@ spec:
               command: ["/bin/sh", "/scripts/heal.sh"]
               env:
                 - name: HEAL_NAMESPACES
-                  value: "mediastack monitoring harbor"
+                  value: "mediastack monitoring harbor minio"
                 - name: RESTART_THRESHOLD
                   value: "5"
                 - name: COOLDOWN_SECONDS

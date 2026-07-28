@@ -205,3 +205,58 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+---
+# Allow the Helm post-upgrade hook Job (minio-post-job) to reach the MinIO API on
+# 9000 to create buckets/users/policies. The ephemeral hook pod carries app=minio-job,
+# which no cross-namespace allow rule covers, and default-deny-all blocks intra-namespace
+# pod-to-pod in both directions. Without this the hook's mc client times out dialing
+# minio:9000 and the HelmRelease upgrade is marked failed even though MinIO is healthy
+# (surfaced on the first upgrade after PR #970, the first in ~2 months).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-post-job-egress
+  namespace: minio
+  labels:
+    app: minio
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: minio-job
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+# Companion ingress: MinIO must accept the hook pod's connection on the API port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-post-job-ingress
+  namespace: minio
+  labels:
+    app: minio
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: minio-job
+      ports:
+        - protocol: TCP
+          port: 9000
