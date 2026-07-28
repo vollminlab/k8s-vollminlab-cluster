@@ -31,6 +31,19 @@ data:
       limits:
         cpu: 100m
         memory: 128Mi
+    # karma blocks its HTTP listener until the FIRST Alertmanager collection finishes.
+    # When Alertmanager is unreachable, that collection retries at the full per-server
+    # `timeout` (below) before giving up, so cold start ≈ 3–4× `timeout`. The chart's
+    # default probe (delay 5, period 5, k8s failureThreshold 3) would kill the container
+    # at ~20s — before it ever listens — causing a CrashLoopBackOff that never becomes
+    # Ready. This only bites where Alertmanager is unreachable (e.g. the CI integration
+    # test's isolated namespace); in production karma runs in `monitoring` and reaches
+    # Alertmanager intra-namespace in <1s, so this delayed first probe simply passes.
+    # The chart applies these same values to BOTH the liveness and readiness probes.
+    livenessProbe:
+      path: /health
+      delay: 40
+      period: 10
     # Kyverno require-labels enforces app/env/category on the pod template.
     podLabels:
       app: karma
@@ -48,5 +61,7 @@ data:
             # covered by the monitoring allow-intra-namespace / allow-all-egress policies.
             - name: vollminlab
               uri: http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093
-              timeout: 20s
+              # 5s is ample for an intra-namespace call to Alertmanager. Kept low so an
+              # unreachable-Alertmanager cold start stays short (see livenessProbe note above).
+              timeout: 5s
               proxy: true
