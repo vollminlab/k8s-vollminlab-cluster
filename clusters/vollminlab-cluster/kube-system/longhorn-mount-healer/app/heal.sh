@@ -4,7 +4,7 @@
 set -u
 
 # --- tunables (overridable via env in the CronJob) ---
-HEAL_NAMESPACES="${HEAL_NAMESPACES:-mediastack monitoring harbor}"
+HEAL_NAMESPACES="${HEAL_NAMESPACES:-mediastack monitoring harbor minio}"
 RESTART_THRESHOLD="${RESTART_THRESHOLD:-5}"
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-21600}"
 DETACH_TIMEOUT_SECONDS="${DETACH_TIMEOUT_SECONDS:-180}"

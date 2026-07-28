@@ -1,0 +1,16 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: vollmint-repo
+  namespace: flux-system
+  labels:
+    app: vollmint
+    env: production
+    category: apps
+spec:
+  interval: 1h
+  url: oci://harbor.vollminlab.com/vollminlab/charts/vollmint
+  ref:
+    tag: "0.1.0"
+  secretRef:
+    name: harbor-vollminlab-pull
