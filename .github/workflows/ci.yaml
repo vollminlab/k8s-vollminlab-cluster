@@ -584,8 +584,17 @@ jobs:
               #      limit, not a problem with the manifest.
               # Everything else (Kyverno "denied the request", schema "invalid",
               # unknown fields) is a real rejection and fails the job.
+              #
+              # kubectl's "retrieving current configuration" GET-before-patch step
+              # (needed for the 3-way merge on every update) prints its own generic
+              # wrapper line ("Error from server (Forbidden): error when retrieving
+              # current configuration of:") before the actual forbidden reason on a
+              # later line. That wrapper line matches the positive filter above but
+              # contains none of the RBAC-forbidden phrases below it, so it must be
+              # excluded here too — otherwise any chart with RBAC objects (ClusterRole,
+              # RoleBinding, webhook configs, etc.) always false-fails.
               DRYRUN_ERRORS=$(grep -iE 'error|denied|invalid|forbidden|must |required|not allowed' "$RENDER_DIR/dryrun.out" 2>/dev/null \
-                | grep -ivE 'unable to recognize|no matches for kind|ensure CRDs are installed|is forbidden|cannot (create|patch|get|update|delete) resource|forbidden: User|does not match the namespace' \
+                | grep -ivE 'unable to recognize|no matches for kind|ensure CRDs are installed|is forbidden|cannot (create|patch|get|update|delete) resource|forbidden: User|does not match the namespace|error when retrieving current configuration' \
                 || true)
               if [[ -n "$DRYRUN_ERRORS" ]]; then
                 echo "❌ $RELEASE_NAME rejected by server-side dry-run:"
