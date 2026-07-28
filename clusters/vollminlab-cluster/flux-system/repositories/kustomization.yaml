@@ -26,6 +26,7 @@ resources:
   - ingress-nginx-helmrepository.yaml
   - jellyfin-helmrepository.yaml
   - jellystat-helmrepository.yaml
+  - karma-ocirepository.yaml
   - kyverno-helmrepository.yaml
   - kyverno-policyreporter-helmrepository.yaml
   - local-path-provisioner-gitrepository.yaml

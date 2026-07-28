@@ -423,6 +423,15 @@ jobs:
           HARBOR_LOGIN_DONE=""
           RENDER_FAILED=0
 
+          # Marker file consumed by the later "live test-deploy" step (same job,
+          # so $RUNNER_TEMP persists). Every changed HelmRelease whose rendered
+          # chart contains a CLUSTER-SCOPED kind is recorded here by exact file
+          # path. Cluster-scoped objects have no namespace isolation — see the
+          # cluster-scope guard in the deploy step for why they must never be
+          # live-deployed. Truncate first so a re-run starts clean.
+          CLUSTER_SCOPED_HR_LIST="$RUNNER_TEMP/ci-cluster-scoped-hrs.txt"
+          : > "$CLUSTER_SCOPED_HR_LIST"
+
           while IFS= read -r file; do
             [[ -f "$file" ]] || continue
             [[ "$(yq eval '.kind' "$file" 2>/dev/null)" == "HelmRelease" ]] || continue
@@ -516,6 +525,21 @@ jobs:
               echo "❌ helm template failed for $RELEASE_NAME ($file)"
               RENDER_FAILED=1
               continue
+            fi
+
+            # ── Cluster-scope detection (feeds Guard B in the deploy step) ────
+            # If the rendered chart declares any cluster-scoped kind, record the
+            # HR file. Such objects are NOT namespaced, so a live test-deploy
+            # would adopt/overwrite the identically-named PRODUCTION object and
+            # the ci-test teardown would orphan it — exactly what broke
+            # kube-prometheus-stack (2026-07-24) and policy-reporter (2026-07-27).
+            # Guard A's release-name rewrite only protects charts that DERIVE
+            # those names from the release name; a chart that HARDCODES a
+            # cluster-scoped name defeats it. The deploy step reads this list and
+            # skips live-deploy of these charts (static render + dry-run remain).
+            if grep -qE '^kind:[[:space:]]*(ClusterRole|ClusterRoleBinding|ValidatingWebhookConfiguration|MutatingWebhookConfiguration|CustomResourceDefinition|APIService)[[:space:]]*$' "$RENDER_DIR/rendered.yaml"; then
+              echo "$file" >> "$CLUSTER_SCOPED_HR_LIST"
+              echo "  🔒 $RELEASE_NAME renders cluster-scoped objects — will be excluded from live test-deploy"
             fi
 
             # Strict-parse the rendered output the way helm-controller does.
@@ -998,23 +1022,37 @@ jobs:
               fi
               echo "Test deploying HelmRelease: $file"
 
-              # ── GUARD B: fullnameOverride/nameOverride escape hatch ──────────
-              # A chart whose values pin a fixed resource name (fullnameOverride
-              # or nameOverride) renders cluster-scoped objects (ClusterRole,
-              # ClusterRoleBinding, …) under that PRODUCTION name regardless of
-              # the test release name. Cluster-scoped objects have no namespace
-              # isolation, so a live test-deploy would adopt/overwrite the prod
-              # object and — when the ci-test namespace is torn down — orphan it.
-              # This is exactly what broke Prometheus service discovery on
-              # 2026-07-24 (kube-prometheus-stack). A pinned fullname cannot be
-              # neutralized by Guard A's release-name rewrite, so such charts are
-              # NEVER live-deployed here. Static render + server-side dry-run
+              # ── GUARD B: never live-deploy a chart with cluster-scoped kinds ─
+              # Cluster-scoped objects (ClusterRole, ClusterRoleBinding,
+              # Validating/MutatingWebhookConfiguration, CRD, APIService) have no
+              # namespace isolation, so a live test-deploy adopts/overwrites the
+              # identically-named PRODUCTION object; the ci-test teardown then
+              # orphans it. This broke kube-prometheus-stack (2026-07-24) and
+              # policy-reporter (2026-07-27). Guard A's release-name rewrite only
+              # protects charts that DERIVE those names from the release name — a
+              # chart that HARDCODES a cluster-scoped name (independent of the
+              # release name) defeats it entirely. So we skip live-deploy of ANY
+              # chart whose render contains a cluster-scoped kind, detected two
+              # ways: (1) the render step already recorded it in
+              # $CLUSTER_SCOPED_HR_LIST (authoritative — reads the actual chart
+              # output), and (2) a fast fullnameOverride/nameOverride grep as a
+              # belt-and-suspenders fallback. Static render + server-side dry-run
               # (below) still validate the chart + values.
               APP_DIR="$(dirname "$file")"
-              if grep -rqsE '^[[:space:]]*(fullnameOverride|nameOverride):' "$APP_DIR"; then
-                echo "⚠️⚠️⚠️ CLUSTER-SCOPE GUARD: $file pins fullnameOverride/nameOverride in $APP_DIR"
-                echo "    Skipping LIVE test-deploy — a fixed resource name would collide with"
-                echo "    production cluster-scoped objects (ClusterRole/ClusterRoleBinding/etc.)."
+              CLUSTER_SCOPED_HR_LIST="$RUNNER_TEMP/ci-cluster-scoped-hrs.txt"
+              GUARD_B_REASON=""
+              if [[ -f "$CLUSTER_SCOPED_HR_LIST" ]] && grep -qxF "$file" "$CLUSTER_SCOPED_HR_LIST"; then
+                GUARD_B_REASON="its chart render contains a cluster-scoped kind (ClusterRole/ClusterRoleBinding/webhook/CRD/APIService)"
+              elif grep -rqsE '^[[:space:]]*(fullnameOverride|nameOverride):' "$APP_DIR"; then
+                GUARD_B_REASON="it pins fullnameOverride/nameOverride in $APP_DIR"
+              fi
+              if [[ -n "$GUARD_B_REASON" ]]; then
+                echo "⚠️⚠️⚠️ CLUSTER-SCOPE GUARD: skipping LIVE test-deploy of $file —"
+                echo "    $GUARD_B_REASON."
+                echo "    A cluster-scoped object has no namespace isolation: the test install"
+                echo "    would adopt/overwrite the identically-named PRODUCTION object and the"
+                echo "    ci-test teardown would then orphan it (broke kube-prometheus-stack"
+                echo "    2026-07-24, policy-reporter 2026-07-27)."
                 echo "    Static render + server-side dry-run below still validate this chart."
                 continue
               fi
