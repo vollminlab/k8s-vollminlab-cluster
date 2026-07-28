@@ -432,6 +432,18 @@ jobs:
           CLUSTER_SCOPED_HR_LIST="$RUNNER_TEMP/ci-cluster-scoped-hrs.txt"
           : > "$CLUSTER_SCOPED_HR_LIST"
 
+          # Second marker file (same mechanism, consumed by the deploy step's
+          # secret-dep guard). Every changed HelmRelease whose rendered pods
+          # reference a Secret the chart does NOT create itself is recorded here
+          # by exact file path. That Secret is materialized in production by ESO
+          # from 1Password and does not exist in the ephemeral ci-test namespace,
+          # so the pod hangs in CreateContainerConfigError and the live-deploy
+          # `kubectl wait` times out — CI goes red on a chart that is perfectly
+          # valid (e.g. shlink-web → secretKeyRef shlink-credentials, PR #951).
+          # Truncate first so a re-run starts clean.
+          SECRET_DEP_HR_LIST="$RUNNER_TEMP/ci-secret-dep-hrs.txt"
+          : > "$SECRET_DEP_HR_LIST"
+
           while IFS= read -r file; do
             [[ -f "$file" ]] || continue
             [[ "$(yq eval '.kind' "$file" 2>/dev/null)" == "HelmRelease" ]] || continue
@@ -540,6 +552,50 @@ jobs:
             if grep -qE '^kind:[[:space:]]*(ClusterRole|ClusterRoleBinding|ValidatingWebhookConfiguration|MutatingWebhookConfiguration|CustomResourceDefinition|APIService)[[:space:]]*$' "$RENDER_DIR/rendered.yaml"; then
               echo "$file" >> "$CLUSTER_SCOPED_HR_LIST"
               echo "  🔒 $RELEASE_NAME renders cluster-scoped objects — will be excluded from live test-deploy"
+            fi
+
+            # ── Secret-dependency detection (feeds Guard D in the deploy step) ─
+            # A chart whose pods reference a Secret the chart itself does NOT
+            # render can never reach condition=Ready in the isolated ci-test
+            # namespace: that Secret is materialized in production by ESO from
+            # 1Password and does not exist here, so the pod hangs in
+            # CreateContainerConfigError until the 5-minute `kubectl wait` times
+            # out and CI goes red — exactly why PR #951 (shlink-web →
+            # secretKeyRef shlink-credentials) could never pass. Compare every
+            # Secret the rendered workloads reference (env secretKeyRef, envFrom
+            # secretRef, volume secret.secretName) plus any HR-level valuesFrom
+            # kind: Secret against the Secrets the chart renders itself. The
+            # pre-created harbor pull secret counts as present. Any reference the
+            # chart does not satisfy is an external dependency: record the HR so
+            # the deploy step skips its live install. The recursive-descent yq
+            # queries guard `tag == "!!map"` before has() so scalar nodes don't
+            # error. Over-detection is safe — static render + server-side dry-run
+            # still fully validate the chart and its values.
+            OWN_SECRETS=$(yq eval-all 'select(.kind == "Secret") | .metadata.name' \
+              "$RENDER_DIR/rendered.yaml" 2>/dev/null | sort -u || true)
+            {
+              yq eval-all '.. | select(tag == "!!map" and has("secretKeyRef")) | .secretKeyRef.name' "$RENDER_DIR/rendered.yaml" 2>/dev/null || true
+              yq eval-all '.. | select(tag == "!!map" and has("secretRef")) | .secretRef.name' "$RENDER_DIR/rendered.yaml" 2>/dev/null || true
+              yq eval-all '.. | select(tag == "!!map" and has("secret")) | .secret.secretName | select(. != null)' "$RENDER_DIR/rendered.yaml" 2>/dev/null || true
+              # HR-level valuesFrom kind: Secret — rendered WITHOUT these values
+              # (they live in the cluster), but helm-controller still needs the
+              # Secret at install time, so it is an external dependency too.
+              for ((vi=0; vi<VF_COUNT; vi++)); do
+                if [[ "$(yq eval ".spec.valuesFrom[$vi].kind" "$file")" == "Secret" ]]; then
+                  yq eval ".spec.valuesFrom[$vi].name" "$file"
+                fi
+              done
+            } | grep -vE '^(null)?$' | sort -u > "$RENDER_DIR/ref-secrets.txt" || true
+            MISSING_SECRETS=""
+            while IFS= read -r s; do
+              [[ -z "$s" ]] && continue
+              # Pre-created in the test namespace (image-pull), so it is present.
+              [[ "$s" == "harbor-vollminlab-pull" ]] && continue
+              grep -qxF "$s" <<< "$OWN_SECRETS" || MISSING_SECRETS+="$s "
+            done < "$RENDER_DIR/ref-secrets.txt"
+            if [[ -n "${MISSING_SECRETS// /}" ]]; then
+              echo "$file" >> "$SECRET_DEP_HR_LIST"
+              echo "  🔑 $RELEASE_NAME references Secret(s) its chart does not create (${MISSING_SECRETS% }) — will be excluded from live test-deploy"
             fi
 
             # Strict-parse the rendered output the way helm-controller does.
@@ -1053,6 +1109,28 @@ jobs:
                 echo "    would adopt/overwrite the identically-named PRODUCTION object and the"
                 echo "    ci-test teardown would then orphan it (broke kube-prometheus-stack"
                 echo "    2026-07-24, policy-reporter 2026-07-27)."
+                echo "    Static render + server-side dry-run below still validate this chart."
+                continue
+              fi
+
+              # ── GUARD D: never live-deploy a chart with unsatisfied Secret deps ─
+              # The render step recorded (in $SECRET_DEP_HR_LIST) every HR whose
+              # pods reference a Secret the chart does not create itself. In
+              # production ESO materializes that Secret from 1Password; in the
+              # isolated ci-test namespace it does not exist, so the pod would sit
+              # in CreateContainerConfigError until the `kubectl wait` below times
+              # out — failing CI on a perfectly valid chart (the PR #951 gap:
+              # shlink-web → secretKeyRef shlink-credentials). Skip the live
+              # install for these; static render + server-side dry-run (below)
+              # still validate the chart and its values.
+              SECRET_DEP_HR_LIST="$RUNNER_TEMP/ci-secret-dep-hrs.txt"
+              if [[ -f "$SECRET_DEP_HR_LIST" ]] && grep -qxF "$file" "$SECRET_DEP_HR_LIST"; then
+                echo "⚠️⚠️⚠️ SECRET-DEP GUARD: skipping LIVE test-deploy of $file —"
+                echo "    its chart references a Secret it does not create itself, which ESO"
+                echo "    materializes from 1Password in production but which is absent in the"
+                echo "    ephemeral ci-test namespace. A live install would hang in"
+                echo "    CreateContainerConfigError until the readiness wait times out (the"
+                echo "    PR #951 gap: shlink-web → secretKeyRef shlink-credentials)."
                 echo "    Static render + server-side dry-run below still validate this chart."
                 continue
               fi
