@@ -401,18 +401,50 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           helm version
 
-      - name: Render charts and check post-render (static)
+      - name: Create test namespace
+        if: needs.validate-changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
+          echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
+
+          # Namespaced objects are dry-run applied INTO this namespace, so it must
+          # exist first. Kyverno mutate policies do apiCall lookups on namespace
+          # labels — an unlabeled namespace fails the fail-closed webhook — and the
+          # runner ServiceAccount can create/delete namespaces but not patch them,
+          # so the labels must be set at creation time.
+          kubectl create -f - <<EOF
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $TEST_NAMESPACE
+            labels:
+              app: ci-test
+              env: production
+              category: core
+          EOF
+          echo "✅ Created test namespace: $TEST_NAMESPACE"
+
+      - name: Render charts and server-side dry-run
         if: needs.validate-changes.outputs.changed == 'true'
         env:
           HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           set -euo pipefail
-          echo "🔍 Rendering changed HelmReleases with their values ConfigMaps..."
+          echo "🔍 Rendering changed HelmReleases and validating them against the live API server..."
           # This reproduces what helm-controller does before applying: render the
-          # chart with the real values, then parse the output strictly. PR #960
-          # (duplicate 'app' key in exporter.podLabels) passed every other check
-          # and broke the live Harbor upgrade — this step catches that class.
+          # chart with the real values, parse the output strictly, then submit it
+          # to the API server with --dry-run=server. Dry-run exercises the FULL
+          # admission chain (OpenAPI/CRD schema + every Kyverno policy; pod-level
+          # policies fire via autogen on the workload template) but SCHEDULES NO
+          # POD and PERSISTS NOTHING. Consequences:
+          #   • Absent ESO Secrets are irrelevant — no pod is started, so no
+          #     CreateContainerConfigError, no readiness wait to time out.
+          #   • Cluster-scoped objects cannot clobber production — nothing is
+          #     written, so the #972 / #981 incident class is structurally gone.
+          # PR #960 (duplicate 'app' key in exporter.podLabels) is caught by the
+          # strict parse below, before the dry-run.
 
           # kustomize's strict go-yaml parser rejects duplicate mapping keys with
           # the same error helm-controller reports; helm template alone does not.
@@ -422,15 +454,6 @@ jobs:
           REPO_DIR="clusters/vollminlab-cluster/flux-system/repositories"
           HARBOR_LOGIN_DONE=""
           RENDER_FAILED=0
-
-          # Marker file consumed by the later "live test-deploy" step (same job,
-          # so $RUNNER_TEMP persists). Every changed HelmRelease whose rendered
-          # chart contains a CLUSTER-SCOPED kind is recorded here by exact file
-          # path. Cluster-scoped objects have no namespace isolation — see the
-          # cluster-scope guard in the deploy step for why they must never be
-          # live-deployed. Truncate first so a re-run starts clean.
-          CLUSTER_SCOPED_HR_LIST="$RUNNER_TEMP/ci-cluster-scoped-hrs.txt"
-          : > "$CLUSTER_SCOPED_HR_LIST"
 
           while IFS= read -r file; do
             [[ -f "$file" ]] || continue
@@ -503,21 +526,28 @@ jobs:
               HARBOR_LOGIN_DONE=1
             fi
 
+            # Render with --namespace $TEST_NAMESPACE so charts that template
+            # `namespace: {{ .Release.Namespace }}` emit ci-test — matching the
+            # dry-run target below (otherwise kubectl errors on a namespace
+            # mismatch against the default "default").
             RENDER_DIR=$(mktemp -d)
             echo "  Rendering $RELEASE_NAME (source: $SRC_KIND/$SRC_NAME)..."
             RENDER_OK=1
             if [[ "$SRC_KIND" == "OCIRepository" ]]; then
               CHART_VERSION=$(yq eval '.spec.ref.tag' "$SRC_FILE")
               helm template "$RELEASE_NAME" "$SRC_URL" --version "$CHART_VERSION" \
+                --namespace "$TEST_NAMESPACE" \
                 ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
             else
               CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
               CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
               if [[ "$SRC_URL" == oci://* ]]; then
                 helm template "$RELEASE_NAME" "${SRC_URL}/${CHART_NAME}" --version "$CHART_VERSION" \
+                  --namespace "$TEST_NAMESPACE" \
                   ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
               else
                 helm template "$RELEASE_NAME" "$CHART_NAME" --repo "$SRC_URL" --version "$CHART_VERSION" \
+                  --namespace "$TEST_NAMESPACE" \
                   ${VALUES_ARGS[@]+"${VALUES_ARGS[@]}"} > "$RENDER_DIR/rendered.yaml" || RENDER_OK=0
               fi
             fi
@@ -527,21 +557,6 @@ jobs:
               continue
             fi
 
-            # ── Cluster-scope detection (feeds Guard B in the deploy step) ────
-            # If the rendered chart declares any cluster-scoped kind, record the
-            # HR file. Such objects are NOT namespaced, so a live test-deploy
-            # would adopt/overwrite the identically-named PRODUCTION object and
-            # the ci-test teardown would orphan it — exactly what broke
-            # kube-prometheus-stack (2026-07-24) and policy-reporter (2026-07-27).
-            # Guard A's release-name rewrite only protects charts that DERIVE
-            # those names from the release name; a chart that HARDCODES a
-            # cluster-scoped name defeats it. The deploy step reads this list and
-            # skips live-deploy of these charts (static render + dry-run remain).
-            if grep -qE '^kind:[[:space:]]*(ClusterRole|ClusterRoleBinding|ValidatingWebhookConfiguration|MutatingWebhookConfiguration|CustomResourceDefinition|APIService)[[:space:]]*$' "$RENDER_DIR/rendered.yaml"; then
-              echo "$file" >> "$CLUSTER_SCOPED_HR_LIST"
-              echo "  🔒 $RELEASE_NAME renders cluster-scoped objects — will be excluded from live test-deploy"
-            fi
-
             # Strict-parse the rendered output the way helm-controller does.
             printf 'resources:\n  - rendered.yaml\n' > "$RENDER_DIR/kustomization.yaml"
             if ! kustomize build "$RENDER_DIR" > /dev/null; then
@@ -549,687 +564,60 @@ jobs:
               echo "   This is the failure mode of PR #960 (duplicate mapping key) —"
               echo "   the in-cluster Helm upgrade would fail exactly like this."
               RENDER_FAILED=1
+              continue
+            fi
+            echo "  ✅ $RELEASE_NAME renders and strict-parses cleanly"
+
+            # ── Server-side dry-run: real admission chain, zero side effects ────
+            if kubectl apply --dry-run=server -n "$TEST_NAMESPACE" \
+                 -f "$RENDER_DIR/rendered.yaml" > "$RENDER_DIR/dryrun.out" 2>&1; then
+              echo "  ✅ $RELEASE_NAME passes server-side dry-run (schema + Kyverno admission)"
             else
-              echo "  ✅ $RELEASE_NAME renders and parses cleanly"
+              # Two failure classes are NOT manifest defects and are downgraded
+              # to warnings so a valid chart is never falsely failed:
+              #   1. Missing-CRD ordering — a chart that bundles a CRD and a CR
+              #      using it; Flux installs CRDs before CRs in the real reconcile.
+              #   2. RBAC forbidden / namespace mismatch — the CI ServiceAccount
+              #      lacks create/patch on that kind (e.g. cluster-scoped objects),
+              #      or the chart hardcodes a fixed namespace. A dry-run uses the
+              #      same verbs as a real write, so this is a CI-identity/target
+              #      limit, not a problem with the manifest.
+              # Everything else (Kyverno "denied the request", schema "invalid",
+              # unknown fields) is a real rejection and fails the job.
+              DRYRUN_ERRORS=$(grep -iE 'error|denied|invalid|forbidden|must |required|not allowed' "$RENDER_DIR/dryrun.out" 2>/dev/null \
+                | grep -ivE 'unable to recognize|no matches for kind|ensure CRDs are installed|is forbidden|cannot (create|patch|get|update|delete) resource|forbidden: User|does not match the namespace' \
+                || true)
+              if [[ -n "$DRYRUN_ERRORS" ]]; then
+                echo "❌ $RELEASE_NAME rejected by server-side dry-run:"
+                cat "$RENDER_DIR/dryrun.out"
+                RENDER_FAILED=1
+              else
+                echo "  ⚠️ $RELEASE_NAME: dry-run reported only benign missing-CRD / RBAC-identity issues, continuing:"
+                cat "$RENDER_DIR/dryrun.out"
+              fi
             fi
           done <<< "$CHANGED_FILES"
 
           if [[ "$RENDER_FAILED" != "0" ]]; then
-            echo "❌ One or more HelmReleases failed static render validation"
+            echo "❌ One or more HelmReleases failed render / strict-parse / dry-run validation"
             exit 1
           fi
-          echo "✅ All changed HelmReleases render and strict-parse cleanly"
-
-      - name: Create test namespace
-        if: needs.validate-changes.outputs.changed == 'true'
-        env:
-          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-        run: |
-          set -euo pipefail
-          TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
-          echo "TEST_NAMESPACE=$TEST_NAMESPACE" >> $GITHUB_ENV
-
-          # Kyverno mutate policies do apiCall lookups on namespace labels —
-          # an unlabeled test namespace fails the fail-closed webhook. Labels
-          # must be set at creation time: the runner ServiceAccount can create
-          # and delete namespaces but not patch them, so kubectl label is
-          # forbidden.
-          kubectl create -f - <<EOF
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: $TEST_NAMESPACE
-            labels:
-              app: ci-test
-              env: production
-              category: core
-          EOF
-          echo "✅ Created test namespace: $TEST_NAMESPACE"
-
-          # Pre-create Harbor pull secret so OCIRepositories with secretRef can authenticate.
-          # Secrets passed via env: to avoid shell expanding $ in the robot username.
-          kubectl create secret docker-registry harbor-vollminlab-pull \
-            -n "$TEST_NAMESPACE" \
-            --docker-server=harbor.vollminlab.com \
-            --docker-username="$HARBOR_USERNAME" \
-            --docker-password="$HARBOR_PASSWORD"
-          echo "✅ Created harbor-vollminlab-pull secret in $TEST_NAMESPACE"
-
-      - name: Check Flux CRDs
-        if: needs.validate-changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          echo "🔍 Checking Flux CRDs availability..."
-          
-          # Check by listing resources, not CRDs — the runner SA can list Flux resources
-          # but does not have permission to list customresourcedefinitions cluster-wide.
-          if ! kubectl get ocirepositories.source.toolkit.fluxcd.io -A --no-headers >/dev/null 2>&1; then
-            echo "⚠️ OCIRepository resource type not accessible - skipping Flux resource testing"
-            echo "FLUX_CRDS_AVAILABLE=false" >> $GITHUB_ENV
-            exit 0
-          fi
-
-          if ! kubectl get helmreleases.helm.toolkit.fluxcd.io -A --no-headers >/dev/null 2>&1; then
-            echo "⚠️ HelmRelease resource type not accessible - skipping Flux resource testing"
-            echo "FLUX_CRDS_AVAILABLE=false" >> $GITHUB_ENV
-            # Don't exit - continue with basic validation
-          else
-            echo "✅ Flux CRDs are available"
-            echo "FLUX_CRDS_AVAILABLE=true" >> $GITHUB_ENV
-          fi
-
-      - name: Test deploy changed resources
-        if: needs.validate-changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          TEST_NAMESPACE="$TEST_NAMESPACE"
-          RUN_SUFFIX="${{ env.RUN_SUFFIX }}"
-          
-          echo "🔍 Test deploying changed resources..."
-          
-          # CHANGED_FILES comes from the validate-changes job (includes the
-          # app-unit closure) — no local re-derivation, one source of truth
-          if [[ -z "$CHANGED_FILES" ]]; then
-            echo "✅ No resources to test deploy"
-            exit 0
-          fi
-
-          echo "Changed files: $CHANGED_FILES"
-          
-          # Create OCI mapping file for Flux resources
-          OCI_MAPPING_FILE="/tmp/oci-mapping-$RUN_SUFFIX.txt"
-          touch "$OCI_MAPPING_FILE"
-          
-          # First pass: Deploy OCIRepositories
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^OCIRepository$'; then
-              echo "Test deploying OCIRepository: $file"
-
-              ORIG_NAME=$(yq eval '.metadata.name' "$file")
-              TEST_NAME="test-${ORIG_NAME}-${RUN_SUFFIX}"
-
-              echo "$ORIG_NAME:$TEST_NAME" >> "$OCI_MAPPING_FILE"
-
-              APPLY_OUTPUT=$(yq eval "
-                .metadata.namespace = \"$TEST_NAMESPACE\" |
-                  .metadata.name = \"$TEST_NAME\"
-              " "$file" | kubectl apply --validate=false -f - 2>&1) || {
-                echo "❌ Failed to deploy OCIRepository: $file"
-                echo "$APPLY_OUTPUT"
-                exit 1
-              }
-            fi
-          done
-          
-          # Deploy HelmRepositories (needed for HelmReleases)
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^HelmRelease$'; then
-              # Find the HelmRepository this HelmRelease references
-              if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
-                SOURCE_REF="$(yq eval '.spec.chartRef.name' "$file")"
-                SOURCE_NAMESPACE="$(yq eval '.spec.chartRef.namespace // "flux-system"' "$file")"
-              else
-                SOURCE_REF="$(yq eval '.spec.chart.spec.sourceRef.name' "$file")"
-                SOURCE_NAMESPACE="$(yq eval '.spec.chart.spec.sourceRef.namespace // "flux-system"' "$file")"
-              fi
-              
-              if [[ -n "$SOURCE_REF" ]]; then
-                echo "Looking for HelmRepository: $SOURCE_REF in namespace: $SOURCE_NAMESPACE"
-
-                # Check if the HelmRepository itself was changed in this PR — prefer file over cluster
-                # This handles type changes (e.g. OCI→HTTP) and brand-new repositories
-                CHANGED_REPO_FILE=""
-                for cf in $CHANGED_FILES; do
-                  if [[ -f "$cf" ]] && yq eval '.kind' "$cf" 2>/dev/null | grep -qi '^HelmRepository$'; then
-                    FILE_REPO_NAME=$(yq eval '.metadata.name' "$cf" 2>/dev/null || echo "")
-                    if [[ "$FILE_REPO_NAME" == "$SOURCE_REF" ]]; then
-                      CHANGED_REPO_FILE="$cf"
-                      break
-                    fi
-                  fi
-                done
-
-                # If the source was already deployed as an OCIRepository in the first pass,
-                # skip HelmRepository validation — the OCIRepository sync wait loop handles it.
-                if grep -q "^${SOURCE_REF}:" "$OCI_MAPPING_FILE" 2>/dev/null; then
-                  echo "ℹ️ $SOURCE_REF was deployed as OCIRepository in first pass — skipping HelmRepository lookup"
-                  continue
-                fi
-
-                # Check if HelmRepository exists in source namespace OR was changed in this PR
-                if kubectl get helmrepository "$SOURCE_REF" -n "$SOURCE_NAMESPACE" >/dev/null 2>&1 || [[ -n "$CHANGED_REPO_FILE" ]]; then
-                  # OCI-type HelmRepositories don't reconcile Ready in ad-hoc test namespaces
-                  # (no chart index to fetch; source-controller needs an existing HelmRelease
-                  # to trigger the first pull). Validate directly with helm instead.
-                  # Prefer type from the changed file if available (handles OCI→HTTP migrations)
-                  if [[ -n "$CHANGED_REPO_FILE" ]]; then
-                    REPO_TYPE=$(yq eval '.spec.type // ""' "$CHANGED_REPO_FILE" 2>/dev/null || echo "")
-                    echo "📝 Using updated HelmRepository type from changed file: $CHANGED_REPO_FILE (type: ${REPO_TYPE:-http})"
-                  else
-                    REPO_TYPE=$(kubectl get helmrepository "$SOURCE_REF" -n "$SOURCE_NAMESPACE" \
-                      -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
-                  fi
-
-                  if [[ "$REPO_TYPE" == "oci" ]]; then
-                    if [[ -n "$CHANGED_REPO_FILE" ]]; then
-                      OCI_URL=$(yq eval '.spec.url' "$CHANGED_REPO_FILE" 2>/dev/null || echo "")
-                    else
-                      OCI_URL=$(kubectl get helmrepository "$SOURCE_REF" -n "$SOURCE_NAMESPACE" \
-                        -o jsonpath='{.spec.url}' 2>/dev/null || echo "")
-                    fi
-                    CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
-                    CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
-                    if [[ -n "$OCI_URL" && -n "$CHART_NAME" && -n "$CHART_VERSION" ]]; then
-                      echo "🔍 Validating OCI chart $CHART_NAME@$CHART_VERSION from $OCI_URL..."
-                      helm show chart "${OCI_URL}/${CHART_NAME}" --version "$CHART_VERSION" > /dev/null || {
-                        echo "❌ Chart $CHART_NAME@$CHART_VERSION not found in OCI registry $OCI_URL"
-                        exit 1
-                      }
-                      echo "✅ OCI chart $CHART_NAME@$CHART_VERSION exists and is accessible"
-                    else
-                      echo "⚠️ Could not determine OCI chart details for $SOURCE_REF — skipping chart validation"
-                    fi
-                  else
-                    echo "Found HelmRepository: $SOURCE_REF, deploying to test namespace"
-
-                    # Get the HelmRepository and deploy it to test namespace
-                    # Prefer the changed file so the test uses the new repo config, not the stale cluster version
-                    TEST_NAME="test-${SOURCE_REF}-${RUN_SUFFIX}"
-                    if [[ -n "$CHANGED_REPO_FILE" ]]; then
-                      echo "📝 Deploying updated HelmRepository from changed file: $CHANGED_REPO_FILE"
-                      yq eval "
-                        .metadata.namespace = \"$TEST_NAMESPACE\" |
-                        .metadata.name = \"$TEST_NAME\" |
-                        del(.status) |
-                        del(.metadata.resourceVersion) |
-                        del(.metadata.uid) |
-                        del(.metadata.creationTimestamp)
-                      " "$CHANGED_REPO_FILE" | kubectl apply -f - || {
-                        echo "❌ Failed to deploy HelmRepository: $SOURCE_REF"
-                        exit 1
-                      }
-                    else
-                      kubectl get helmrepository "$SOURCE_REF" -n "$SOURCE_NAMESPACE" -o yaml | \
-                        yq eval "
-                          .metadata.namespace = \"$TEST_NAMESPACE\" |
-                          .metadata.name = \"$TEST_NAME\" |
-                          del(.status) |
-                          del(.metadata.resourceVersion) |
-                          del(.metadata.uid) |
-                          del(.metadata.creationTimestamp)
-                        " | kubectl apply -f - || {
-                        echo "❌ Failed to deploy HelmRepository: $SOURCE_REF"
-                        exit 1
-                      }
-                    fi
-
-                    echo "$SOURCE_REF:$TEST_NAME" >> "$OCI_MAPPING_FILE"
-                  fi
-                else
-                  echo "⚠️ HelmRepository $SOURCE_REF not found in $SOURCE_NAMESPACE - skipping"
-                fi
-              fi
-            fi
-          done
-          
-          # Export mapping file for HelmRelease step
-          echo "OCI_MAPPING_FILE=$OCI_MAPPING_FILE" >> $GITHUB_ENV
-          
-          # Wait for repositories to sync (OCI and Helm)
-          echo "⏳ Waiting for repositories to sync..."
-          echo "This may take 1-5 minutes depending on network conditions and registry response time"
-          
-          # Show initial status
-          echo "Current Repository Status:"
-          kubectl get ocirepository,helmrepository -n "$TEST_NAMESPACE" -o wide || true
-          
-          # Wait for repositories to sync with timeout
-          echo "Starting repository sync..."
-          
-          # Use timeout command to ensure we don't wait forever
-          timeout 300s bash -c '
-            while true; do
-              echo "⏳ Checking repository status..."
-              kubectl get ocirepository,helmrepository -n "$TEST_NAMESPACE" -o wide || true
-              
-              # Check if all repositories are ready
-              OCI_READY=true
-              HELM_READY=true
-              
-              # Check OCI repositories
-              if kubectl get ocirepository -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-                if ! kubectl wait --for=condition=Ready --timeout=10s ocirepositories.source.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" 2>/dev/null; then
-                  OCI_READY=false
-                fi
-              fi
-              
-              # Check Helm repositories
-              if kubectl get helmrepository -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-                if ! kubectl wait --for=condition=Ready --timeout=10s helmrepositories.source.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" 2>/dev/null; then
-                  HELM_READY=false
-                fi
-              fi
-              
-              if [[ "$OCI_READY" == "true" && "$HELM_READY" == "true" ]]; then
-                echo "✅ All repositories are ready"
-                exit 0
-              fi
-              
-              # Check for failed conditions - look for any repository with Ready=False or error conditions
-              FAILED_REPOS=""
-              for repo in $(kubectl get ocirepository -n "$TEST_NAMESPACE" -o name | cut -d/ -f2); do
-                # Check if repository has Ready=False condition
-                READY_STATUS=$(kubectl get ocirepository "$repo" -n "$TEST_NAMESPACE" -o jsonpath='{.status.conditions[0].status}' 2>/dev/null || echo "")
-                READY_REASON=$(kubectl get ocirepository "$repo" -n "$TEST_NAMESPACE" -o jsonpath='{.status.conditions[0].reason}' 2>/dev/null || echo "")
-                
-                if [[ "$READY_STATUS" == "False" ]] || [[ "$READY_REASON" == *"Failed"* ]] || [[ "$READY_REASON" == *"Error"* ]]; then
-                  FAILED_REPOS="$FAILED_REPOS $repo"
-                fi
-              done
-              
-              if [[ -n "$FAILED_REPOS" ]]; then
-                echo "❌ Some OCI repositories have failed: $FAILED_REPOS"
-                for repo in $FAILED_REPOS; do
-                  echo "--- $repo failure details ---"
-                  kubectl describe ocirepository "$repo" -n "$TEST_NAMESPACE" | grep -A 5 -B 5 "Ready\|Failed\|Error" || true
-                done
-                exit 1
-              fi
-              
-              sleep 30
-            done
-          ' || {
-            echo "❌ OCI repositories failed to sync within 5 minutes"
-            echo "This indicates that chart versions may not exist or repositories are inaccessible"
-            
-            # Show detailed status
-            echo "OCI Repository Status:"
-            kubectl get ocirepository -n "$TEST_NAMESPACE" -o wide
-            echo ""
-            echo "OCI Repository Details:"
-            for repo in $(kubectl get ocirepository -n "$TEST_NAMESPACE" -o name); do
-              echo "--- $repo ---"
-              kubectl describe "$repo" -n "$TEST_NAMESPACE" | tail -20
-            done
-            
-            echo ""
-            echo "🔍 Troubleshooting OCI Repository Issues:"
-            echo "Common causes:"
-            echo "1. Registry temporarily unavailable (oci.trueforge.org, ghcr.io, etc.)"
-            echo "2. Chart version/tag does not exist"
-            echo "3. Network connectivity issues"
-            echo "4. Registry authentication required"
-            echo ""
-            echo "To resolve:"
-            echo "- Check if the registry is accessible: curl -I https://oci.trueforge.org"
-            echo "- Verify the chart version exists in the registry"
-            echo "- Check if authentication is required"
-            echo "- Consider using a different registry or chart version"
-            
-            exit 1
-          }
-          
-          echo "✅ Changed OCI repositories synced successfully"
-
-          # Deploy supporting namespaced resources (ConfigMaps, ExternalSecrets,
-          # Ingresses, ...) BEFORE HelmReleases, with their ORIGINAL names.
-          # Renaming them broke valuesFrom resolution: the HelmRelease references
-          # the ConfigMap by its real name, so a renamed values ConfigMap meant
-          # every HR was tested WITHOUT its values (how PR #960 escaped CI).
-          # The per-run namespace already provides isolation between runs.
-          #
-          # RBAC bootstrap: a PR that widens the runner SA's own ClusterRole
-          # (arc-runners/app/rbac.yaml) runs its CI under the OLD, live RBAC —
-          # the grant only exists after merge + Flux reconcile. A hard failure
-          # here would deadlock every such PR. Forbidden applies are therefore
-          # warn-and-skip; the static render step remains the hard gate for the
-          # #960 class and needs no cluster RBAC.
-          RBAC_SKIPPED=0
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -q .; then
-              # A file may hold multiple YAML documents (rbac.yaml bundles
-              # ClusterRole + ClusterRoleBinding, networkpolicy.yaml bundles
-              # several policies, terraform-cr.yaml bundles Terraform + more).
-              # Extracting .kind once per FILE returns a multi-line string that
-              # never matches the skip-list case — skip-listed kinds fell
-              # through to kubectl apply and were only saved by the SA's
-              # Forbidden (which then wrongly RBAC-skipped the whole run).
-              # Iterate per DOCUMENT so every kind is checked individually.
-              LAST_DOC=$(yq eval 'documentIndex' "$file" | grep -v '^---$' | tail -1)
-              for DOC in $(seq 0 "$LAST_DOC"); do
-                KIND=$(yq eval "select(documentIndex == $DOC) | .kind" "$file")
-
-                # Empty/comment-only documents have no kind
-                if [[ -z "$KIND" || "$KIND" == "null" ]]; then
-                  continue
-                fi
-
-                # Flux source/release kinds have their own passes
-                if [[ "$KIND" == "OCIRepository" || "$KIND" == "HelmRepository" || "$KIND" == "HelmRelease" ]]; then
-                  continue
-                fi
-
-                # Skip cluster-scoped resources and Flux Kustomizations.
-                # Also skip kinds that must never be test-applied by the runner SA:
-                # Role/RoleBinding (RBAC escalation — the SA would need every verb it
-                # grants), Policy/PolicyException (Kyverno policy injection/bypass;
-                # kyverno-cli validates these statically), Terraform (tf-controller
-                # would run real tofu plans), Connector/ClusterSecretStore
-                # (cluster-scoped — the namespace override has no effect, kubectl
-                # would apply them for real). Ingress: the nginx admission webhook
-                # rejects any host+path already claimed by the live Ingress (which
-                # every existing app's ingress is), and a test Ingress has real
-                # side effects — external-dns creates DNS records from it and the
-                # shlink-ingress-controller mints a vollm.in slug. Static render,
-                # kubeconform, and Kyverno already validate Ingress manifests.
-                case "$KIND" in
-                  ClusterRole|ClusterRoleBinding|ClusterPolicy|ClusterPolicyReport|CustomResourceDefinition|Namespace|Node|PersistentVolume|StorageClass|ValidatingAdmissionWebhook|MutatingAdmissionWebhook|Kustomization|Role|RoleBinding|Policy|PolicyException|Terraform|Connector|ClusterSecretStore|Ingress)
-                    echo "Skipping $KIND resource (doc $DOC): $file"
-                    continue
-                    ;;
-                esac
-
-                echo "Test deploying supporting resource ($KIND doc $DOC, name preserved): $file"
-                APPLY_OUT=$(yq eval "select(documentIndex == $DOC) | .metadata.namespace = \"$TEST_NAMESPACE\"" "$file" | kubectl apply -f - 2>&1) && echo "$APPLY_OUT" || {
-                  if echo "$APPLY_OUT" | grep -qi "forbidden"; then
-                    echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot apply $KIND ($file doc $DOC)"
-                    echo "$APPLY_OUT"
-                    echo "    If this PR widens the runner ClusterRole (arc-runners/app/rbac.yaml),"
-                    echo "    the grant only takes effect after merge + Flux reconcile — the static"
-                    echo "    render step above already validated this manifest. Otherwise, add the"
-                    echo "    missing grant to arc-runners/app/rbac.yaml."
-                    RBAC_SKIPPED=1
-                    continue
-                  fi
-                  echo "❌ Failed to deploy: $file"
-                  echo "$APPLY_OUT"
-                  exit 1
-                }
-              done
-            fi
-          done
-
-          if [[ "$RBAC_SKIPPED" == "1" ]]; then
-            echo "⚠️ Some supporting resources were RBAC-skipped — HelmRelease live deploy will be skipped too (valuesFrom would not resolve)"
-          else
-            echo "✅ Supporting resources deployed with original names"
-          fi
-          echo "RBAC_SKIPPED=$RBAC_SKIPPED" >> "$GITHUB_ENV"
-
-      - name: Deploy and validate changed HelmReleases
-        if: needs.validate-changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          echo "🔍 Deploying and validating changed HelmReleases..."
-          TEST_NAMESPACE="$TEST_NAMESPACE"
-          RUN_SUFFIX="${{ env.RUN_SUFFIX }}"
-          
-          # Create mapping file if it doesn't exist
-          OCI_MAPPING_FILE="/tmp/oci-mapping-$RUN_SUFFIX.txt"
-          if [[ ! -f "$OCI_MAPPING_FILE" ]]; then
-            touch "$OCI_MAPPING_FILE"
-          fi
-
-          # If any supporting resource was RBAC-skipped in the previous step,
-          # its valuesFrom ConfigMap/Secret may be missing — a live HR deploy
-          # would fail Ready for the wrong reason. Skip the live deploy (static
-          # render already validated chart+values); basic validation and
-          # server-side dry-run below still run.
-          if [[ "${RBAC_SKIPPED:-0}" == "1" ]]; then
-            echo "⚠️⚠️⚠️ Supporting resources were RBAC-skipped — skipping live HelmRelease deploy + Ready wait"
-            echo "    Full live deploy resumes once the runner RBAC grant is merged and Flux reconciles arc-runners."
-            FLUX_CRDS_AVAILABLE="false"
-          fi
-
-          # Wait for repositories to be ready before deploying HelmReleases
-          if [[ "${FLUX_CRDS_AVAILABLE}" == "true" ]]; then
-            echo "⏳ Waiting for repositories to be ready..."
-            
-            # Wait for OCIRepositories if they exist
-            if kubectl get ocirepository -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-              kubectl wait --for=condition=Ready --timeout=300s ocirepositories.source.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" || {
-                echo "❌ OCIRepository sync failed - this would break production deployment"
-                echo "🔍 Checking OCIRepository status:"
-                kubectl get ocirepositories -n "$TEST_NAMESPACE" -o wide
-                echo "📋 OCIRepository events:"
-                kubectl get events -n "$TEST_NAMESPACE" --field-selector involvedObject.kind=OCIRepository --sort-by='.lastTimestamp' || true
-                exit 1
-              }
-            fi
-            
-            # Wait for HelmRepositories if they exist
-            if kubectl get helmrepository -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-              kubectl wait --for=condition=Ready --timeout=300s helmrepositories.source.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" || {
-                echo "❌ HelmRepository sync failed - this would break production deployment"
-                echo "🔍 Checking HelmRepository status:"
-                kubectl get helmrepositories -n "$TEST_NAMESPACE" -o wide
-                echo "📋 HelmRepository events:"
-                kubectl get events -n "$TEST_NAMESPACE" --field-selector involvedObject.kind=HelmRepository --sort-by='.lastTimestamp' || true
-                exit 1
-              }
-            fi
-            
-            echo "✅ All repositories are ready"
-          fi
-          
-          # Second pass: Deploy HelmReleases with sourceRef mapping
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^HelmRelease$'; then
-              if [[ "${FLUX_CRDS_AVAILABLE}" != "true" ]]; then
-                echo "Skipping HelmRelease live deploy (Flux CRDs unavailable or supporting resources RBAC-skipped): $file"
-                continue
-              fi
-              echo "Test deploying HelmRelease: $file"
-
-              # ── GUARD B: never live-deploy a chart with cluster-scoped kinds ─
-              # Cluster-scoped objects (ClusterRole, ClusterRoleBinding,
-              # Validating/MutatingWebhookConfiguration, CRD, APIService) have no
-              # namespace isolation, so a live test-deploy adopts/overwrites the
-              # identically-named PRODUCTION object; the ci-test teardown then
-              # orphans it. This broke kube-prometheus-stack (2026-07-24) and
-              # policy-reporter (2026-07-27). Guard A's release-name rewrite only
-              # protects charts that DERIVE those names from the release name — a
-              # chart that HARDCODES a cluster-scoped name (independent of the
-              # release name) defeats it entirely. So we skip live-deploy of ANY
-              # chart whose render contains a cluster-scoped kind, detected two
-              # ways: (1) the render step already recorded it in
-              # $CLUSTER_SCOPED_HR_LIST (authoritative — reads the actual chart
-              # output), and (2) a fast fullnameOverride/nameOverride grep as a
-              # belt-and-suspenders fallback. Static render + server-side dry-run
-              # (below) still validate the chart + values.
-              APP_DIR="$(dirname "$file")"
-              CLUSTER_SCOPED_HR_LIST="$RUNNER_TEMP/ci-cluster-scoped-hrs.txt"
-              GUARD_B_REASON=""
-              if [[ -f "$CLUSTER_SCOPED_HR_LIST" ]] && grep -qxF "$file" "$CLUSTER_SCOPED_HR_LIST"; then
-                GUARD_B_REASON="its chart render contains a cluster-scoped kind (ClusterRole/ClusterRoleBinding/webhook/CRD/APIService)"
-              elif grep -rqsE '^[[:space:]]*(fullnameOverride|nameOverride):' "$APP_DIR"; then
-                GUARD_B_REASON="it pins fullnameOverride/nameOverride in $APP_DIR"
-              fi
-              if [[ -n "$GUARD_B_REASON" ]]; then
-                echo "⚠️⚠️⚠️ CLUSTER-SCOPE GUARD: skipping LIVE test-deploy of $file —"
-                echo "    $GUARD_B_REASON."
-                echo "    A cluster-scoped object has no namespace isolation: the test install"
-                echo "    would adopt/overwrite the identically-named PRODUCTION object and the"
-                echo "    ci-test teardown would then orphan it (broke kube-prometheus-stack"
-                echo "    2026-07-24, policy-reporter 2026-07-27)."
-                echo "    Static render + server-side dry-run below still validate this chart."
-                continue
-              fi
-
-              if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
-                ORIG_SOURCE_REF="$(yq eval '.spec.chartRef.name' "$file")"
-              else
-                ORIG_SOURCE_REF="$(yq eval '.spec.chart.spec.sourceRef.name' "$file")"
-              fi
-
-              TEST_SOURCE_REF="$(grep "^${ORIG_SOURCE_REF}:" "$OCI_MAPPING_FILE" | cut -d: -f2 || true)"
-              [[ -z "$TEST_SOURCE_REF" ]] && TEST_SOURCE_REF="test-${ORIG_SOURCE_REF}-${RUN_SUFFIX}"
-
-              # Derive from metadata.name, not the file basename — every HelmRelease
-              # file in this repo is named helmrelease.yaml, so basenames collide
-              # when a PR touches more than one HR: the second apply becomes a
-              # patch of the first test object, which the runner SA is (by design)
-              # not allowed to do.
-              CLEAN_NAME="$(yq eval '.metadata.name' "$file" | tr '[:upper:]' '[:lower:]' \
-                | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
-
-              # ── GUARD A: neutralize the release identity ─────────────────────
-              # Rewrite .spec.releaseName (not just .metadata.name). Charts derive
-              # resource names — including cluster-scoped ones — from the Helm
-              # release name (fullname template falls back to the release name).
-              # Leaving the prod releaseName in place makes the test install
-              # render prod-named ClusterRole/ClusterRoleBinding objects that
-              # collide with production. A per-run test release name isolates them.
-              TEST_RELEASE_NAME="test-${CLEAN_NAME}-${RUN_SUFFIX}"
-
-              if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
-                yq eval "
-                  .metadata.namespace = \"$TEST_NAMESPACE\" |
-                  .metadata.name = \"test-${CLEAN_NAME}-${RUN_SUFFIX}\" |
-                  .spec.releaseName = \"$TEST_RELEASE_NAME\" |
-                  .spec.chartRef.name = \"$TEST_SOURCE_REF\" |
-                  .spec.chartRef.namespace = \"$TEST_NAMESPACE\"
-                " "$file" | kubectl apply -f - || { echo "❌ Failed: $file"; exit 1; }
-              else
-                yq eval "
-                  .metadata.namespace = \"$TEST_NAMESPACE\" |
-                  .metadata.name = \"test-${CLEAN_NAME}-${RUN_SUFFIX}\" |
-                  .spec.releaseName = \"$TEST_RELEASE_NAME\" |
-                  .spec.chart.spec.sourceRef.name = \"$TEST_SOURCE_REF\" |
-                  .spec.chart.spec.sourceRef.namespace = \"$TEST_NAMESPACE\"
-                " "$file" | kubectl apply -f - || { echo "❌ Failed: $file"; exit 1; }
-              fi
-            fi
-          done
-          
-          # Basic validation that runs even without Flux CRDs
-          echo "🔍 Running basic HelmRelease validation..."
-          for file in $CHANGED_FILES; do
-            if [[ -f "$file" ]] && yq eval '.kind' "$file" | grep -qi '^HelmRelease$'; then
-              echo "Validating HelmRelease: $file"
-              
-              # Check for basic syntax issues
-              yq eval '.' "$file" > /dev/null || {
-                echo "❌ Invalid YAML syntax in $file"
-                exit 1
-              }
-              
-              # Check for required fields — only for chart.spec HRs. chartRef HRs
-              # (OCIRepository sources) have no .spec.chart, and yq returns the
-              # literal string "null" for missing paths, which passed -z checks
-              # with garbage values.
-              if [[ "$(yq eval '.spec.chartRef // ""' "$file")" != "" ]]; then
-                echo "  chartRef HelmRelease — chart/version pinned in OCIRepository, skipping field check"
-              else
-                CHART_NAME=$(yq eval '.spec.chart.spec.chart' "$file")
-                CHART_VERSION=$(yq eval '.spec.chart.spec.version' "$file")
-                SOURCE_REF=$(yq eval '.spec.chart.spec.sourceRef.name' "$file")
-
-                if [[ -z "$CHART_NAME" || "$CHART_NAME" == "null" || \
-                      -z "$CHART_VERSION" || "$CHART_VERSION" == "null" || \
-                      -z "$SOURCE_REF" || "$SOURCE_REF" == "null" ]]; then
-                  echo "❌ Missing required fields in $file"
-                  echo "Chart: $CHART_NAME, Version: $CHART_VERSION, Source: $SOURCE_REF"
-                  exit 1
-                fi
-              fi
-
-              echo "✅ Basic validation passed for $file"
-              
-              # Server-side dry-run to catch schema/admission issues. Rewritten
-              # into the test namespace under a unique name: dry-running the
-              # original file targets the LIVE object, which turns the apply
-              # into a patch the runner SA is (deliberately) not allowed to do.
-              echo "🔍 Testing HelmRelease with dry-run..."
-              DRY_NAME="$(basename "$file" | sed -E 's/\.(ya?ml)$//' | tr '[:upper:]' '[:lower:]' \
-                | sed -E 's/[^a-z0-9-]+/-/g;s/-+/-/g;s/^-|-$//g')"
-              DRY_OUT=$(yq eval "
-                .metadata.namespace = \"$TEST_NAMESPACE\" |
-                .metadata.name = \"dryrun-${DRY_NAME}-${RUN_SUFFIX}\"
-              " "$file" | kubectl apply --dry-run=server -f - 2>&1) && echo "$DRY_OUT" || {
-                if echo "$DRY_OUT" | grep -qi "forbidden"; then
-                  echo "⚠️⚠️⚠️ RBAC-SKIPPED: runner SA cannot dry-run HelmRelease ($file)"
-                  echo "$DRY_OUT"
-                  echo "    Grant lives in arc-runners/app/rbac.yaml — applies after merge + Flux reconcile."
-                  continue
-                fi
-                echo "❌ HelmRelease dry-run failed for $file"
-                echo "$DRY_OUT"
-                echo "This indicates the chart version or configuration is invalid"
-                exit 1
-              }
-              echo "✅ Dry-run validation passed for $file"
-            fi
-          done
-          
-          # Validate HelmRelease status after deployment
-          if [[ "${FLUX_CRDS_AVAILABLE}" == "true" ]]; then
-            echo "🔍 Validating HelmRelease status..."
-            if kubectl get helmrelease -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | grep -q .; then
-              kubectl wait --for=condition=Ready --timeout=300s helmreleases.helm.toolkit.fluxcd.io --all -n "$TEST_NAMESPACE" || {
-                echo "❌ HelmRelease validation failed - this would break production deployment"
-                echo "🔍 Checking HelmRelease status:"
-                kubectl get helmreleases -n "$TEST_NAMESPACE" -o wide
-                echo "📋 HelmRelease events:"
-                kubectl get events -n "$TEST_NAMESPACE" --field-selector involvedObject.kind=HelmRelease --sort-by='.lastTimestamp' || true
-                echo "📋 Detailed HelmRelease status:"
-                kubectl describe helmreleases -n "$TEST_NAMESPACE"
-                exit 1
-              }
-              echo "✅ All HelmReleases are ready and valid"
-            else
-              echo "✅ No HelmReleases deployed to test namespace (source repo is OCI-type)"
-            fi
-          fi
-          
-          # Supporting namespaced resources (ConfigMaps etc.) were deployed with
-          # their original names BEFORE the HelmReleases in the previous step, so
-          # valuesFrom references resolve and the Ready wait above tests the real
-          # chart+values combination.
-          echo "✅ Successfully test deployed all changed resources"
-
-      - name: Wait for deployments
-        if: needs.validate-changes.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          TEST_NAMESPACE="$TEST_NAMESPACE"
-          
-          echo "⏳ Waiting for deployments to be ready..."
-          kubectl wait --for=condition=available --timeout=300s deployment --all -n "$TEST_NAMESPACE" || {
-            echo "⚠️ Some deployments may not be ready, but continuing..."
-          }
+          echo "✅ All changed HelmReleases render, strict-parse, and pass server-side dry-run"
 
       - name: Cleanup test namespace
         if: always() && needs.validate-changes.outputs.changed == 'true'
         continue-on-error: true
         run: |
           set -euo pipefail
-          TEST_NAMESPACE="$TEST_NAMESPACE"
-          
-          # ── GUARD C: cluster-scoped orphan sweep (backstop) ─────────────────
-          # Deleting the namespace does NOT remove cluster-scoped objects a chart
-          # may have rendered (ClusterRole, ClusterRoleBinding, webhooks). If any
-          # slipped past Guards A/B, they would be orphaned and can clobber the
-          # production object of the same name. Delete only objects Helm tagged
-          # as belonging to THIS ephemeral test namespace — prod objects carry
-          # their real namespace in the annotation, so this can never touch them.
-          # Best-effort: tolerates a runner SA without cluster-scoped RBAC.
-          echo "🧹 Sweeping cluster-scoped objects owned by $TEST_NAMESPACE..."
-          for kind in clusterrole clusterrolebinding validatingwebhookconfiguration mutatingwebhookconfiguration; do
-            while IFS=$'\t' read -r name relns; do
-              [[ -z "$name" ]] && continue
-              if [[ "$relns" == "$TEST_NAMESPACE" ]]; then
-                echo "  🧹 Deleting orphaned $kind/$name (Helm release-namespace=$relns)"
-                kubectl delete "$kind" "$name" --ignore-not-found=true || true
-              fi
-            done < <(kubectl get "$kind" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.meta\.helm\.sh/release-namespace}{"\n"}{end}' 2>/dev/null || true)
-          done
+          TEST_NAMESPACE="${TEST_NAMESPACE:-}"
+          [[ -z "$TEST_NAMESPACE" ]] && { echo "No test namespace to clean up."; exit 0; }
 
+          # Nothing was ever persisted (dry-run only), so the namespace is empty
+          # and there are no cluster-scoped orphans to sweep — just remove the
+          # ephemeral namespace object itself.
           echo "🧹 Cleaning up test namespace..."
           kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true || {
-            echo "⚠️ Failed to delete namespace (RBAC permissions needed - will be fixed once PR is merged)"
-            echo "Namespace $TEST_NAMESPACE will need manual cleanup"
+            echo "⚠️ Failed to delete namespace (RBAC) — $TEST_NAMESPACE may need manual cleanup"
             exit 0
           }
           echo "✅ Cleaned up test namespace: $TEST_NAMESPACE"
