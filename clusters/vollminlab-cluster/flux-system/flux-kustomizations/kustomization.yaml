@@ -31,6 +31,7 @@ resources:
   - monitoring-kustomization.yaml
   - portainer-kustomization.yaml
   - shlink-kustomization.yaml
+  - vollmint-kustomization.yaml
   - minio-kustomization.yaml
   - renovate-kustomization.yaml
   - reloader-kustomization.yaml
