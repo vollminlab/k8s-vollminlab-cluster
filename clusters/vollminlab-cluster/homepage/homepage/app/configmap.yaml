@@ -345,6 +345,12 @@ data:
                       query: count(ALERTS{alertstate="firing",severity="warning",alertname!~"Watchdog|InfoInhibitor"}) or vector(0)
                       format:
                         type: number
+            - Karma:
+                description: Alertmanager dashboard and silencing UI
+                href: https://karma.vollminlab.com
+                icon: mdi-bell-alert
+                namespace: monitoring
+                app: karma
         - Tools:
             - Homepage:
                 description: This dashboard
