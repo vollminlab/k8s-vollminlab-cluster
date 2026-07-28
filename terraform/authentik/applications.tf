@@ -247,6 +247,14 @@ resource "authentik_application" "truenas" {
   open_in_new_tab = false
 }
 
+resource "authentik_application" "vollmint" {
+  name             = "Vollmint"
+  slug             = "vollmint"
+  meta_description = "Household budget tracker"
+  meta_launch_url  = "https://vollmint.vollminlab.com"
+  open_in_new_tab  = false
+}
+
 resource "authentik_application" "vollminlab_forward_auth" {
   name              = "Vollminlab Forward Auth"
   slug              = "vollminlab-forward-auth"
