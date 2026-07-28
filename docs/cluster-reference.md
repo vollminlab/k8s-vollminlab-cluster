@@ -300,6 +300,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | `sealed-secrets` | `./clusters/vollminlab-cluster/sealed-secrets` | |
 | `shlink` | `./clusters/vollminlab-cluster/shlink` | |
 | `velero` | `./clusters/vollminlab-cluster/velero` | |
+| `vollmint` | `./clusters/vollminlab-cluster/vollmint` | |
 
 ### Headlamp (Kubernetes UI)
 
@@ -352,6 +353,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | tautulli-repo | HelmRepository | https://k8s-at-home.com/charts/ |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
 | vollminlab-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/shlink-ingress-controller |
+| vollmint-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/vollmint (tag: 0.1.0) |
 
 ---
 
@@ -410,6 +412,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `vl.vollminlab.com` | shlink-shlink-backend | 8080 | shlink | wildcard-tls |
 | `vollm.in` | shlink-shlink-backend | 8080 | shlink | vollm-in-tls (Let's Encrypt) |
 | `minio.vollminlab.com` | minio | 9001 | minio | wildcard-tls |
+| `vollmint.vollminlab.com` | vollmint | 8080 | vollmint | wildcard-tls |
 
 ---
 
@@ -764,7 +767,7 @@ per-namespace port table.
 
 ## CNPG (CloudNative-PG)
 
-Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink).
+Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink, vollmint — `vollmint-db`, 2 instances × 5Gi, barman backup to MinIO at 01:45).
 
 ### Container ports — cnpg-system operator pod
 

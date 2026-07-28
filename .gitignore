@@ -4,6 +4,7 @@
 
 # Claude Code runtime artifacts
 .codex
+.superpowers/
 .worktrees/
 session-report-*.html
 .claude/scheduled_tasks.lock

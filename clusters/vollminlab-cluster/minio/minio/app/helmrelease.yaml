@@ -20,3 +20,37 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: minio-values
+  # The minio/minio chart (5.4.0) templates no probes at all, so the pod stays
+  # Running 1/1 with 0 restarts even when /export is a dead, ext4-latched mount
+  # (2026-06-16 and 2026-07-24 both: a Longhorn replica fault severed the mount,
+  # the fs aborted, MinIO served 503 to every client for ~1h, nothing crashed).
+  # Inject a liveness probe via post-render since there is no values knob.
+  #
+  # /minio/health/cluster returns 503 on write-quorum loss. This is a single-drive
+  # (EC:0) deployment, so quorum loss == the whole store is unwritable == restart
+  # is always the right call (upstream reserves /cluster for readiness only because
+  # a multi-drive set can lose quorum mid-rebuild while still healthy — not us).
+  # A latched ext4 mount only clears on a pod-level remount, which a container
+  # restart alone does NOT do, so the failing probe turns the silent hang into a
+  # visible CrashLoopBackOff that the longhorn-mount-healer then remediates with
+  # scale-0 -> wait-detached -> scale-back (minio was added to its allowlist).
+  #
+  # failureThreshold 6 x periodSeconds 30 = 3 min of sustained quorum loss before
+  # a restart, well clear of a transient Longhorn engine reconnect (~8s).
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: minio
+            patch: |
+              - op: add
+                path: /spec/template/spec/containers/0/livenessProbe
+                value:
+                  httpGet:
+                    path: /minio/health/cluster
+                    port: 9000
+                  initialDelaySeconds: 60
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                  failureThreshold: 6

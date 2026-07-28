@@ -364,6 +364,12 @@ data:
                 icon: shlink.png
                 namespace: shlink
                 app: shlink-web
+            - Vollmint:
+                description: Household budget tracker
+                href: https://vollmint.vollminlab.com
+                icon: mdi-cash-multiple
+                namespace: vollmint
+                app: vollmint
             - Vollminlab Org:
                 description: All Vollminlab repositories
                 href: https://github.com/vollminlab
