@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: vollmint
+  namespace: flux-system
+  labels:
+    app: vollmint
+    env: production
+    category: apps
+spec:
+  interval: 10m
+  path: ./clusters/vollminlab-cluster/vollmint
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: cnpg-system
+    - name: external-secrets

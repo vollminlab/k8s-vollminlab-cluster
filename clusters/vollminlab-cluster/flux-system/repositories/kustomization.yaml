@@ -26,6 +26,7 @@ resources:
   - ingress-nginx-helmrepository.yaml
   - jellyfin-helmrepository.yaml
   - jellystat-helmrepository.yaml
+  - karma-ocirepository.yaml
   - kyverno-helmrepository.yaml
   - kyverno-policyreporter-helmrepository.yaml
   - local-path-provisioner-gitrepository.yaml
@@ -53,6 +54,7 @@ resources:
   - velero-helmrepository.yaml
   - victoria-metrics-helmrepository.yaml
   - vmware-exporter-helmrepository.yaml
+  - vollmint-ocirepository.yaml
   - volsync-helmrepository.yaml
   - harbor-vollminlab-pull-externalsecret.yaml
   - vollminlab-ocirepository.yaml
