@@ -10,6 +10,14 @@ metadata:
 spec:
   interval: 10m
   releaseName: policy-reporter
+  # Self-heal RBAC: the chart-rendered ClusterRole/ClusterRoleBinding (fixed name
+  # "policy-reporter", cluster-scoped) was deleted out-of-band, which crash-looped
+  # the pod (wginformer could not list policyreports). Helm's release state still
+  # recorded them as present, so the normal reconcile never noticed — recovery
+  # required a manual `flux reconcile --force`. Drift detection makes Flux re-apply
+  # any deleted/mutated managed resource within the reconcile interval.
+  driftDetection:
+    mode: enabled
   chart:
     spec:
       chart: policy-reporter
