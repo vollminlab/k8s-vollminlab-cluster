@@ -65,8 +65,9 @@ spec:
         - podSelector: {}
 ---
 # Allow ingress-nginx to reach Grafana (3000), Prometheus (9090), AlertManager (9093),
-# VictoriaMetrics (8428). Grafana's container port is 3000 (service maps 80→3000;
-# ingress-nginx connects to the container port directly via EndpointSlices).
+# VictoriaMetrics (8428), karma (8080). Grafana's container port is 3000 (service maps
+# 80→3000; ingress-nginx connects to the container port directly via EndpointSlices).
+# karma listens on container port 8080 (service maps 80→8080).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -88,6 +89,8 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 8080
         - protocol: TCP
           port: 8428
         - protocol: TCP

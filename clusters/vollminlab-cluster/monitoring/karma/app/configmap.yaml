@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: karma-values
+  namespace: monitoring
+  labels:
+    app: karma
+    env: production
+    category: observability
+data:
+  values.yaml: |
+    replicaCount: 1
+    image:
+      repository: ghcr.io/prymitive/karma
+      # Pin the app image explicitly — the OCIRepository tag pins the CHART, not the
+      # image. Chart 2.13.1 ships appVersion v0.131. Kyverno blocks :latest.
+      tag: v0.131
+      pullPolicy: IfNotPresent
+    service:
+      type: ClusterIP
+      port: 80
+      targetPort: http
+    # A dedicated Ingress object (ingress.yaml) carries the Authentik forward-auth
+    # annotations, so the chart's own Ingress stays disabled.
+    ingress:
+      enabled: false
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+    # Kyverno require-labels enforces app/env/category on the pod template.
+    podLabels:
+      app: karma
+      env: production
+      category: observability
+    configMap:
+      enabled: true
+      rawConfig:
+        alertmanager:
+          interval: 60s
+          servers:
+            # proxy: true → the browser talks only to karma; karma's backend proxies
+            # to Alertmanager (needed for silence create/delete and because
+            # Alertmanager is not directly browser-reachable). Egress to :9093 is
+            # covered by the monitoring allow-intra-namespace / allow-all-egress policies.
+            - name: vollminlab
+              uri: http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093
+              timeout: 20s
+              proxy: true

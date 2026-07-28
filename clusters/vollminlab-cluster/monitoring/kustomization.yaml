@@ -11,6 +11,7 @@ resources:
   - networkpolicies
   - harbor-vollminlab-pull-externalsecret.yaml
   - b2-exporter/app
+  - karma/app
   - kube-prometheus-stack/app
   - loki/app
   - promtail/app
