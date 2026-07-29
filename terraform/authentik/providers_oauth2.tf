@@ -38,6 +38,14 @@ resource "authentik_provider_oauth2" "headlamp" {
   sub_mode           = "hashed_user_id"
   logout_uri         = "https://headlamp.vollminlab.com"
 
+  # Default access_token_validity is minutes=10, which logs users out of the
+  # Headlamp UI far too aggressively (Headlamp only silently refreshes while the
+  # tab is focused). Headlamp maps to cluster-admin, so this token is privileged
+  # — hours=8 covers a work session without leaving a long-lived admin bearer
+  # token in the browser. The 30-day refresh token bounds the outer session.
+  access_token_validity  = "hours=8"
+  refresh_token_validity = "days=30"
+
   allowed_redirect_uris = [
     {
       matching_mode = "strict"
