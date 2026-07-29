@@ -348,7 +348,7 @@ data:
             - Karma:
                 description: Alertmanager dashboard and silencing UI
                 href: https://karma.vollminlab.com
-                icon: mdi-bell-alert
+                icon: https://raw.githubusercontent.com/prymitive/karma/main/ui/public/favicon.ico
                 namespace: monitoring
                 app: karma
         - Tools:
