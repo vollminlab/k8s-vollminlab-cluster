@@ -613,17 +613,54 @@ jobs:
           fi
           echo "✅ All changed HelmReleases render, strict-parse, and pass server-side dry-run"
 
-      - name: Cleanup test namespace
+      - name: Cleanup test namespace and sweep leaked objects
         if: always() && needs.validate-changes.outputs.changed == 'true'
         continue-on-error: true
         run: |
-          set -euo pipefail
+          # Best-effort cleanup — no `-e`, and the step is continue-on-error, so a
+          # transient API blip during a delete never aborts the sweep or fails CI.
+          set -uo pipefail
           TEST_NAMESPACE="${TEST_NAMESPACE:-}"
           [[ -z "$TEST_NAMESPACE" ]] && { echo "No test namespace to clean up."; exit 0; }
 
-          # Nothing was ever persisted (dry-run only), so the namespace is empty
-          # and there are no cluster-scoped orphans to sweep — just remove the
-          # ephemeral namespace object itself.
+          # The dry-run validation above persists nothing, so in normal operation
+          # deleting the ephemeral namespace is all that is needed. But a live-install
+          # regression (as the pre-#986 CI did) can leak Helm objects OUTSIDE this
+          # namespace — most dangerously cluster-scoped RBAC — that `delete namespace`
+          # never reaps. On 2026-07-25 exactly this left a second rebalancing
+          # controller (a ClusterRole/Binding + a Deployment in longhorn-system)
+          # running for days, double-moving Longhorn replicas. Belt-and-suspenders:
+          # sweep every Helm-managed object whose release-namespace annotation is
+          # THIS run's ci-test namespace, cluster-wide. Keyed on the unique per-run
+          # namespace, so it can never match a production release.
+          echo "🧹 Sweeping any Helm objects leaked from $TEST_NAMESPACE (cluster-wide)..."
+
+          # Cluster-scoped kinds a leaked live-install would create (namespace flag N/A)
+          CLUSTER_KINDS="clusterrole,clusterrolebinding,validatingwebhookconfiguration,mutatingwebhookconfiguration"
+          # Namespaced kinds that could land in a pre-existing target namespace
+          NS_KINDS="deployment,statefulset,daemonset,serviceaccount,role,rolebinding,configmap,service"
+
+          # Emit "<kind>\t<name>\t<namespace>" for objects whose Helm release-namespace
+          # annotation matches this run's ci-test namespace ("" namespace = cluster-scoped).
+          # One-liner so no flush-left line terminates the YAML block scalar.
+          select_leaked() {
+            python3 -c "import json,sys; ns=sys.argv[1]; d=json.load(sys.stdin); [print(o.get('kind','')+'\t'+o['metadata'].get('name','')+'\t'+(o['metadata'].get('namespace') or '')) for o in d.get('items',[]) if (o['metadata'].get('annotations') or {}).get('meta.helm.sh/release-namespace')==ns]" "$TEST_NAMESPACE" 2>/dev/null
+          }
+
+          {
+            kubectl get $CLUSTER_KINDS -l app.kubernetes.io/managed-by=Helm -o json 2>/dev/null | select_leaked
+            kubectl get $NS_KINDS -A -l app.kubernetes.io/managed-by=Helm -o json 2>/dev/null | select_leaked
+          } | while IFS=$'\t' read -r kind name ons; do
+            [[ -z "$kind" || -z "$name" ]] && continue
+            if [[ -n "$ons" ]]; then
+              echo "  🗑️  $kind/$name (ns $ons) — leaked, deleting"
+              kubectl delete "$kind" "$name" -n "$ons" --ignore-not-found=true
+            else
+              echo "  🗑️  $kind/$name (cluster-scoped) — leaked, deleting"
+              kubectl delete "$kind" "$name" --ignore-not-found=true
+            fi
+          done
+
           echo "🧹 Cleaning up test namespace..."
           kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true || {
             echo "⚠️ Failed to delete namespace (RBAC) — $TEST_NAMESPACE may need manual cleanup"
