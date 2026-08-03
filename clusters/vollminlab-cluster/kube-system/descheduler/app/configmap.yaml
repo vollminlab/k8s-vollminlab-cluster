@@ -39,6 +39,12 @@ data:
                 podProtections:
                   defaultDisabled:
                     - "PodsWithLocalStorage"
+                  # Never evict a pod backed by a PVC. Evicting a Longhorn/CNPG
+                  # RWO volume forces a detach/reattach = cold remount → CSI fsck,
+                  # which can detonate latent ext4 corruption (see storage.md).
+                  # The descheduler only rebalances stateless pods.
+                  extraEnabled:
+                    - "PodsWithPVC"
                 nodeFit: true
             - name: LowNodeUtilization
               args:
