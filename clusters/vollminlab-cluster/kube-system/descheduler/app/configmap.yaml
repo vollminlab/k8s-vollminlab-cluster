@@ -26,6 +26,11 @@ data:
         memory: 128Mi
 
     deschedulerPolicy:
+      # Only balance across worker nodes. The 3 control-plane nodes are the only
+      # nodes ever "underutilized" by requests, so without this selector nodeFit
+      # picks them as the sole eviction targets — and every candidate is then
+      # skipped because it doesn't tolerate the control-plane taint (evictedPods=0).
+      nodeSelector: "!node-role.kubernetes.io/control-plane"
       profiles:
         - name: default
           pluginConfig:
@@ -34,16 +39,22 @@ data:
                 podProtections:
                   defaultDisabled:
                     - "PodsWithLocalStorage"
+                  # Never evict a pod backed by a PVC. Evicting a Longhorn/CNPG
+                  # RWO volume forces a detach/reattach = cold remount → CSI fsck,
+                  # which can detonate latent ext4 corruption (see storage.md).
+                  # The descheduler only rebalances stateless pods.
+                  extraEnabled:
+                    - "PodsWithPVC"
                 nodeFit: true
             - name: LowNodeUtilization
               args:
                 thresholds:
-                  cpu: 40
-                  memory: 50
-                  pods: 20
+                  cpu: 75
+                  memory: 55
+                  pods: 45
                 targetThresholds:
-                  cpu: 70
-                  memory: 75
+                  cpu: 80
+                  memory: 70
                   pods: 50
           plugins:
             balance:
