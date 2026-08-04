@@ -266,6 +266,14 @@ data:
       disabled:
         KubeClientCertificateExpiration: true
         KubeJobFailed: true
+        # Replaced by a memory-gated variant in prometheusrule-custom.yaml. The stock
+        # rule fires on major-fault RATE alone (>500/s for 15m), which on k8sworker03
+        # is driven purely by qbittorrent torrent disk I/O churning the page cache
+        # while the node has ~36% memory free — a chronic false positive. The
+        # replacement additionally requires MemAvailable < 15% so it only fires on
+        # genuine memory-starvation thrash, matching the alert's own "check that there
+        # is enough memory available" remediation text.
+        NodeMemoryMajorPagesFaults: true
 
     kube-state-metrics:
       podLabels:

@@ -190,6 +190,40 @@ spec:
             summary: "Node {{ $labels.instance }} root disk below 10% free"
             description: "Node {{ $labels.instance }} has {{ $value | humanizePercentage }} free on root filesystem. Immediate action required."
 
+    # Memory-gated replacement for the stock node-exporter NodeMemoryMajorPagesFaults
+    # rule (disabled via defaultRules.disabled in configmap.yaml). The stock rule alerts
+    # on the major-fault RATE alone (rate(node_vmstat_pgmajfault[5m]) > 500 for 15m). On
+    # k8sworker03 that rate sits chronically at ~800-1300/s purely from qbittorrent
+    # torrent disk I/O refaulting the page cache — while the node has ~36% memory free.
+    # That is a benign I/O signature, not memory exhaustion, so the stock alert was a
+    # standing false positive whose own text ("check that there is enough memory
+    # available") contradicted the node's actual state. Adding the MemAvailable < 15%
+    # conjunction makes it fire only when high fault rate coincides with genuinely low
+    # available memory — the real memory-starvation thrash the alert is meant to catch
+    # (which inherently drives MemAvailable down as reclaim churns). I/O-driven fault
+    # storms on a node with ample free memory no longer trip it.
+    - name: node-memory
+      rules:
+        - alert: NodeMemoryMajorPagesFaults
+          expr: |
+            (rate(node_vmstat_pgmajfault{job="node-exporter"}[5m]) > 500)
+              and on(instance)
+            (
+              node_memory_MemAvailable_bytes{job="node-exporter"}
+                / node_memory_MemTotal_bytes{job="node-exporter"} < 0.15
+            )
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Memory major page faults are occurring at very high rate."
+            description: >-
+              Memory major pages are occurring at very high rate at {{ $labels.instance }}
+              ({{ printf "%.0f" $value }} major faults/s over the last 15 minutes) while
+              available memory on the node is below 15%. The node is likely thrashing on
+              genuine memory pressure — check workloads and memory requests on this node.
+            runbook_url: https://runbooks.prometheus-operator.dev/runbooks/node/nodememorymajorpagesfaults
+
     - name: pod-health
       rules:
         - alert: PodCrashLooping
