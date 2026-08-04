@@ -54,7 +54,15 @@ data:
                   pods: 45
                 targetThresholds:
                   cpu: 80
-                  memory: 70
+                  # w03 carries a heavy immovable stateful floor (authentik-server +
+                  # 3 CNPG DBs + minio) that pins its request-memory at ~70%. With the
+                  # PVC guard the descheduler can only move stateless pods, so a 70%
+                  # target left w03 perpetually classified overutilized — it evicted
+                  # ~5 stateless pods every cycle without ever converging below target
+                  # (churn, no benefit). 80% clears the normal stateful floor while
+                  # still catching a node genuinely packed by requests. Actual usage
+                  # on w03 is only ~55%, so this is not masking real pressure.
+                  memory: 80
                   pods: 50
           plugins:
             balance:
