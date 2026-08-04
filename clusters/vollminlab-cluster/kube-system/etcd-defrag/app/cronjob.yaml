@@ -15,7 +15,14 @@ spec:
   jobTemplate:
     spec:
       ttlSecondsAfterFinished: 3600
-      backoffLimit: 0
+      # The descheduler (LowNodeUtilization, every 30m) can evict this short-lived
+      # pod mid-run as a stateless rebalance victim — it has no PVC/local storage,
+      # so the descheduler's PVC guard does not cover it. With backoffLimit 0 a
+      # single eviction flips the Job straight to Failed → KubeJobFailed alert.
+      # Allow retries so an eviction just respawns a fresh pod; defrag is idempotent
+      # and completes in seconds, so a re-run of an already-defragged endpoint is
+      # harmless.
+      backoffLimit: 3
       template:
         metadata:
           labels:
