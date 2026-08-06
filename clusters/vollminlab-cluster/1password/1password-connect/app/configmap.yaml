@@ -16,6 +16,14 @@ data:
     connect:
       credentialsName: onepassword-connect
       credentialsKey: 1password-credentials.json
+      # Velero FSB: exclude the re-syncable `shared-data` cache emptyDir from
+      # file-system backup. Certain ephemeral shared emptyDirs hang the kopia
+      # data-mover (PartiallyFailed backups + orphaned pods). The DR-critical
+      # Connect credentials live in the separate credentials secret volume, not
+      # here, so excluding this cache is safe. The opc/connect chart honors
+      # connect.podAnnotations (lands on the API+sync pod template).
+      podAnnotations:
+        backup.velero.io/backup-volumes-excludes: "shared-data"
       api:
         serviceMonitor:
           enabled: true
