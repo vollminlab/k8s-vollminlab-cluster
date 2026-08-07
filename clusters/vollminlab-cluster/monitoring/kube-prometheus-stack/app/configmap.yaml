@@ -131,10 +131,26 @@ data:
       resources:
         requests:
           cpu: 100m
-          memory: 384Mi
+          # Bumped 384Mi -> 512Mi: steady-state RSS sat at ~764Mi against the old
+          # 768Mi limit (cgroup hit memory.max 44k+ times), so the reservation was
+          # unrealistically low. Heavier after the 103-panel CNPG dashboard landed.
+          memory: 512Mi
         limits:
           cpu: 500m
-          memory: 768Mi
+          # Raised 768Mi -> 1Gi. At 768Mi grafana pinned the cgroup ceiling, stalled
+          # on allocation, and the /api/health probe timed out -> pod pulled from the
+          # Service -> ingress 503 flapping. 1Gi leaves ~256Mi headroom.
+          memory: 1Gi
+      # The chart default leaves readiness on the k8s 1s timeout. A brief GC pause
+      # near the memory ceiling was enough to miss it 3x and eject grafana from the
+      # Service (hard 503). 5s tolerates transient stalls without masking a real hang.
+      readinessProbe:
+        httpGet:
+          path: /api/health
+          port: 3000
+        timeoutSeconds: 5
+        periodSeconds: 10
+        failureThreshold: 3
       plugins:
         - grafana-lokiexplore-app
 
