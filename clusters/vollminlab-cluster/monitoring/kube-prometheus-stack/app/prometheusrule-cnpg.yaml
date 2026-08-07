@@ -1,0 +1,45 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-cluster-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: cloudnative-pg
+      rules:
+        # cnpg_collector_up is emitted by every instance's metrics exporter (the
+        # PodMonitor enabled via spec.monitoring.enablePodMonitor). 0 means the
+        # collector cannot reach its local Postgres — the instance is effectively down.
+        - alert: CNPGInstanceDown
+          expr: cnpg_collector_up == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG instance unreachable"
+            description: "CloudNativePG instance {{ $labels.pod }} in cluster {{ $labels.namespace }}/{{ $labels.cluster }} has reported its collector down for 5 minutes."
+        # No instance metrics scraped at all for a known cluster — PodMonitor broken,
+        # exporter crashed, or the whole cluster is gone.
+        - alert: CNPGClusterNoMetrics
+          expr: absent(cnpg_collector_up)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No CNPG metrics being scraped"
+            description: "Prometheus has not scraped any cnpg_collector_up samples for 15 minutes — check the CNPG PodMonitors and instance exporters."
+        # Streaming replication lag on a standby. Only meaningful for multi-instance
+        # clusters (harbor-db, vollmint-db); single-instance clusters emit no standby series.
+        - alert: CNPGHighReplicationLag
+          expr: cnpg_pg_replication_lag > 300
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG replication lag high"
+            description: "Standby in cluster {{ $labels.namespace }}/{{ $labels.cluster }} is lagging by {{ $value | humanizeDuration }} (threshold 5m)."
