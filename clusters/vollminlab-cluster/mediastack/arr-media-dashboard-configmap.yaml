@@ -125,7 +125,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "prowlarr_system_status{instance=~\"${prowlarr_instance}\"}",
+              "expr": "prowlarr_system_status{job=~\"${prowlarr_instance}\"}",
               "instant": true,
               "legendFormat": "Status",
               "range": false,
@@ -342,7 +342,7 @@ data:
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "max(prowlarr_system_health_issues{instance=~\"${prowlarr_instance}\"})",
+              "expr": "max(prowlarr_system_health_issues{job=~\"${prowlarr_instance}\"})",
               "hide": false,
               "legendFormat": "Health Issues",
               "range": true,
@@ -354,7 +354,7 @@ data:
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "max(prowlarr_indexer_enabled_total{instance=~\"${prowlarr_instance}\"})",
+              "expr": "max(prowlarr_indexer_enabled_total{job=~\"${prowlarr_instance}\"})",
               "hide": false,
               "legendFormat": "Enabled Indexers",
               "range": true,
@@ -366,7 +366,7 @@ data:
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "max(prowlarr_indexer_total{instance=~\"${prowlarr_instance}\"} - prowlarr_indexer_enabled_total{instance=~\"${prowlarr_instance}\"})",
+              "expr": "max(prowlarr_indexer_total{job=~\"${prowlarr_instance}\"} - prowlarr_indexer_enabled_total{job=~\"${prowlarr_instance}\"})",
               "hide": false,
               "legendFormat": "Disabled Indexers",
               "range": true,
@@ -464,7 +464,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_indexer_queries_total{instance=~\"${prowlarr_instance}\"}[$__range]))",
+              "expr": "sum(increase(prowlarr_indexer_queries_total{job=~\"${prowlarr_instance}\"}[$__range]))",
               "hide": false,
               "instant": true,
               "legendFormat": "Queries",
@@ -478,7 +478,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_indexer_grabs_total{instance=~\"${prowlarr_instance}\"}[$__range]))",
+              "expr": "sum(increase(prowlarr_indexer_grabs_total{job=~\"${prowlarr_instance}\"}[$__range]))",
               "hide": false,
               "instant": true,
               "legendFormat": "Grabs",
@@ -492,7 +492,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_indexer_failed_queries_total{instance=~\"${prowlarr_instance}\"}[$__range]))",
+              "expr": "sum(increase(prowlarr_indexer_failed_queries_total{job=~\"${prowlarr_instance}\"}[$__range]))",
               "hide": false,
               "instant": true,
               "legendFormat": "Query Failures",
@@ -607,7 +607,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "avg(prowlarr_indexer_average_response_time_ms{instance=~\"${prowlarr_instance}\"})",
+              "expr": "avg(prowlarr_indexer_average_response_time_ms{job=~\"${prowlarr_instance}\"})",
               "hide": false,
               "instant": true,
               "legendFormat": "Response Time",
@@ -699,7 +699,7 @@ data:
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "max(prowlarr_indexer_average_response_time_ms{instance=~\"${prowlarr_instance}\"}) by (indexer)",
+              "expr": "max(prowlarr_indexer_average_response_time_ms{job=~\"${prowlarr_instance}\"}) by (indexer)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -790,7 +790,7 @@ data:
                 "uid": "${DS_PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "max(increase(prowlarr_user_agent_queries_total{instance=~\"${prowlarr_instance}\"}[$__rate_interval])) by (user_agent)",
+              "expr": "max(increase(prowlarr_user_agent_queries_total{job=~\"${prowlarr_instance}\"}[$__rate_interval])) by (user_agent)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -856,7 +856,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_indexer_queries_total{instance=~\"${prowlarr_instance}\"}[$__range])) by (indexer)\n",
+              "expr": "sum(increase(prowlarr_indexer_queries_total{job=~\"${prowlarr_instance}\"}[$__range])) by (indexer)\n",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -919,7 +919,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_indexer_grabs_total{instance=~\"${prowlarr_instance}\"}[$__range])) by (indexer)",
+              "expr": "sum(increase(prowlarr_indexer_grabs_total{job=~\"${prowlarr_instance}\"}[$__range])) by (indexer)",
               "instant": true,
               "legendFormat": "__auto",
               "range": false,
@@ -986,7 +986,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_user_agent_queries_total{instance=~\"${prowlarr_instance}\"}[$__range])) by (user_agent)\n",
+              "expr": "sum(increase(prowlarr_user_agent_queries_total{job=~\"${prowlarr_instance}\"}[$__range])) by (user_agent)\n",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -1049,7 +1049,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "sum(increase(prowlarr_user_agent_grabs_total{instance=~\"${prowlarr_instance}\"}[$__range])) by (user_agent)",
+              "expr": "sum(increase(prowlarr_user_agent_grabs_total{job=~\"${prowlarr_instance}\"}[$__range])) by (user_agent)",
               "instant": true,
               "legendFormat": "__auto",
               "range": false,
@@ -1144,7 +1144,7 @@ data:
               },
               "editorMode": "code",
               "exemplar": false,
-              "expr": "prowlarr_system_health_issues{instance=~\"${prowlarr_instance}\"}",
+              "expr": "prowlarr_system_health_issues{job=~\"${prowlarr_instance}\"}",
               "format": "table",
               "hide": false,
               "instant": true,
@@ -1341,7 +1341,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "max(sabnzbd_downloaded_bytes{instance=~\"${sabnzbd_instance}\"})",
+                  "expr": "max(sabnzbd_downloaded_bytes{job=~\"${sabnzbd_instance}\"})",
                   "hide": false,
                   "instant": true,
                   "interval": "",
@@ -1356,7 +1356,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "max(increase(sabnzbd_downloaded_bytes{instance=~\"${sabnzbd_instance}\"}[$__range]))",
+                  "expr": "max(increase(sabnzbd_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range]))",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Recent",
@@ -1370,7 +1370,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_queue_length{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_queue_length{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Queued",
@@ -1384,7 +1384,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_total_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_total_bytes{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Queue Size",
@@ -1398,7 +1398,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_remaining_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_remaining_bytes{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Remaining",
@@ -1411,7 +1411,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "sum(sabnzbd_server_articles_success{instance=~\"${sabnzbd_instance}\"}) / sum(sabnzbd_server_articles_total{instance=~\"${sabnzbd_instance}\"})",
+                  "expr": "sum(sabnzbd_server_articles_success{job=~\"${sabnzbd_instance}\"}) / sum(sabnzbd_server_articles_total{job=~\"${sabnzbd_instance}\"})",
                   "hide": false,
                   "legendFormat": "Success Rate",
                   "range": true,
@@ -1523,7 +1523,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_quota_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_quota_bytes{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "Size",
                   "range": false,
@@ -1536,7 +1536,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "1 - max(sabnzbd_remaining_quota_bytes{instance=~\"${sabnzbd_instance}\"} / sabnzbd_quota_bytes{instance=~\"${sabnzbd_instance}\"})",
+                  "expr": "1 - max(sabnzbd_remaining_quota_bytes{job=~\"${sabnzbd_instance}\"} / sabnzbd_quota_bytes{job=~\"${sabnzbd_instance}\"})",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Usage",
@@ -1550,7 +1550,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_remaining_quota_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_remaining_quota_bytes{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Remaining",
@@ -1636,7 +1636,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_article_cache_articles{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_article_cache_articles{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Articles",
@@ -1650,7 +1650,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_article_cache_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_article_cache_bytes{job=~\"${sabnzbd_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Size",
@@ -1824,7 +1824,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_status{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_status{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "Mode",
                   "range": false,
@@ -1884,7 +1884,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_time_estimate_seconds{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_time_estimate_seconds{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "Time Remaining",
                   "range": false,
@@ -1944,7 +1944,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_speed_bps{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_speed_bps{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "D/L Speed",
                   "range": false,
@@ -2032,7 +2032,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_paused_all{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_paused_all{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "Hard Pause",
                   "range": false,
@@ -2138,7 +2138,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_pause_duration_seconds{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_pause_duration_seconds{job=~\"${sabnzbd_instance}\"}",
                   "instant": true,
                   "legendFormat": "Resume In",
                   "range": false,
@@ -2202,7 +2202,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "min(sabnzbd_disk_used_bytes{instance=~\"${sabnzbd_instance}\",folder=\"download\"} / sabnzbd_disk_total_bytes{instance=~\"${sabnzbd_instance}\",folder=\"download\"})",
+                  "expr": "min(sabnzbd_disk_used_bytes{job=~\"${sabnzbd_instance}\",folder=\"download\"} / sabnzbd_disk_total_bytes{job=~\"${sabnzbd_instance}\",folder=\"download\"})",
                   "instant": true,
                   "legendFormat": "Download",
                   "range": false,
@@ -2215,7 +2215,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "min(sabnzbd_disk_used_bytes{instance=~\"${sabnzbd_instance}\",folder=\"complete\"} / sabnzbd_disk_total_bytes{instance=~\"${sabnzbd_instance}\",folder=\"complete\"})",
+                  "expr": "min(sabnzbd_disk_used_bytes{job=~\"${sabnzbd_instance}\",folder=\"complete\"} / sabnzbd_disk_total_bytes{job=~\"${sabnzbd_instance}\",folder=\"complete\"})",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Complete",
@@ -2307,7 +2307,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{instance=~\"${sabnzbd_instance}\"}[$__rate_interval])) by (server)",
+                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__rate_interval])) by (server)",
                   "legendFormat": "__auto",
                   "range": true,
                   "refId": "A"
@@ -2475,7 +2475,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sabnzbd_server_downloaded_bytes{instance=~\"${sabnzbd_instance}\"}",
+                  "expr": "sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{server}}",
@@ -2539,7 +2539,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{instance=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
+                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{server}}",
@@ -2620,7 +2620,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{instance=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
+                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{server}}",
@@ -2717,7 +2717,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_system_status{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_system_status{job=~\"${radarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Status",
                   "range": false,
@@ -2885,7 +2885,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_downloaded_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_downloaded_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Downloaded",
@@ -2899,7 +2899,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_monitored_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_monitored_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Monitored",
@@ -2913,7 +2913,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_wanted_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_wanted_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Wanted",
@@ -2979,7 +2979,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_queue_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_queue_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Queued",
@@ -2993,7 +2993,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_downloaded_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_downloaded_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Downloaded",
@@ -3007,7 +3007,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_history_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_history_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "History",
@@ -3120,7 +3120,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_filesize_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_filesize_total{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Disk Used",
@@ -3134,7 +3134,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_rootfolder_freespace_bytes{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_rootfolder_freespace_bytes{job=~\"${radarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Disk Free",
@@ -3201,7 +3201,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_movie_quality_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_quality_total{job=~\"${radarr_instance}\"}",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{quality}}",
@@ -3396,7 +3396,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "radarr_movie_filesize_total{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_movie_filesize_total{job=~\"${radarr_instance}\"}",
                   "legendFormat": "Used",
                   "range": true,
                   "refId": "A"
@@ -3490,7 +3490,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "radarr_system_health_issues{instance=~\"${radarr_instance}\"}",
+                  "expr": "radarr_system_health_issues{job=~\"${radarr_instance}\"}",
                   "format": "table",
                   "hide": false,
                   "instant": true,
@@ -3636,7 +3636,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_system_status{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_system_status{job=~\"${sonarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Status",
                   "range": false,
@@ -3789,7 +3789,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_queue_total{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_queue_total{job=~\"${sonarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Queued",
@@ -3803,7 +3803,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_history_total{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_history_total{job=~\"${sonarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "History",
@@ -3817,7 +3817,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_episode_downloaded_total{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_episode_downloaded_total{job=~\"${sonarr_instance}\"}",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Downloaded",
@@ -3878,7 +3878,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "max(sonarr_series_monitored_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_series_monitored_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "legendFormat": "Series Monitored",
                   "range": true,
@@ -3890,7 +3890,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "max(sonarr_series_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_series_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "legendFormat": "Series Total",
                   "range": true,
@@ -3951,7 +3951,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "max(sonarr_season_monitored_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_season_monitored_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Seasons Monitored",
@@ -3965,7 +3965,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "max(sonarr_season_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_season_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "instant": true,
                   "legendFormat": "Seasons Total",
@@ -4026,7 +4026,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "max(sonarr_episode_missing_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_episode_missing_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "legendFormat": "Episodes Missing",
                   "range": true,
@@ -4038,7 +4038,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "max(sonarr_episode_total{instance=~\"${sonarr_instance}\"})",
+                  "expr": "max(sonarr_episode_total{job=~\"${sonarr_instance}\"})",
                   "hide": false,
                   "legendFormat": "Episodes Total",
                   "range": true,
@@ -4102,7 +4102,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_episode_downloaded_total{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_episode_downloaded_total{job=~\"${sonarr_instance}\"}",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "Downloaded",
@@ -4116,7 +4116,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_episode_missing_total{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_episode_missing_total{job=~\"${sonarr_instance}\"}",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "Missing",
@@ -4312,7 +4312,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_series_filesize_bytes{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_series_filesize_bytes{job=~\"${sonarr_instance}\"}",
                   "instant": false,
                   "legendFormat": "Used",
                   "range": true,
@@ -4407,7 +4407,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sonarr_system_health_issues{instance=~\"${sonarr_instance}\"}",
+                  "expr": "sonarr_system_health_issues{job=~\"${sonarr_instance}\"}",
                   "format": "table",
                   "hide": false,
                   "instant": true,
@@ -4471,906 +4471,6 @@ data:
           "repeat": "sonarr_instance",
           "repeatDirection": "h",
           "title": "Sonarr - ${sonarr_instance}",
-          "type": "row"
-        },
-        {
-          "collapsed": true,
-          "gridPos": {
-            "h": 1,
-            "w": 24,
-            "x": 0,
-            "y": 33
-          },
-          "panels": [
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "thresholds"
-                  },
-                  "mappings": [
-                    {
-                      "options": {
-                        "0": {
-                          "color": "red",
-                          "index": 1,
-                          "text": "Down"
-                        },
-                        "1": {
-                          "color": "green",
-                          "index": 0,
-                          "text": "Up"
-                        }
-                      },
-                      "type": "value"
-                    }
-                  ],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 4,
-                "w": 3,
-                "x": 0,
-                "y": 34
-              },
-              "options": {
-                "colorMode": "background",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "text": {},
-                "textMode": "auto"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_system_status{instance=~\"${lidarr_instance}\"}",
-                  "instant": true,
-                  "legendFormat": "Status",
-                  "range": false,
-                  "refId": "A"
-                }
-              ],
-              "type": "stat"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "thresholds"
-                  },
-                  "mappings": [
-                    {
-                      "options": {
-                        "0": {
-                          "color": "red",
-                          "index": 1,
-                          "text": "Down"
-                        },
-                        "1": {
-                          "color": "green",
-                          "index": 0,
-                          "text": "Up"
-                        }
-                      },
-                      "type": "value"
-                    }
-                  ],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "red"
-                      },
-                      {
-                        "color": "semi-dark-orange",
-                        "value": 600
-                      },
-                      {
-                        "color": "yellow",
-                        "value": 3600
-                      },
-                      {
-                        "color": "green",
-                        "value": 86400
-                      }
-                    ]
-                  },
-                  "unit": "s"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 4,
-                "w": 3,
-                "x": 3,
-                "y": 34
-              },
-              "options": {
-                "colorMode": "background",
-                "graphMode": "area",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "text": {},
-                "textMode": "auto"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "time() - container_start_time_seconds{container=\"lidarr\"}",
-                  "instant": true,
-                  "legendFormat": "Uptime",
-                  "range": false,
-                  "refId": "A"
-                }
-              ],
-              "type": "stat"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "description": "",
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "continuous-BlPu"
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      }
-                    ]
-                  },
-                  "unit": "none"
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Downloaded"
-                    },
-                    "properties": [
-                      {
-                        "id": "unit",
-                        "value": "locale"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Missing"
-                    },
-                    "properties": [
-                      {
-                        "id": "unit",
-                        "value": "locale"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Total"
-                    },
-                    "properties": [
-                      {
-                        "id": "unit",
-                        "value": "locale"
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 4,
-                "w": 8,
-                "x": 6,
-                "y": 34
-              },
-              "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "center",
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "text": {},
-                "textMode": "auto"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_queue_total{instance=~\"${lidarr_instance}\"}",
-                  "hide": false,
-                  "instant": true,
-                  "legendFormat": "Queued",
-                  "range": false,
-                  "refId": "B"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_songs_downloaded_total{instance=~\"${lidarr_instance}\"}",
-                  "hide": false,
-                  "instant": true,
-                  "legendFormat": "Downloaded",
-                  "range": false,
-                  "refId": "C"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_songs_total - lidarr_songs_downloaded_total",
-                  "hide": false,
-                  "instant": true,
-                  "legendFormat": "Missing",
-                  "range": false,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_songs_total",
-                  "hide": false,
-                  "instant": true,
-                  "legendFormat": "Total",
-                  "range": false,
-                  "refId": "D"
-                }
-              ],
-              "title": "Songs",
-              "type": "stat"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "continuous-BlPu"
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "none"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 4,
-                "w": 4,
-                "x": 14,
-                "y": 34
-              },
-              "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "text": {},
-                "textMode": "auto"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "max(lidarr_artists_monitored_total{instance=~\"${lidarr_instance}\"})",
-                  "hide": false,
-                  "legendFormat": "Monitored",
-                  "range": true,
-                  "refId": "B"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "max(lidarr_artists_total{instance=~\"${lidarr_instance}\"})",
-                  "hide": false,
-                  "legendFormat": "Total",
-                  "range": true,
-                  "refId": "D"
-                }
-              ],
-              "title": "Artists",
-              "type": "stat"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "continuous-BlPu"
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "none"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 4,
-                "w": 6,
-                "x": 18,
-                "y": 34
-              },
-              "options": {
-                "colorMode": "value",
-                "graphMode": "none",
-                "justifyMode": "auto",
-                "orientation": "auto",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "text": {},
-                "textMode": "auto"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "max(lidarr_albums_monitored_total{instance=~\"${lidarr_instance}\"})",
-                  "hide": false,
-                  "legendFormat": "Monitored",
-                  "range": true,
-                  "refId": "B"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "max(lidarr_albums_total{instance=~\"${lidarr_instance}\"})",
-                  "hide": false,
-                  "legendFormat": "Total",
-                  "range": true,
-                  "refId": "D"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "max(lidarr_albums_missing_total{instance=~\"${lidarr_instance}\"})",
-                  "hide": false,
-                  "legendFormat": "Missing",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Albums",
-              "type": "stat"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "continuous-BlPu"
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 10,
-                "w": 24,
-                "x": 0,
-                "y": 38
-              },
-              "options": {
-                "displayMode": "lcd",
-                "minVizHeight": 10,
-                "minVizWidth": 0,
-                "orientation": "horizontal",
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "showUnfilled": true,
-                "valueMode": "color"
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_songs_quality_total{instance=~\"${lidarr_instance}\"}\r\n",
-                  "format": "time_series",
-                  "instant": true,
-                  "legendFormat": "{{quality}}",
-                  "range": false,
-                  "refId": "A"
-                }
-              ],
-              "title": "Song Qualities",
-              "type": "bargauge"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${DS_PROMETHEUS}"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 10,
-                    "gradientMode": "hue",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 3,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "binBps"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 9,
-                "w": 8,
-                "x": 0,
-                "y": 48
-              },
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(irate(container_network_transmit_bytes_total{pod=~\"lidarr.*\"}[$__rate_interval]))",
-                  "legendFormat": "Network Transmit",
-                  "range": true,
-                  "refId": "A"
-                },
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "sum(irate(container_network_receive_bytes_total{pod=~\"lidarr.*\"}[$__rate_interval])) * -1",
-                  "hide": false,
-                  "legendFormat": "Network Receive",
-                  "range": true,
-                  "refId": "B"
-                }
-              ],
-              "title": "Network",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "palette-classic"
-                  },
-                  "custom": {
-                    "axisCenteredZero": false,
-                    "axisColorMode": "text",
-                    "axisLabel": "",
-                    "axisPlacement": "auto",
-                    "barAlignment": 0,
-                    "drawStyle": "line",
-                    "fillOpacity": 10,
-                    "gradientMode": "hue",
-                    "hideFrom": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": false
-                    },
-                    "lineInterpolation": "linear",
-                    "lineWidth": 1,
-                    "pointSize": 3,
-                    "scaleDistribution": {
-                      "type": "linear"
-                    },
-                    "showPoints": "auto",
-                    "spanNulls": false,
-                    "stacking": {
-                      "group": "A",
-                      "mode": "none"
-                    },
-                    "thresholdsStyle": {
-                      "mode": "off"
-                    }
-                  },
-                  "decimals": 1,
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  },
-                  "unit": "bytes"
-                },
-                "overrides": []
-              },
-              "gridPos": {
-                "h": 9,
-                "w": 8,
-                "x": 8,
-                "y": 48
-              },
-              "options": {
-                "legend": {
-                  "calcs": [],
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": false
-                },
-                "tooltip": {
-                  "mode": "single",
-                  "sort": "none"
-                }
-              },
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "expr": "lidarr_artists_filesize_bytes{instance=~\"${lidarr_instance}\"}",
-                  "legendFormat": "Used",
-                  "range": true,
-                  "refId": "A"
-                }
-              ],
-              "title": "Disk Used",
-              "type": "timeseries"
-            },
-            {
-              "datasource": {
-                "type": "prometheus"
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "color": {
-                    "mode": "thresholds"
-                  },
-                  "custom": {
-                    "align": "auto",
-                    "cellOptions": {
-                      "type": "auto"
-                    },
-                    "inspect": false
-                  },
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green"
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
-                  }
-                },
-                "overrides": [
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Expires In"
-                    },
-                    "properties": [
-                      {
-                        "id": "unit",
-                        "value": "s"
-                      }
-                    ]
-                  },
-                  {
-                    "matcher": {
-                      "id": "byName",
-                      "options": "Expiration Date"
-                    },
-                    "properties": [
-                      {
-                        "id": "unit",
-                        "value": "dateTimeAsUS"
-                      }
-                    ]
-                  }
-                ]
-              },
-              "gridPos": {
-                "h": 9,
-                "w": 8,
-                "x": 16,
-                "y": 48
-              },
-              "options": {
-                "cellHeight": "sm",
-                "footer": {
-                  "countRows": false,
-                  "fields": "",
-                  "reducer": [
-                    "sum"
-                  ],
-                  "show": false
-                },
-                "frameIndex": 1,
-                "showHeader": true,
-                "sortBy": []
-              },
-              "pluginVersion": "9.5.2",
-              "targets": [
-                {
-                  "datasource": {
-                    "type": "prometheus",
-                    "uid": "${DS_PROMETHEUS}"
-                  },
-                  "editorMode": "code",
-                  "exemplar": false,
-                  "expr": "lidarr_system_health_issues{instance=~\"${lidarr_instance}\"}",
-                  "format": "table",
-                  "hide": false,
-                  "instant": true,
-                  "legendFormat": "__auto",
-                  "range": false,
-                  "refId": "A"
-                }
-              ],
-              "title": "System Health Issues",
-              "transformations": [
-                {
-                  "id": "organize",
-                  "options": {
-                    "excludeByName": {
-                      "Time": true,
-                      "Value": true,
-                      "__name__": true,
-                      "cluster": true,
-                      "cluster 1": true,
-                      "cluster 2": true,
-                      "endpoint": true,
-                      "endpoint 1": true,
-                      "endpoint 2": true,
-                      "indexer 2": true,
-                      "instance": true,
-                      "instance 1": true,
-                      "instance 2": true,
-                      "job": true,
-                      "job 1": true,
-                      "job 2": true,
-                      "namespace": true,
-                      "namespace 1": true,
-                      "namespace 2": true,
-                      "pod": true,
-                      "pod 1": true,
-                      "pod 2": true,
-                      "prometheus": true,
-                      "prometheus 1": true,
-                      "prometheus 2": true,
-                      "service": true,
-                      "service 1": true,
-                      "service 2": true,
-                      "source": true,
-                      "type": true,
-                      "url": true,
-                      "url 1": true,
-                      "url 2": true
-                    },
-                    "indexByName": {},
-                    "renameByName": {
-                      "Value": "",
-                      "Value #A": "Expires In",
-                      "Value #B": "Expiration Date"
-                    }
-                  }
-                }
-              ],
-              "type": "table"
-            }
-          ],
-          "repeat": "lidarr_instance",
-          "repeatDirection": "h",
-          "title": "Lidarr - ${lidarr_instance}",
           "type": "row"
         },
         {
@@ -5453,7 +4553,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "readarr_system_status{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_system_status{job=~\"${readarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Status",
                   "range": false,
@@ -5622,7 +4722,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_author_downloaded_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_author_downloaded_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Authors Downloaded",
                   "range": true,
@@ -5634,7 +4734,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_author_monitored_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_author_monitored_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Authors Monitored",
                   "range": true,
@@ -5646,7 +4746,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_author_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_author_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Authors Wanted",
                   "range": true,
@@ -5759,7 +4859,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_queue_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_queue_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Queued",
                   "range": true,
@@ -5771,7 +4871,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_book_downloaded_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_book_downloaded_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Downloaded",
                   "range": true,
@@ -5783,7 +4883,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_history_total{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_history_total{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "History",
                   "range": true,
@@ -5795,7 +4895,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_author_filesize_bytes{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_author_filesize_bytes{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Disk Used",
                   "range": true,
@@ -5807,7 +4907,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_rootfolder_freespace_bytes{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_rootfolder_freespace_bytes{job=~\"${readarr_instance}\"}",
                   "hide": false,
                   "legendFormat": "Disk Free",
                   "range": true,
@@ -6000,7 +5100,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "readarr_author_filesize_bytes{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_author_filesize_bytes{job=~\"${readarr_instance}\"}",
                   "legendFormat": "Used",
                   "range": true,
                   "refId": "A"
@@ -6094,7 +5194,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "readarr_system_health_issues{instance=~\"${readarr_instance}\"}",
+                  "expr": "readarr_system_health_issues{job=~\"${readarr_instance}\"}",
                   "format": "table",
                   "hide": false,
                   "instant": true,
@@ -6241,7 +5341,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_system_status{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_system_status{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Status",
                   "range": false,
@@ -6309,7 +5409,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_system_health_issues{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_system_health_issues{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Health Issues",
                   "range": false,
@@ -6373,7 +5473,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_subtitles_downloaded_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_subtitles_downloaded_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Downloaded",
                   "range": false,
@@ -6441,7 +5541,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_subtitles_missing_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_subtitles_missing_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Missing",
                   "range": false,
@@ -6506,7 +5606,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_subtitles_filesize_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_subtitles_filesize_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "TV Subtitle Size",
                   "range": false,
@@ -6570,7 +5670,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_movie_subtitles_monitored_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_movie_subtitles_monitored_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Monitored",
                   "range": false,
@@ -6634,7 +5734,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_movie_subtitles_downloaded_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_movie_subtitles_downloaded_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Downloaded",
                   "range": false,
@@ -6702,7 +5802,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_movie_subtitles_missing_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_movie_subtitles_missing_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Missing",
                   "range": false,
@@ -6767,7 +5867,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_movie_subtitles_filesize_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_movie_subtitles_filesize_total{job=~\"${bazarr_instance}\"}",
                   "instant": true,
                   "legendFormat": "Movie Subtitle Size",
                   "range": false,
@@ -6833,7 +5933,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "bazarr_subtitles_language_total{instance=~\"${bazarr_instance}\"}",
+                  "expr": "bazarr_subtitles_language_total{job=~\"${bazarr_instance}\"}",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{language}}",
@@ -6859,7 +5959,6 @@ data:
         "sonarr",
         "readarr",
         "radarr",
-        "lidarr",
         "prowlarr",
         "sabnzbd",
         "music",
@@ -6917,7 +6016,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
@@ -6947,7 +6046,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
@@ -6977,7 +6076,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
@@ -7007,37 +6106,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
-            "skipUrlSync": false,
-            "sort": 1,
-            "type": "query"
-          },
-          {
-            "current": {
-              "selected": true,
-              "text": [
-                "All"
-              ],
-              "value": [
-                "$__all"
-              ]
-            },
-            "datasource": {
-              "type": "prometheus"
-            },
-            "definition": "query_result(lidarr_system_status)",
-            "hide": 0,
-            "includeAll": true,
-            "label": "Lidarr Instance",
-            "multi": true,
-            "name": "lidarr_instance",
-            "options": [],
-            "query": {
-              "query": "query_result(lidarr_system_status)",
-              "refId": "PrometheusVariableQueryEditor-VariableQuery"
-            },
-            "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
@@ -7067,7 +6136,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-VariableQuery"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
@@ -7090,7 +6159,7 @@ data:
               "refId": "PrometheusVariableQueryEditor-queryType"
             },
             "refresh": 2,
-            "regex": "/instance=\"([^\"]+)\"/",
+            "regex": "/job=\"([^\"]+)\"/",
             "sort": 1,
             "type": "query"
           }
