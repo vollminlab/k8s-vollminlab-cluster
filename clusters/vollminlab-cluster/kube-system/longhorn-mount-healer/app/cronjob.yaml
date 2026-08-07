@@ -15,7 +15,15 @@ spec:
   jobTemplate:
     spec:
       ttlSecondsAfterFinished: 3600
-      backoffLimit: 0
+      # backoffLimit 2 (not 0): the heal script never self-fails (set -u, every
+      # path returns 0 — even a detach timeout only logs + emits an event), so a
+      # Failed job is always external pod death — almost always the descheduler
+      # LowNodeUtilization plugin evicting this tiny Burstable pod off a hot node.
+      # With backoffLimit 0 that single eviction => Failed job => KubeJobFailed
+      # noise. The script is idempotent and restore_orphans repairs any interrupted
+      # heal on the next run, so retrying is safe; a genuine persistent breakage
+      # (RBAC/image-pull) still exhausts retries and alerts.
+      backoffLimit: 2
       template:
         metadata:
           labels:
