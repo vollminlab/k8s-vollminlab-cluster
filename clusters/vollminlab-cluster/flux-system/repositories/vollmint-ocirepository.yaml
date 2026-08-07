@@ -11,6 +11,6 @@ spec:
   interval: 1h
   url: oci://harbor.vollminlab.com/vollminlab/charts/vollmint
   ref:
-    tag: "0.3.1"
+    tag: "0.3.2"
   secretRef:
     name: harbor-vollminlab-pull
