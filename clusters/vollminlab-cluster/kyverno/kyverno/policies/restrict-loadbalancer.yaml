@@ -27,6 +27,7 @@ spec:
             - ingress-nginx
             - dmz
             - harbor
+            - ci-test-*
       validate:
         message: "Only ingress-nginx-controller in the ingress-nginx namespace may use Service type LoadBalancer. DMZ and Harbor namespaces are excluded."
         pattern:
