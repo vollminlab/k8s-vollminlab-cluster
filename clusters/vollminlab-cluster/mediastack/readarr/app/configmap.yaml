@@ -55,14 +55,19 @@ data:
       app: readarr
       env: production
       category: media
-    podAnnotations:
-      backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm"
     image:
       repository: ghcr.io/pennydreadful/bookshelf
       tag: hardcover-v0.4.20.129@sha256:388eecc94362580eae31ee0a454be6af516f8a311f8432a521c202fb475f4359
     workload:
       main:
         podSpec:
+          # Velero FSB: exclude ephemeral scratch emptyDirs. MUST live under
+          # workload.main.podSpec.annotations — the TrueCharts common chart ignores
+          # a top-level podAnnotations key, so the annotation never reached the pod.
+          # The `shared` volume in particular hangs the kopia data-mover
+          # (PartiallyFailed backups + orphaned pods); the rest are pure scratch.
+          annotations:
+            backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm,shared"
           containers:
             main:
               env:
