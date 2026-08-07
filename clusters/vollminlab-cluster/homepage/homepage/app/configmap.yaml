@@ -354,7 +354,7 @@ data:
             - Goldilocks:
                 description: VPA resource right-sizing recommendations
                 href: https://goldilocks.vollminlab.com
-                icon: mdi-scale-balance
+                icon: goldilocks.png
                 namespace: goldilocks
                 app: goldilocks
         - Tools:
