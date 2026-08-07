@@ -34,8 +34,16 @@ data:
       app: sonarr
       env: production
       category: media
-    podAnnotations:
-      backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm"
+    # Velero FSB: exclude ephemeral scratch emptyDirs. MUST live under
+    # workload.main.podSpec.annotations — the TrueCharts common chart ignores a
+    # top-level podAnnotations key, so the annotation never reached the pod. The
+    # `shared` volume in particular hangs the kopia data-mover (PartiallyFailed
+    # backups + orphaned pods); the rest are pure scratch not worth backing up.
+    workload:
+      main:
+        podSpec:
+          annotations:
+            backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm,shared"
     env:
       SONARR__AUTH__METHOD: "External"
     securityContext:
