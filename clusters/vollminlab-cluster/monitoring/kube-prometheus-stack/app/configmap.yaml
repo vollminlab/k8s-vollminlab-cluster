@@ -31,6 +31,12 @@ data:
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
         serviceMonitorNamespaceSelector: {}
+        # Match the ServiceMonitor stance for PodMonitors so the operator scrapes
+        # PodMonitors without the release label (e.g. CNPG's per-cluster PodMonitors
+        # created by spec.monitoring.enablePodMonitor, and velero's node-agent).
+        podMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelector: {}
+        podMonitorNamespaceSelector: {}
         podMetadata:
           labels:
             app: prometheus
