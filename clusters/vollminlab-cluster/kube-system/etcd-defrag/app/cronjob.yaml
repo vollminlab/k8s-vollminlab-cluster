@@ -15,7 +15,14 @@ spec:
   jobTemplate:
     spec:
       ttlSecondsAfterFinished: 3600
-      backoffLimit: 0
+      # The descheduler (LowNodeUtilization, every 30m) can evict this short-lived
+      # pod mid-run as a stateless rebalance victim — it has no PVC/local storage,
+      # so the descheduler's PVC guard does not cover it. With backoffLimit 0 a
+      # single eviction flips the Job straight to Failed → KubeJobFailed alert.
+      # Allow retries so an eviction just respawns a fresh pod; defrag is idempotent
+      # and completes in seconds, so a re-run of an already-defragged endpoint is
+      # harmless.
+      backoffLimit: 3
       template:
         metadata:
           labels:
@@ -36,15 +43,22 @@ spec:
                   CERTS="--cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key"
                   echo "etcd defrag started at $(date)"
 
-                  echo "Defragging k8scp01 (follower)..."
+                  # Defrag each member sequentially. The 10s gap keeps only one
+                  # member offline at a time, so quorum is always preserved. Order
+                  # is fixed and low-stakes here: the DB is small (~285 MB) and each
+                  # defrag finishes in seconds, so even defragging the current leader
+                  # triggers at most a sub-second re-election. The etcd leader is not
+                  # pinned to any node and moves on every restart/election, so members
+                  # are labelled by node name only — never claim a fixed leader.
+                  echo "Defragging k8scp01..."
                   kubectl exec -n kube-system etcd-k8scp01 -- etcdctl --endpoints=https://192.168.152.8:2379 $CERTS --command-timeout=120s defrag
                   sleep 10
 
-                  echo "Defragging k8scp03 (follower)..."
+                  echo "Defragging k8scp03..."
                   kubectl exec -n kube-system etcd-k8scp03 -- etcdctl --endpoints=https://192.168.152.10:2379 $CERTS --command-timeout=120s defrag
                   sleep 10
 
-                  echo "Defragging k8scp02 (leader)..."
+                  echo "Defragging k8scp02..."
                   kubectl exec -n kube-system etcd-k8scp02 -- etcdctl --endpoints=https://192.168.152.9:2379 $CERTS --command-timeout=120s defrag
 
                   echo "etcd defrag complete at $(date)"
