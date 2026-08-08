@@ -1,0 +1,18 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sabnzbd-exportarr
+  namespace: mediastack
+  labels:
+    app: sabnzbd-exportarr
+    env: production
+    category: media
+spec:
+  # 1 replica + minAvailable: 1 => 0 allowed disruptions, so the descheduler's
+  # DefaultEvictor (which honors PDBs) cannot evict this pod during
+  # LowNodeUtilization rebalancing. Stops the ~13x/week eviction churn that
+  # fragments the download counters and creates metric scrape gaps.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: sabnzbd-exportarr
