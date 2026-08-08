@@ -119,3 +119,32 @@ spec:
           ports:
             - containerPort: 8000
               name: gluetun-ctrl
+        - name: port-sync
+          # Keeps qBittorrent's listen_port in sync with gluetun's PIA-forwarded port.
+          # gluetun's firewall only allows inbound traffic on the forwarded port, but
+          # qBittorrent doesn't know what that port is — without this, qBittorrent listens
+          # on a port the tunnel firewall blocks and can't accept any inbound peers.
+          image: docker.io/curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                gluetun_port=$(curl -s -4 http://127.0.0.1:8000/v1/portforward | grep -o '"port":[0-9]*' | cut -d: -f2)
+                if [ -n "$gluetun_port" ]; then
+                  current_port=$(curl -s -4 http://127.0.0.1:8080/api/v2/app/preferences | grep -o '"listen_port":[0-9]*' | cut -d: -f2)
+                  if [ -n "$current_port" ] && [ "$gluetun_port" != "$current_port" ]; then
+                    curl -s -4 -X POST http://127.0.0.1:8080/api/v2/app/setPreferences \
+                      --data-urlencode "json={\"listen_port\":$gluetun_port}"
+                    echo "listen_port: $current_port -> $gluetun_port"
+                  fi
+                fi
+                sleep 30
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
