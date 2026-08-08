@@ -7,6 +7,10 @@ metadata:
     app: sabnzbd-exportarr
     env: production
     category: media
+    # jobLabel source for the ServiceMonitor — makes the Prometheus `job` label
+    # (and thus the Arr Media dashboard row) read "sabnzbd" instead of
+    # "sabnzbd-exportarr", matching the native radarr/sonarr/prowlarr/readarr rows.
+    app.kubernetes.io/name: sabnzbd
 spec:
   type: ClusterIP
   selector:

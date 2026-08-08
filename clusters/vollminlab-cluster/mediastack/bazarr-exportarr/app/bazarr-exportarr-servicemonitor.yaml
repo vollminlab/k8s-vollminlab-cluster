@@ -11,7 +11,7 @@ spec:
   endpoints:
     - path: /metrics
       port: metrics
-  jobLabel: app
+  jobLabel: app.kubernetes.io/name
   selector:
     matchLabels:
       app: bazarr-exportarr
