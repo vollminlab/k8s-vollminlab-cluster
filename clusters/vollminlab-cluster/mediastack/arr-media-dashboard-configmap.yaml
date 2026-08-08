@@ -2307,7 +2307,7 @@ data:
                     "uid": "${DS_PROMETHEUS}"
                   },
                   "editorMode": "code",
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__rate_interval])) by (server)",
+                  "expr": "sum by (server)(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__rate_interval]))",
                   "legendFormat": "__auto",
                   "range": true,
                   "refId": "A"
@@ -2539,7 +2539,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
+                  "expr": "sum by (server)(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range]))",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{server}}",
@@ -2620,7 +2620,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "avg(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range])) by (server)",
+                  "expr": "sum by (server)(increase(sabnzbd_server_downloaded_bytes{job=~\"${sabnzbd_instance}\"}[$__range]))",
                   "format": "time_series",
                   "instant": true,
                   "legendFormat": "{{server}}",
