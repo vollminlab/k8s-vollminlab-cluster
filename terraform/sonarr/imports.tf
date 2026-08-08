@@ -35,3 +35,9 @@ import {
   to = sonarr_download_client_sabnzbd.sabnzbd
   id = "1"
 }
+
+# ID fetched 2026-08-08 via kubectl exec sonarr /api/v3/delayprofile
+import {
+  to = sonarr_delay_profile.default
+  id = "1"
+}

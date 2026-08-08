@@ -35,3 +35,9 @@ import {
   to = radarr_download_client_sabnzbd.sabnzbd
   id = "1"
 }
+
+# ID fetched 2026-08-08 via kubectl exec radarr /api/v3/delayprofile
+import {
+  to = radarr_delay_profile.default
+  id = "1"
+}
