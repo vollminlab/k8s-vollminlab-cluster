@@ -9,3 +9,9 @@ variable "sabnzbd_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "jellyfin_api_key" {
+  description = "Jellyfin API key for the Emby/Jellyfin notification connection"
+  type        = string
+  sensitive   = true
+}
