@@ -143,8 +143,11 @@ spec:
               done
           resources:
             requests:
+              # Two curl forks per 30s loop are bursty enough to hit CFS throttling
+              # at 50m even though average usage is ~1m (CPUThrottlingHigh fired
+              # at ~40-45% of periods). Limit raised to give burst headroom.
               cpu: 10m
               memory: 16Mi
             limits:
-              cpu: 50m
+              cpu: 150m
               memory: 32Mi
