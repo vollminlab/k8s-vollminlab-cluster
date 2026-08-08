@@ -6,6 +6,7 @@ resources:
   - configmap.yaml
   - sabnzbd-exportarr-apikey-externalsecret.yaml
   - exportarr-deployment.yaml
+  - exportarr-pdb.yaml
   - exportarr-service.yaml
   - exportarr-servicemonitor.yaml
   - helmrelease.yaml
