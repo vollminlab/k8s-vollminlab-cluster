@@ -2587,7 +2587,7 @@ spec:
   template:
     metadata:
       annotations:
-        backup.velero.io/backup-volumes-excludes: tmp
+        backup.velero.io/backup-volumes-excludes: tmp,data
         prometheus.io/port: "8080"
         prometheus.io/scrape: "true"
       labels:
