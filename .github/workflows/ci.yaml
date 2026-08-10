@@ -14,7 +14,7 @@ on:
       - 'docs/**'
       - '*.md'
       - '.gitignore'
-      - 'renovate.json'
+      - 'renovate.json5'
       - '.pre-commit-config.yaml'
   pull_request:
     branches: [ main, develop ]
@@ -30,7 +30,7 @@ on:
       - 'docs/**'
       - '*.md'
       - '.gitignore'
-      - 'renovate.json'
+      - 'renovate.json5'
       - '.pre-commit-config.yaml'
   workflow_dispatch:
 
