@@ -26,6 +26,12 @@ rules:
     # looping on a PVB that is stuck for some reason a node-agent restart
     # cannot fix.
     verbs: ["get", "list", "patch"]
+  - apiGroups: ["velero.io"]
+    resources: ["backups"]
+    # Read-only. Used to narrow the podvolumebackups list to the backups that are
+    # still running -- an unscoped PVB list is thousands of objects and OOM-kills
+    # the healer pod before it does any work.
+    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["pods"]
     # delete is scoped by the -l name=node-agent selector in the script; RBAC

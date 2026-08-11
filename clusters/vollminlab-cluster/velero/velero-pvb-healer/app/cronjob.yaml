@@ -60,10 +60,15 @@ spec:
               resources:
                 requests:
                   cpu: 10m
-                  memory: 32Mi
+                  memory: 48Mi
                 limits:
                   cpu: 200m
-                  memory: 64Mi
+                  # Headroom, not the fix -- the fix is scoping the PVB list in
+                  # heal.sh. 64Mi OOMKilled every run, and because the healer had
+                  # never once completed there was no evidence 64Mi sufficed even
+                  # for a kubectl call returning a handful of objects. 128Mi
+                  # covers the Go runtime baseline with margin.
+                  memory: 128Mi
           volumes:
             - name: script
               configMap:

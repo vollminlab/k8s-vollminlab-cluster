@@ -43,6 +43,48 @@ assert_eq "$(busy_nodes "$ROWS_MIXED")" "k8sworker03" "busy_nodes finds the InPr
 node_is_busy k8sworker03 "$(busy_nodes "$ROWS_MIXED")"; assert_rc "$?" "0" "node_is_busy true for the busy node"
 node_is_busy k8sworker01 "$(busy_nodes "$ROWS_MIXED")"; assert_rc "$?" "1" "node_is_busy false for an idle node"
 
+# --- active_backups / pvb_rows scoping ---
+# This is the OOM guard. PVBs live as long as their backup's TTL (2160h on the
+# B2 schedules), so an unscoped `kubectl get podvolumebackups` decodes thousands
+# of objects and OOM-kills the 64Mi healer pod before it does any work. The list
+# must be narrowed to the backups that are actually running.
+BACKUP_ROWS='velero-daily-full-20260811030048   Completed
+velero-daily-b2-20260811040048     InProgress
+velero-monthly-b2-20260801060032   PartiallyFailed
+velero-daily-full-20260810030041   Failed
+bad-backup                         FailedValidation
+old-backup                         Deleting
+fresh-backup                       <none>
+weird-backup                       SomePhaseFromTheFuture'
+
+# Echoes the label selector back so the assertions also prove pvb_rows really
+# passes -l velero.io/backup-name=<name> rather than listing everything.
+kc() {
+  case "$*" in
+    "get backups.velero.io"*) echo "$BACKUP_ROWS" ;;
+    "get podvolumebackups.velero.io"*)
+      for a in "$@"; do
+        case "$a" in
+          velero.io/backup-name=*)
+            printf 'pvb@%s   Prepared   k8sworker03   2026-08-11T02:40:00Z\n' "${a#*=}" ;;
+        esac
+      done ;;
+  esac
+}
+
+assert_eq "$(active_backups)" 'velero-daily-b2-20260811040048
+fresh-backup
+weird-backup' "active_backups keeps running backups and drops the terminal ones"
+
+assert_eq "$(pvb_rows)" 'pvb@velero-daily-b2-20260811040048   Prepared   k8sworker03   2026-08-11T02:40:00Z
+pvb@fresh-backup   Prepared   k8sworker03   2026-08-11T02:40:00Z
+pvb@weird-backup   Prepared   k8sworker03   2026-08-11T02:40:00Z' "pvb_rows lists per active backup via the backup-name label"
+
+# Nothing running -> no PVB list is issued at all.
+BACKUP_ROWS='velero-daily-full-20260811030048   Completed'
+assert_eq "$(active_backups)" "" "active_backups is empty when every backup is terminal"
+assert_eq "$(pvb_rows)" "" "pvb_rows issues no PVB query when no backup is running"
+
 # --- find_and_heal_one: stub the clock, the row source and the action ---
 # 2026-08-11T03:02:59Z. Fixtures are dated relative to it:
 #   02:40:00Z -> 1379s old (stalled, > STALL_SECONDS=900)
