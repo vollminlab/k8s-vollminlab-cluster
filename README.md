@@ -79,6 +79,10 @@ docs/                                   # Documentation (synced to the Obsidian 
 scripts/                                # Utility scripts
 ```
 
+> CI enforces this block. `scripts/check-readme-structure.sh` runs in the **Validate Kubernetes
+> Manifests** check and fails the PR if a namespace directory is added or removed without the
+> matching line here — so what you're reading is as current as the last merge.
+
 ---
 
 ## Deployed Applications

@@ -67,6 +67,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Runs unconditionally and needs no tooling or cluster access — it only
+      # compares the namespace directories on disk to the README's structure
+      # block. Deliberately a step inside this job rather than a job of its own,
+      # so it blocks merges through the existing required check instead of
+      # needing a new one added to branch protection.
+      - name: Check README structure block
+        run: ./scripts/check-readme-structure.sh
+
       - name: Install kubectl
         run: |
           set -euo pipefail
