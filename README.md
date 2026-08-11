@@ -10,8 +10,8 @@ GitOps-managed Kubernetes cluster. All workloads are defined as code in this rep
 
 | Layer | Tool | Role |
 |---|---|---|
-| Orchestration | Kubernetes v1.34.8 (kubeadm) | 3 control plane + 6 worker nodes |
-| CNI | Calico v3.29.1 | Pod networking, BGP, IPIP |
+| Orchestration | Kubernetes (kubeadm) | 3 control plane + 6 worker nodes |
+| CNI | Calico | Pod networking, BGP, IPIP |
 | GitOps | Flux CD | Continuous reconciliation from `main` |
 | Helm management | Flux HelmRelease | All app deployments |
 | Secret management | External Secrets Operator + 1Password Connect | Secrets materialized from 1Password — none stored in Git |
@@ -83,60 +83,67 @@ scripts/                                # Utility scripts
 
 ## Deployed Applications
 
-Chart versions drift with Renovate. The table below is a snapshot; the authoritative
-value for any app is its `helmrelease.yaml` (or the `OCIRepository` `spec.ref.tag`
-for OCI-sourced charts).
+**This README deliberately carries no version numbers.** Versions drift with every Renovate
+merge, and a hand-maintained table has nothing keeping it honest — the previous one claimed
+Kyverno 3.7.2 while the cluster ran 3.8.2. Three sources are authoritative and maintain
+themselves:
+
+| Question | Where to look |
+|---|---|
+| What version is declared? | The app's `helmrelease.yaml`, or the `OCIRepository` `spec.ref.tag` |
+| What's available / pending? | Renovate's **Dependency Dashboard** issue |
+| What's actually running? | `flux get helmreleases -A` |
 
 ### Core Infrastructure
 
-| App | Namespace | Chart Version | Purpose |
-|---|---|---|---|
-| Flux CD | flux-system | — | GitOps reconciliation |
-| Headlamp | flux-system | 0.44.0 | Kubernetes UI with Flux plugin |
-| Kyverno | kyverno | 3.8.2 | Policy enforcement |
-| Policy Reporter | kyverno | 3.9.1 | Policy violation reporting |
-| ingress-nginx | ingress-nginx | 4.15.1 | Ingress controller |
-| cert-manager | cert-manager | v1.21.1 | TLS certificates |
-| MetalLB | metallb-system | 0.16.1 | LoadBalancer IPs |
-| External Secrets Operator | external-secrets | 2.9.0 | Materializes Secrets from 1Password |
-| 1Password Connect | 1password | 2.4.1 | Secret backend for ESO |
-| Authentik | authentik | 2026.5.6 | SSO — OIDC + nginx forward-auth |
-| metrics-server | kube-system | 3.13.1 | Resource metrics API |
-| Descheduler | kube-system | 0.36.0 | Rebalances pods across nodes |
-| External DNS | external-dns | 1.21.1 | Automated DNS records (Pi-hole) |
-| CNPG Operator | cnpg-system | 0.29.0 | CloudNative PostgreSQL |
-| Reloader | reloader | 2.2.15 | Restart on ConfigMap/Secret change |
-| tofu-controller | tofu | 0.16.5 | OpenTofu reconciliation in-cluster |
-| Tailscale Operator | tailscale | 1.98.9 | Tailnet ingress/egress |
+| App | Namespace | Purpose |
+|---|---|---|
+| Flux CD | flux-system | GitOps reconciliation |
+| Headlamp | flux-system | Kubernetes UI with Flux plugin |
+| Kyverno | kyverno | Policy enforcement |
+| Policy Reporter | kyverno | Policy violation reporting |
+| ingress-nginx | ingress-nginx | Ingress controller |
+| cert-manager | cert-manager | TLS certificates |
+| MetalLB | metallb-system | LoadBalancer IPs |
+| External Secrets Operator | external-secrets | Materializes Secrets from 1Password |
+| 1Password Connect | 1password | Secret backend for ESO |
+| Authentik | authentik | SSO — OIDC + nginx forward-auth |
+| metrics-server | kube-system | Resource metrics API |
+| Descheduler | kube-system | Rebalances pods across nodes |
+| External DNS | external-dns | Automated DNS records (Pi-hole) |
+| CNPG Operator | cnpg-system | CloudNative PostgreSQL |
+| Reloader | reloader | Restart on ConfigMap/Secret change |
+| tofu-controller | tofu | OpenTofu reconciliation in-cluster |
+| Tailscale Operator | tailscale | Tailnet ingress/egress |
 
 ### Storage & Backup
 
-| App | Namespace | Chart Version | Purpose |
-|---|---|---|---|
-| Longhorn | longhorn-system | 1.12.0 | Distributed block storage (RWO + RWX) |
-| Longhorn Rebalancing Controller | longhorn-system | OCI | Evens replica distribution across nodes |
-| SMB CSI Driver | kube-system | 1.20.3 | SMB/CIFS network shares |
-| Local Path Provisioner | local-path-storage | — | Node-local storage |
-| MinIO | minio | 5.4.0 | S3-compatible object storage (Velero backend) |
-| Velero | velero | 12.1.0 | Cluster backup — MinIO (2am) + Backblaze B2 (4am) |
-| VolSync | volsync-system | 0.16.0 | PVC replication to backup targets |
+| App | Namespace | Purpose |
+|---|---|---|
+| Longhorn | longhorn-system | Distributed block storage (RWO + RWX) |
+| Longhorn Rebalancing Controller | longhorn-system | Evens replica distribution across nodes |
+| SMB CSI Driver | kube-system | SMB/CIFS network shares |
+| Local Path Provisioner | local-path-storage | Node-local storage |
+| MinIO | minio | S3-compatible object storage (Velero backend) |
+| Velero | velero | Cluster backup — MinIO (2am) + Backblaze B2 (4am) |
+| VolSync | volsync-system | PVC replication to backup targets |
 
 StorageClasses: `longhorn` (default), `longhorn-r1`, `longhorn-r2`, `longhorn-dmz`,
 `longhorn-static`, `local-path`, `local-vm-lt`, `smb`.
 
 ### Observability
 
-| App | Namespace | Chart Version | Purpose |
-|---|---|---|---|
-| kube-prometheus-stack | monitoring | 88.2.0 | Prometheus, Alertmanager, Grafana |
-| VictoriaMetrics | monitoring | 0.44.0 | Long-term metrics (395d cold tier) |
-| Loki | monitoring | 7.2.0 | Log aggregation |
-| Promtail | monitoring | 6.17.1 | Log shipping |
-| karma | monitoring | OCI | Alertmanager dashboard UI |
-| vmware-exporter | monitoring | 2.3.0 | ESXi/vCenter metrics |
-| b2-exporter | monitoring | — (plain Deployment) | Backblaze B2 bucket metrics |
-| Goldilocks | goldilocks | 10.5.0 | Resource request recommendations |
-| Trivy Operator | trivy-system | 0.35.0 | Image + config vulnerability scanning |
+| App | Namespace | Purpose |
+|---|---|---|
+| kube-prometheus-stack | monitoring | Prometheus, Alertmanager, Grafana |
+| VictoriaMetrics | monitoring | Long-term metrics (395d cold tier) |
+| Loki | monitoring | Log aggregation |
+| Promtail | monitoring | Log shipping |
+| karma | monitoring | Alertmanager dashboard UI |
+| vmware-exporter | monitoring | ESXi/vCenter metrics |
+| b2-exporter | monitoring | Backblaze B2 bucket metrics (plain Deployment, not Helm) |
+| Goldilocks | goldilocks | Resource request recommendations |
+| Trivy Operator | trivy-system | Image + config vulnerability scanning |
 
 ### Applications
 
@@ -202,7 +209,7 @@ Both values are stored in 1Password (Homelab vault).
 | Parameter | Value |
 |---|---|
 | Pod CIDR | `172.18.0.0/16` |
-| CNI | Calico v3.29.1 (IPIP encapsulation, BGP enabled) |
+| CNI | Calico (IPIP encapsulation, BGP enabled) |
 | Dataplane | iptables |
 | Control plane replicas | 3 (`k8scp01`–`k8scp03`) |
 | Worker nodes | 6 (`k8sworker01`–`k8sworker06`) |
