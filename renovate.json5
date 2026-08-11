@@ -9,7 +9,7 @@
   "prConcurrentLimit": 10,
   "labels": ["renovate", "dependencies"],
   "commitMessagePrefix": "chore(deps):",
-  "enabledManagers": ["flux", "github-actions"],
+  "enabledManagers": ["flux", "github-actions", "custom.regex"],
   "ignorePaths": [
     "clusters/vollminlab-cluster/flux-system/gotk-components.yaml"
   ],
@@ -19,6 +19,21 @@
       "/clusters/vollminlab-cluster/flux-system/repositories/.+-helmrepository\.yaml$/"
     ]
   },
+  // The flux manager only reads helmrelease.yaml / *-helmrepository.yaml, so container images
+  // pinned inside Helm values ConfigMaps are invisible to it. This custom manager picks them up.
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Container images pinned inside Helm values ConfigMaps",
+      "managerFilePatterns": [
+        "/clusters/vollminlab-cluster/.+/app/configmap\.yaml$/"
+      ],
+      "matchStrings": [
+        "image:\\s+(?<depName>[^\\s:]+):(?<currentValue>[^\\s\"']+)"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
   "registryAliases": {
     "arc-controller-repo": "oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller",
     "arc-runners-repo": "oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set",
@@ -57,7 +72,7 @@
     },
     {
       "description": "Flag major updates with an additional label",
-      "matchManagers": ["flux"],
+      "matchManagers": ["flux", "custom.regex"],
       "matchUpdateTypes": ["major"],
       "labels": ["renovate", "dependencies", "major-update"],
       "automerge": false

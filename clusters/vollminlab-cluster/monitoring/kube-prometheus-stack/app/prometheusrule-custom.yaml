@@ -408,8 +408,8 @@ spec:
           annotations:
             summary: "Harbor garbage collection failed"
             description: >-
-              A Harbor GC job failed within the last 24h. The registry PVC is only 5Gi
-              (intentionally); check the GC run log in Harbor (Administration ->
+              A Harbor GC job failed within the last 24h. The registry PVC is small
+              (8Gi, intentionally); check the GC run log in Harbor (Administration ->
               Clean Up -> Garbage Collection) and the jobservice pod logs.
 
         # Registry-fill detector (replaces the old increase()-based
@@ -420,9 +420,13 @@ spec:
         # and increase(...[8d]) reads 0 (the absent->1 arming edge is invisible),
         # firing for ~a week after any jobservice restart even though GC ran.
         # There is no last-GC-timestamp gauge in Harbor metrics, so guard the
-        # actual risk instead — the 5Gi registry PVC filling (what GC stopping
+        # actual risk instead — the registry PVC filling (what GC stopping
         # would cause). Reset-immune, same pattern as the MinIO PVC alerts above.
         # HarborGarbageCollectionFailed (above) still catches explicit failures.
+        # 2026-08-10: the PVC was 5Gi against a ~3.4 GiB live working set, so this
+        # alert re-fired within days of every GC. Volume raised to 8Gi (capped by
+        # k8sworker06's Longhorn scheduling headroom, not by need); at that size
+        # 20% free is a genuine growth signal, not steady-state noise.
         - alert: HarborRegistryVolumeFilling
           expr: |
             kubelet_volume_stats_available_bytes{namespace="harbor",persistentvolumeclaim="harbor-registry"}
@@ -433,7 +437,9 @@ spec:
           annotations:
             summary: "Harbor registry PVC below 20% free"
             description: >-
-              The 5Gi harbor-registry PVC has {{ $value | humanizePercentage }} free.
+              The 8Gi harbor-registry PVC has {{ $value | humanizePercentage }} free.
               Weekly GC (Sat 05:00 UTC, harbor-config tofu) may have stopped reclaiming
               blobs. Check the GC run log (Administration -> Clean Up -> Garbage
               Collection) and jobservice health; a manual GC frees orphaned blobs.
+              If GC is healthy and the volume is still filling, the working set has
+              genuinely grown — check per-project size before expanding again.

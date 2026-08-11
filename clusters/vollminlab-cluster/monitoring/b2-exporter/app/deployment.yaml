@@ -23,7 +23,7 @@ spec:
         - name: harbor-vollminlab-pull
       containers:
         - name: b2-exporter
-          image: harbor.vollminlab.com/vollminlab/b2-exporter:1.0.1
+          image: harbor.vollminlab.com/vollminlab/b2-exporter:1.0.2
           ports:
             - name: metrics
               containerPort: 8080
