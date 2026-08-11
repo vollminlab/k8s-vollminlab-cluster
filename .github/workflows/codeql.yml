@@ -11,7 +11,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     permissions:
       actions: read
       contents: read
