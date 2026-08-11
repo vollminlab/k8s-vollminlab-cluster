@@ -57,6 +57,9 @@ which logs only at Debug — the node-agent's in-memory datapath slot has leaked
 **Fix — restart the node-agent on that node.** State is in-memory only; the PVB completes
 within seconds and the backup resumes.
 
+**This is now automated — see the healer below. Only do it by hand if the healer is broken
+or you need the slot back sooner than its next 10-minute run.**
+
 ```bash
 # Find the stuck PVB and its node (.status.node is NOT populated — use .spec.node)
 kubectl get podvolumebackups.velero.io -n velero \
@@ -67,6 +70,57 @@ kubectl delete pod -n velero -l name=node-agent --field-selector spec.nodeName=<
 ```
 
 There is no upstream fix as of v1.18.2 — the changelog contains no node-agent datapath work.
+
+## velero-pvb-healer — the automated form of that recipe
+
+`clusters/vollminlab-cluster/velero/velero-pvb-healer/app/` — a CronJob running the recipe
+above every 10 minutes. Manifests: `cronjob.yaml`, `rbac.yaml`, `kustomization.yaml`
+(`configMapGenerator` over `heal.sh`), plus `heal_test.sh`.
+
+**What it does each run:** list the PVBs of every non-terminal Backup → find one in `Prepared`
+older than `STALL_SECONDS` → confirm that node has no PVB `InProgress` → restart that node's
+node-agent, emit a Kubernetes Event, and stop.
+
+**Deliberate constraints — don't loosen without re-reading why:**
+
+- **Heals at most one node per run.** A node-agent restart is disruptive; one per 10 minutes
+  bounds the blast radius and lets the next run confirm the first worked.
+- **Skips a node with any PVB `InProgress`.** Under `loadConcurrency=1` a node legitimately has
+  one PVB running and others waiting in `Prepared`. Without this guard the healer would kill a
+  healthy in-flight backup. This is the single most important check in the script.
+- **Cooldown annotation** (`pvb-healer.vollminlab.com/last-healed`, default 1h) is stamped on the
+  PVB **before** the delete, so a crash mid-heal can't produce a restart loop.
+- **The PVB list is scoped by `velero.io/backup-name` to running backups only.** PVBs live as long
+  as their backup (2160h on the B2 schedules), so an unscoped list is thousands of objects and
+  kubectl's decode OOM-killed the 64Mi container on *every* run (fixed in #1056). Scoping bounds
+  it at one backup's PVB count permanently; raising the memory limit only defers the same failure.
+  Scoping is not lossy: FSB is head-of-line blocked, so a PVB can only stall a backup that is
+  still running — and if a backup does time out leaving orphaned `Prepared` PVBs, the leaked slot
+  poisons the *next* backup, whose own `Prepared` PVB the healer catches on the same node.
+
+**Tunables** are env vars on the CronJob: `STALL_SECONDS` (900), `COOLDOWN_SECONDS` (3600),
+`NODE_AGENT_SELECTOR` (`name=node-agent`), `DRY_RUN` (`false`).
+
+**Tests:** `sh heal_test.sh` — pure-shell stubs, no cluster needed. Must pass under both `dash`
+and `busybox ash` (the image is `alpine/kubectl`). Not wired into CI, same as
+`longhorn-mount-healer`.
+
+```bash
+# Did it actually run — or just exist? Check exit codes, not the CronJob's Ready status.
+kubectl get jobs -n velero -l job-name --sort-by=.metadata.creationTimestamp | grep pvb-healer
+kubectl logs -n velero -l job-name=<job> --tail=20
+
+# One-off run without waiting for the schedule
+kubectl create job -n velero --from=cronjob/velero-pvb-healer healer-manual-$(date +%s)
+```
+
+Two log lines look similar and mean different things: `no stalled PodVolumeBackups` means the
+query returned rows and none matched; `no PodVolumeBackups found` means it got an empty set.
+Only the first proves the scoped query is working.
+
+**A merged, Ready, reconciled CronJob is not a working CronJob.** Between #1055 and #1056 this
+healer was live and 100% non-functional — exit 137 on every invocation — while Flux reported
+success throughout. After any CronJob PR lands, check the job pods' exit codes.
 
 ## Hard rule: measure before you act
 
