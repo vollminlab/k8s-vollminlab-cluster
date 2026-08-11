@@ -509,6 +509,8 @@ data:
       app: homepage
       env: production
       category: apps
+    podAnnotations:
+      backup.velero.io/backup-volumes-excludes: homepage-base-config,logs
     env:
       - name: HOMEPAGE_VAR_OPENWEATHER_API_KEY
         valueFrom:

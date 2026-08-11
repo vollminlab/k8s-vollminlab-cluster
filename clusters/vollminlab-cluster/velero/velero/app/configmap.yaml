@@ -66,6 +66,20 @@ data:
       # block all PVBs on the affected node indefinitely across multiple backup runs.
       podVolumeOperationTimeout: 30m
 
+      # Client-side rate limit for velero's own kube API calls.
+      # `velero server` defaults are qps=20 / burst=30. A daily-full backup is now
+      # ~5000 items, and for every volume-bearing pod the backup path lists the
+      # node-agent pods. At 20 qps the client-side limiter — not the apiserver —
+      # became the bottleneck: requests queued behind the limiter until their own
+      # context expired, producing 30+ errors per run of
+      #   "failed to list node-agent pods: client rate limiter Wait returned an
+      #    error: context deadline exceeded"
+      # and PartiallyFailed backups on 2026-08-05/06/07/10.
+      # Raised moderately, not maximally: the CP nodes have an armed apiserver
+      # OOM failure mode (8 GB nodes), so this is 2.5x, not 10x.
+      clientQPS: 50
+      clientBurst: 100
+
       # BackupStorageLocations MUST stay nested under configuration: — the velero
       # chart reads configuration.backupStorageLocation. If this drifts out (e.g.
       # displaced by an inserted sibling block), the chart synthesizes an invalid
