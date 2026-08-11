@@ -55,7 +55,7 @@ data:
                 cpu: 2000m
                 memory: 1Gi
           - name: dind
-            image: docker:26-dind
+            image: docker:29-dind
             securityContext:
               privileged: true
             env:
