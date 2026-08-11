@@ -55,14 +55,23 @@ Longhorn is an **info widget** (top bar), not a service widget. Configure it und
 
 ## Credentials
 
-All API keys and passwords are stored in the `homepage-env-vars` SealedSecret in the `homepage` namespace. To add new keys:
-```powershell
-.\scripts\update-sealedsecret-key.ps1 `
-  -SecretName homepage-env-vars `
-  -Namespace homepage `
-  -AllowNewKeys `
-  -KeyValues @{ MY_NEW_KEY = "value" } `
-  -SealedSecretPath "clusters\vollminlab-cluster\homepage\homepage\app\homepage-env-vars-sealedsecret.yaml"
-```
+All API keys and passwords live in the **Homepage Env Vars** item in the 1Password Homelab vault. ESO
+materializes them into the `homepage-env-vars` Secret via
+`clusters/vollminlab-cluster/homepage/homepage/app/homepage-env-vars-externalsecret.yaml`, which pulls
+every field of that item with `dataFrom.extract`. Nothing secret is stored in this repo.
 
-Reference new keys in the configmap as `"{{HOMEPAGE_VAR_MY_NEW_KEY}}"` with a matching `secretKeyRef` env var entry.
+To add a new key:
+
+1. Add the field to the **Homepage Env Vars** 1Password item (Homelab vault). Use the env var name as
+   the field label, e.g. `HOMEPAGE_VAR_MY_NEW_KEY`.
+2. Wait for ESO to re-sync (`refreshInterval: 1h`) or force it immediately:
+   ```bash
+   kubectl annotate externalsecret homepage-env-vars -n homepage \
+     force-sync=$(date +%s) --overwrite
+   kubectl get externalsecret homepage-env-vars -n homepage   # READY=True / SecretSynced
+   ```
+3. Reference the key in the configmap as `"{{HOMEPAGE_VAR_MY_NEW_KEY}}"`, and add a matching env var
+   entry in the HelmRelease values that sources it via `secretKeyRef` from `homepage-env-vars`.
+
+Because `dataFrom.extract` pulls the whole item, no ExternalSecret change is needed for a new field —
+only the configmap/env wiring. See `.claude/rules/secrets.md` for the full ESO workflow.
