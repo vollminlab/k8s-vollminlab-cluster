@@ -57,7 +57,25 @@ data:
         registry:
           storageClass: longhorn
           accessMode: ReadWriteOnce
-          size: 5Gi
+          # 2026-08-10: raised 5Gi -> 8Gi. Measured live artifact bytes after a
+          # manual GC (which freed 881MB and took the volume 84% -> 67%):
+          #   dockerhub-proxy 2845 MiB, vollminlab 587 MiB, library 46 MiB = ~3.4 GiB
+          # i.e. used space is essentially all live content — there is no orphan
+          # backlog left to reclaim. The proxy cache is already bounded (Harbor
+          # auto-creates a 7-day n_days_since_last_pull retention on proxy cache
+          # projects; policy id 1 runs daily and succeeds), so 2.8 GiB is its real
+          # working set, not a leak. On a 5Gi volume the HarborRegistryVolumeFilling
+          # alert trips above 3.84 GiB used — only ~640 MiB of headroom over the
+          # legitimate steady state, so it re-fires after every GC.
+          # Sized against Longhorn's scheduling ledger, not physical free space:
+          # the three replicas live on k8sworker02/05/06, and w06 has only 6.79Gi
+          # of scheduling headroom left (180Gi scheduled of 186.8Gi capacity, and
+          # 26.3% physically available against Longhorn's 25% floor). A +7Gi bump
+          # to 12Gi would take w06 to -0.21Gi. +3Gi to 8Gi leaves it 3.8Gi.
+          # 8Gi -> ~7.7Gi usable, so the 20%-free alert trips above ~6.2Gi used —
+          # ~2.8Gi of headroom over the 3.4Gi steady state instead of ~0.6Gi.
+          # Expand further via Longhorn online resize once w06 is relieved.
+          size: 8Gi
         jobservice:
           jobLog:
             storageClass: longhorn

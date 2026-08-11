@@ -46,6 +46,20 @@ data:
                   extraEnabled:
                     - "PodsWithPVC"
                 nodeFit: true
+                # Exclude the velero namespace entirely. Velero's node-agent exposes
+                # non-CSI-snapshot volumes for FSB kopia backup via an ephemeral
+                # hostPath-mounted "hosting" pod — these have no PVC, so the PVC
+                # guard above doesn't protect them. An eviction mid-backup hard-fails
+                # the PodVolumeBackup (2026-08-08: killed 2/3 Jellyfin PVBs, looped
+                # the 3rd for 20+ minutes with zero progress). Only PodsWithLocalStorage
+                # protection (disabled cluster-wide, see above) would have covered this,
+                # so scope the fix to the one namespace instead.
+                namespaceLabelSelector:
+                  matchExpressions:
+                    - key: kubernetes.io/metadata.name
+                      operator: NotIn
+                      values:
+                        - velero
             - name: LowNodeUtilization
               args:
                 thresholds:
