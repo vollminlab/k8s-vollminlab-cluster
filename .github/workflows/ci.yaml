@@ -56,7 +56,7 @@ jobs:
     # timeout raised 5 → 10 after canary #964: first-run tool installs on a
     # fresh runner can exceed 5 minutes
     name: Validate Kubernetes Manifests
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     timeout-minutes: 10
     outputs:
       changed: ${{ steps.get-changed-files.outputs.changed }}
@@ -360,23 +360,34 @@ jobs:
 
   integration-test:
     name: Integration Test
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes]
     if: needs.validate-changes.result == 'success'
     env:
       CHANGED_FILES: ${{ needs.validate-changes.outputs.changed_files }}
+      # This is the only job that talks to the live cluster. In break-glass mode
+      # (CI_RUNNER set to a GitHub-hosted runner because the self-hosted runners
+      # are down) there is no kubeconfig, so every step below is skipped and the
+      # job reports success — a required check that can never run is what creates
+      # the deadlock this fallback exists to break.
+      CLUSTER_CI: ${{ (vars.CI_RUNNER || 'vollminlab') == 'vollminlab' }}
     steps:
+      - name: Warn when cluster validation is skipped
+        if: env.CLUSTER_CI != 'true'
+        run: |
+          echo "::warning title=Cluster validation skipped::CI_RUNNER is set to '${{ vars.CI_RUNNER }}' (break-glass mode). Server-side dry-run against the live cluster did NOT run. Unset the CI_RUNNER repo variable once the self-hosted runners are healthy, then re-run this workflow."
+
       - name: Skip when no cluster files changed
-        if: needs.validate-changes.outputs.changed != 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed != 'true'
         run: echo "No cluster YAML changed; job succeeds." && exit 0
       - name: Checkout code
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup kubectl
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           KUBECTL_VERSION="v${{ env.KUBERNETES_VERSION }}"
@@ -385,7 +396,7 @@ jobs:
           sudo mv kubectl /usr/local/bin/
 
       - name: Install yq
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           echo "📦 Installing yq..."
@@ -394,7 +405,7 @@ jobs:
           yq --version
 
       - name: Install Helm
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           echo "📦 Installing Helm..."
@@ -402,7 +413,7 @@ jobs:
           helm version
 
       - name: Create test namespace
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           TEST_NAMESPACE="ci-test-${{ env.RUN_SUFFIX }}"
@@ -426,7 +437,7 @@ jobs:
           echo "✅ Created test namespace: $TEST_NAMESPACE"
 
       - name: Render charts and server-side dry-run
-        if: needs.validate-changes.outputs.changed == 'true'
+        if: env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         env:
           HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
@@ -614,63 +625,69 @@ jobs:
           echo "✅ All changed HelmReleases render, strict-parse, and pass server-side dry-run"
 
       - name: Cleanup test namespace and sweep leaked objects
-        if: always() && needs.validate-changes.outputs.changed == 'true'
+        if: always() && env.CLUSTER_CI == 'true' && needs.validate-changes.outputs.changed == 'true'
         continue-on-error: true
         run: |
-          # Best-effort cleanup — no `-e`, and the step is continue-on-error, so a
-          # transient API blip during a delete never aborts the sweep or fails CI.
-          set -uo pipefail
+          # ⚠️ `set +e` IS LOAD-BEARING — DO NOT REMOVE IT.
+          # GitHub runs every `run:` step as `bash --noprofile --norc -e -o pipefail`.
+          # A script's own `set -uo pipefail` does NOT cancel that injected `-e`;
+          # only `set +e` does. The previous version of this step relied on that
+          # mistaken assumption: the sweep's `kubectl get <kinds>` exited 1 (the
+          # runner SA cannot list clusterrole/role — verified, see below), pipefail
+          # propagated the failure, and `-e` killed the step BEFORE the namespace
+          # delete ever ran. `continue-on-error` hid it, so CI stayed green while
+          # 110 ci-test namespaces piled up over 12 days.
+          set +e
+          set -u
           TEST_NAMESPACE="${TEST_NAMESPACE:-}"
           [[ -z "$TEST_NAMESPACE" ]] && { echo "No test namespace to clean up."; exit 0; }
+
+          # Namespace delete goes FIRST. It is the cleanup that actually matters —
+          # nothing below it may ever be able to prevent it from running.
+          echo "🧹 Cleaning up test namespace..."
+          if kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true; then
+            echo "✅ Cleaned up test namespace: $TEST_NAMESPACE"
+          else
+            echo "⚠️ Failed to delete namespace — $TEST_NAMESPACE may need manual cleanup"
+          fi
 
           # The dry-run validation above persists nothing, so in normal operation
           # deleting the ephemeral namespace is all that is needed. But a live-install
           # regression (as the pre-#986 CI did) can leak Helm objects OUTSIDE this
-          # namespace — most dangerously cluster-scoped RBAC — that `delete namespace`
-          # never reaps. On 2026-07-25 exactly this left a second rebalancing
-          # controller (a ClusterRole/Binding + a Deployment in longhorn-system)
-          # running for days, double-moving Longhorn replicas. Belt-and-suspenders:
-          # sweep every Helm-managed object whose release-namespace annotation is
-          # THIS run's ci-test namespace, cluster-wide. Keyed on the unique per-run
-          # namespace, so it can never match a production release.
-          echo "🧹 Sweeping any Helm objects leaked from $TEST_NAMESPACE (cluster-wide)..."
-
-          # Cluster-scoped kinds a leaked live-install would create (namespace flag N/A)
-          CLUSTER_KINDS="clusterrole,clusterrolebinding,validatingwebhookconfiguration,mutatingwebhookconfiguration"
-          # Namespaced kinds that could land in a pre-existing target namespace
-          NS_KINDS="deployment,statefulset,daemonset,serviceaccount,role,rolebinding,configmap,service"
+          # namespace that `delete namespace` never reaps. On 2026-07-25 exactly this
+          # left a second rebalancing controller running for days, double-moving
+          # Longhorn replicas. Belt-and-suspenders: sweep every Helm-managed object
+          # whose release-namespace annotation is THIS run's ci-test namespace. Keyed
+          # on the unique per-run namespace, so it can never match a production release.
+          #
+          # Only kinds the runner SA can actually list are swept. Cluster-scoped kinds
+          # (clusterrole, clusterrolebinding, *webhookconfiguration) and role/rolebinding
+          # are `list=no` for system:serviceaccount:actions-runner-system:github-actions-runner,
+          # so including them was pure breakage — it never detected anything, it only
+          # made the step exit non-zero. A cluster-scoped leak is instead prevented at
+          # source: CI renders and dry-runs, it never live-installs (#986/#989).
+          echo "🧹 Sweeping any Helm objects leaked from $TEST_NAMESPACE..."
+          NS_KINDS="deployment,statefulset,daemonset,serviceaccount,configmap,service"
 
           # Emit "<kind>\t<name>\t<namespace>" for objects whose Helm release-namespace
-          # annotation matches this run's ci-test namespace ("" namespace = cluster-scoped).
+          # annotation matches this run's ci-test namespace.
           # One-liner so no flush-left line terminates the YAML block scalar.
           select_leaked() {
             python3 -c "import json,sys; ns=sys.argv[1]; d=json.load(sys.stdin); [print(o.get('kind','')+'\t'+o['metadata'].get('name','')+'\t'+(o['metadata'].get('namespace') or '')) for o in d.get('items',[]) if (o['metadata'].get('annotations') or {}).get('meta.helm.sh/release-namespace')==ns]" "$TEST_NAMESPACE" 2>/dev/null
           }
 
-          {
-            kubectl get $CLUSTER_KINDS -l app.kubernetes.io/managed-by=Helm -o json 2>/dev/null | select_leaked
-            kubectl get $NS_KINDS -A -l app.kubernetes.io/managed-by=Helm -o json 2>/dev/null | select_leaked
-          } | while IFS=$'\t' read -r kind name ons; do
-            [[ -z "$kind" || -z "$name" ]] && continue
-            if [[ -n "$ons" ]]; then
-              echo "  🗑️  $kind/$name (ns $ons) — leaked, deleting"
-              kubectl delete "$kind" "$name" -n "$ons" --ignore-not-found=true
-            else
-              echo "  🗑️  $kind/$name (cluster-scoped) — leaked, deleting"
-              kubectl delete "$kind" "$name" --ignore-not-found=true
-            fi
-          done
-
-          echo "🧹 Cleaning up test namespace..."
-          kubectl delete namespace "$TEST_NAMESPACE" --ignore-not-found=true || {
-            echo "⚠️ Failed to delete namespace (RBAC) — $TEST_NAMESPACE may need manual cleanup"
-            exit 0
-          }
-          echo "✅ Cleaned up test namespace: $TEST_NAMESPACE"
+          kubectl get $NS_KINDS -A -l app.kubernetes.io/managed-by=Helm -o json 2>/dev/null \
+            | select_leaked \
+            | while IFS=$'\t' read -r kind name ons; do
+                [[ -z "$kind" || -z "$name" || -z "$ons" ]] && continue
+                echo "  🗑️  $kind/$name (ns $ons) — leaked, deleting"
+                kubectl delete "$kind" "$name" -n "$ons" --ignore-not-found=true
+              done
+          echo "✅ Sweep complete"
 
   security-scan:
     name: Security Scan
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes]
     if: needs.validate-changes.result == 'success'
     timeout-minutes: 15
@@ -898,7 +915,7 @@ jobs:
 
   policy-validation:
     name: Kyverno Policy Validation
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes]
     if: needs.validate-changes.result == 'success'
     timeout-minutes: 5
@@ -1088,7 +1105,7 @@ jobs:
 
   validate-terraform:
     name: Validate Terraform Modules
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes]
     if: needs.validate-changes.result == 'success'
     timeout-minutes: 10
@@ -1175,7 +1192,7 @@ jobs:
 
   notify-success:
     name: Notify Success
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes, integration-test, security-scan, policy-validation, validate-terraform]
     if: success()
     steps:
@@ -1187,7 +1204,7 @@ jobs:
 
   notify-failure:
     name: Notify Failure
-    runs-on: vollminlab
+    runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
     needs: [validate-changes, integration-test, security-scan, policy-validation, validate-terraform]
     if: failure()
     steps:
