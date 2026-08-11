@@ -77,15 +77,49 @@ in_cooldown() {
   [ "$delta" -lt "$cd" ]
 }
 
+# active_backups: names of Backup objects that are not in a terminal phase.
+#
+# Written as an exclusion, not an inclusion: Velero has added phases over time
+# (WaitingForPluginOperations*, Finalizing*, Queued) and a phase this script has
+# never heard of must default to "still running", or the healer would silently
+# stop watching it. An empty phase (<none>, freshly created) is active too.
+active_backups() {
+  kc get backups.velero.io -n "$PVB_NAMESPACE" --no-headers \
+    -o custom-columns='NAME:.metadata.name,PHASE:.status.phase' 2>/dev/null \
+    | while read -r bname bphase; do
+        case "$bphase" in
+          Completed|PartiallyFailed|Failed|FailedValidation|Deleting) ;;
+          *) echo "$bname" ;;
+        esac
+      done
+}
+
 # pvb_rows: one line per PodVolumeBackup -- "name phase node acceptedTimestamp".
+#
+# Scoped to the in-flight backups via the velero.io/backup-name label. This is
+# NOT an optimisation: PVBs are retained for the life of their backup (the B2
+# schedules keep 2160h), so an unscoped list is ~7,000 objects and kubectl's
+# decode OOM-killed this 64Mi container on every single run. Scoping bounds it
+# at the PVB count of one backup -- ~21 -- permanently, whereas raising the
+# memory limit only defers the same failure as the cluster grows.
+#
+# Only active backups are considered, and that is sufficient: FSB is head-of-line
+# blocked in backupper.go, so a PVB can only be stalling a backup that is still
+# running. If a backup does hit itemOperationTimeout and leaves orphaned Prepared
+# PVBs behind, the leaked node-agent slot poisons the *next* backup, whose own
+# Prepared PVB the healer then catches on the same node.
+#
 # custom-columns rather than jsonpath because it renders a missing field as
 # <none> instead of an empty string, which would shift the columns apart under
 # word splitting. The node comes from .spec.node: .status.node exists in the CRD
 # but is not populated in v1.18.1.
 pvb_rows() {
-  kc get podvolumebackups.velero.io -n "$PVB_NAMESPACE" --no-headers \
-    -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,NODE:.spec.node,ACCEPTED:.status.acceptedTimestamp' \
-    2>/dev/null
+  for b in $(active_backups); do
+    kc get podvolumebackups.velero.io -n "$PVB_NAMESPACE" --no-headers \
+      -l "velero.io/backup-name=$b" \
+      -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,NODE:.spec.node,ACCEPTED:.status.acceptedTimestamp' \
+      2>/dev/null
+  done
 }
 
 # busy_nodes: echo the nodes holding a legitimate datapath slot right now. A PVB
