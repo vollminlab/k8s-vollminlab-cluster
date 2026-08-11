@@ -80,6 +80,7 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `authentik` | `server` | 9000 | authentik-server HTTP (homepage widget) | allow-homepage ingress (from homepage) |
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
+| `authentik` | n/a (egress target → ingress-nginx) | 80 | cloudflared tunnel **origin** — `ingress-nginx-controller.ingress-nginx.svc:80`; svc 80→targetPort `http`→containerPort 80 | allow-cloudflared-nginx-egress egress (`app: cloudflared-authentik` only) |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `minio` | `minio` | 9000 | S3 API — reached by the Helm post-upgrade hook pod (`app: minio-job`) to create buckets/users | allow-post-job-egress (from hook) + allow-post-job-ingress (to minio); intra-namespace |
 | `tofu` | n/a (egress target → mediastack) | 7878/8989/8787/9696 | radarr/sonarr/readarr/prowlarr API (arr Terraform providers) | allow-mediastack-arr-egress egress |
@@ -89,6 +90,15 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
 truth — do not rely on service port numbers.
+
+**A cloudflared tunnel needs two egress rules, not one.** Reaching the Cloudflare edge (7844) and
+reaching the tunnel's *origin* are separate hops, and only the first one fails loudly — the
+Cloudflare dashboard shows the tunnel healthy while every request 502s. In a default-deny namespace
+the origin hop needs its own rule; if the origin is in another namespace (e.g.
+`ingress-nginx-controller.ingress-nginx.svc:80`), it needs a `namespaceSelector`. LAN clients
+mask this completely, because Pi-hole's A-record override sends them straight to the ingress VIP
+and never through the tunnel — so the breakage is visible only from outside. This went unnoticed
+for ~68 days between #875 and its fix.
 
 **The port trap applies to egress too.** A `tofu`-namespace example: the harbor provider dials the
 Harbor VIP on `:443`, but the LoadBalancer remaps `443→8443` and egress policy is evaluated

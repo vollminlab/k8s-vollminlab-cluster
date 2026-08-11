@@ -240,3 +240,44 @@ spec:
     - ports:
         - protocol: TCP
           port: 465
+---
+# Allow cloudflared to reach its tunnel origin. The authentik tunnel routes
+# authentik.vollminlab.com (and the nginx tunnel routes filebrowser) to
+# http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80, which
+# is a *cross-namespace* hop the default-deny egress policy blocks.
+#
+# Regression history: #641 repointed the tunnel at ingress-nginx:80 while this
+# namespace still had no NetworkPolicies. #875 added default-deny and broke the
+# tunnel outright. #889 restored port 7844 so cloudflared could reach the
+# Cloudflare edge again — but never restored the origin hop, so every external
+# request has terminated in a 502 since then (`dial tcp <nginx-clusterip>:80:
+# i/o timeout` in the cloudflared log). LAN clients never noticed because
+# Pi-hole overrides the A record to the ingress VIP and bypasses the tunnel.
+#
+# Port 80 is correct here: the controller's http containerPort is 80 (svc
+# 80 -> targetPort http -> containerPort 80), verified against the pod. Scoped
+# to the cloudflared pod rather than podSelector: {} so authentik's own pods
+# gain no new egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cloudflared-nginx-egress
+  namespace: authentik
+  labels:
+    app: authentik
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: cloudflared-authentik
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
