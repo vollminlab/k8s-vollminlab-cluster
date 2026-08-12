@@ -1,0 +1,105 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vollminlab-data-loss-rules
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # Silent data loss detection.
+    #
+    # On 2026-07-02 an e2fsck on pvc-audiobookshelf-metadata cleared inodes damaged by
+    # ext4 metadata corruption, destroying ~200 cover images. Nothing alerted: Longhorn
+    # reported the volume `healthy` throughout (it compares replicas to each other, not
+    # to a filesystem), VolSync kept backing the volume up successfully, and the loss was
+    # only noticed six weeks later when a human looked at the UI. By then the last good
+    # restic snapshot was one day from falling out of the 7-daily/4-weekly/3-monthly
+    # retention window.
+    #
+    # These two rules catch that class of event. They are deliberately narrow: an alert
+    # that cries wolf gets muted, and a muted alert is worth nothing six weeks later.
+    - name: data-loss
+      rules:
+        # A PVC losing more than half its content in an hour is either a deletion nobody
+        # intended or a filesystem repair that discarded data. Legitimate large deletions
+        # exist on this cluster, so the PVCs that churn by design are excluded by name
+        # rather than by raising the threshold — raising it would also hide real events.
+        #
+        # Excluded, with the reason each one churns:
+        #   storage-loki-0            — compactor retention deletes (720h)
+        #   prometheus-.*             — TSDB block compaction
+        #   server-volume-victoria-.* — VM retention merges
+        #   harbor-registry           — registry garbage collection
+        #   pvc-incomplete-downloads  — download staging, empties on completion
+        #   pvc-completed-downloads   — import moves files out to the media shares
+        #   minio                     — object store, holds the backups themselves
+        #
+        # Validated against 30 days of history (2026-07-13 .. 2026-08-12): with these
+        # exclusions the rule fires zero times. Replayed against the real event window it
+        # fires on mediastack/pvc-audiobookshelf-metadata at 12:30 UTC on 2026-07-02,
+        # 28 minutes after the fsck (210.39 MiB -> 82.39 MiB, a 60.8% drop).
+        #
+        # The 100Mi floor keeps small config volumes from alerting on ordinary rotation,
+        # where a few MiB of movement is a large percentage.
+        - alert: PVCUsageCliff
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"}
+              /
+              (kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 1h)
+            ) < 0.5
+            and
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 1h
+            ) > 104857600
+          # Long enough to ride out a single bad scrape, short enough that the alert
+          # arrives while the data is still in every backup. The measured event held the
+          # condition for at least 30 minutes.
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} lost over half its data in an hour"
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is now at
+              {{ $value | humanizePercentage }} of its usage one hour ago. Nothing on this
+              cluster deletes that much at once by design. Check for a filesystem repair
+              (`dumpe2fs -h` on the Longhorn volume — a recent "Last checked" means fsck
+              ran and discarded data) before the current backups age out the last good
+              copy. Runbook: docs/runbooks/longhorn-ext4-corruption.md
+
+        # The same class of loss seen from the backup side.
+        #
+        # A VolSync restic snapshot that suddenly holds far less than the volume it came
+        # from means the loss already reached the backups. This is the last line of
+        # defence: it fires after the data is gone, but while older snapshots may still
+        # hold a good copy. Deliberately generous (24h, 50%) because VolSync runs daily
+        # and a missed run must not alert on its own.
+        - alert: PVCUsageCliffSustained
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"}
+              /
+              (kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 24h)
+            ) < 0.5
+            and
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 24h
+            ) > 104857600
+          # 6h means this only fires once the shrunken state has persisted well past any
+          # transient dip, so it does not simply duplicate PVCUsageCliff above.
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} has stayed far below yesterday's size"
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has held at
+              {{ $value | humanizePercentage }} of its size 24h ago for six hours. If
+              PVCUsageCliff did not already fire, this loss predates the alert or happened
+              gradually. Check whether the current VolSync snapshot still contains the
+              missing data before retention discards the last good one.
