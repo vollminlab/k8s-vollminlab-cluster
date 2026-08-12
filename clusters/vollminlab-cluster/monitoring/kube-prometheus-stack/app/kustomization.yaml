@@ -15,6 +15,7 @@ resources:
   - grafana-admin-credentials-externalsecret.yaml
   - prometheusrule-custom.yaml
   - prometheusrule-cnpg.yaml
+  - prometheusrule-data-loss.yaml
   - prometheusrule-eso.yaml
   - prometheusrule-gitops.yaml
   - prometheusrule-victoria-metrics.yaml
