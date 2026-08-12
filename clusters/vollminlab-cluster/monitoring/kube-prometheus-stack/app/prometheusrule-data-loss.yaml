@@ -48,13 +48,19 @@ spec:
         - alert: PVCUsageCliff
           expr: |
             (
-              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"}
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              }
               /
-              (kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 1h)
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              } offset 1h
             ) < 0.5
             and
             (
-              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 1h
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              } offset 1h
             ) > 104857600
           # Long enough to ride out a single bad scrape, short enough that the alert
           # arrives while the data is still in every backup. The measured event held the
@@ -82,13 +88,19 @@ spec:
         - alert: PVCUsageCliffSustained
           expr: |
             (
-              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"}
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              }
               /
-              (kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 24h)
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              } offset 24h
             ) < 0.5
             and
             (
-              kubelet_volume_stats_used_bytes{persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"} offset 24h
+              kubelet_volume_stats_used_bytes{
+                persistentvolumeclaim!~"storage-loki-0|prometheus-.*|server-volume-victoria-metrics-.*|harbor-registry|pvc-incomplete-downloads|pvc-completed-downloads|minio"
+              } offset 24h
             ) > 104857600
           # 6h means this only fires once the shrunken state has persisted well past any
           # transient dip, so it does not simply duplicate PVCUsageCliff above.
