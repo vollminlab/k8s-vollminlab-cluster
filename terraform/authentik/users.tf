@@ -57,7 +57,7 @@ resource "authentik_user" "chavelock" {
 
 resource "authentik_user" "rjutkiewicz" {
   username  = "rjutkiewicz"
-  name      = "Rickie Jutkiewicz"
+  name      = "Ricky Jutkiewicz"
   email     = "ricotheheavy@gmail.com"
   is_active = true
 
