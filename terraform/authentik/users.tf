@@ -54,3 +54,14 @@ resource "authentik_user" "chavelock" {
     ignore_changes = [password, groups]
   }
 }
+
+resource "authentik_user" "rjutkiewicz" {
+  username  = "rjutkiewicz"
+  name      = "Rickie Jutkiewicz"
+  email     = "ricotheheavy@gmail.com"
+  is_active = true
+
+  lifecycle {
+    ignore_changes = [password, groups]
+  }
+}
