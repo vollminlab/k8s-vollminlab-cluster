@@ -69,7 +69,7 @@ data:
       maxWorldSize: 29999984
       rcon:
         enabled: true
-        # Password is now stored in SealedSecret and passed via environment variable
+        # Password comes from the minecraft-rcon-secret Secret (ESO) via environment variable
     extraEnv:
       SIMULATION_DISTANCE: "6"
       PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/lfk408pd/bluemap-5.13-spigot.jar"

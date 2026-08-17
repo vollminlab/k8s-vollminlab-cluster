@@ -84,7 +84,7 @@ Guide for adding a new Helm-based application to the cluster following the estab
 
 6. **Verify labels**: All pod templates must have `app`, `env: production`, and `category` labels — Kyverno enforces this in enforce mode.
 
-7. **No plain Secrets**: If the app needs secrets, create a SealedSecret using `kubeseal`.
+7. **No plain Secrets**: If the app needs secrets, create an `ExternalSecret` sourced from 1Password via ESO.
 
 After creating files, remind the user to:
 - Open a PR (direct push to main is blocked)
