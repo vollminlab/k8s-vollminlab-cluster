@@ -338,11 +338,7 @@ jobs:
           useDefault = true
 
           [allowlist]
-          description = "Allow certificates, public keys, and SealedSecret ciphertext files"
-          paths = [
-            '''.*-sealedsecret\.yaml''',
-            '''pub-cert\.pem'''
-          ]
+          description = "Allow certificates and public keys"
           regexes = [
             '''-----BEGIN CERTIFICATE-----''',
             '''-----BEGIN PUBLIC KEY-----'''
