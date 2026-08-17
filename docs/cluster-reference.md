@@ -331,7 +331,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | Namespace | flux-system |
 | Ingress | `headlamp.vollminlab.com` |
 | TLS | wildcard-tls |
-| Plugin | headlamp-plugin-flux v0.6.0 (init container) |
+| Plugin | headlamp-plugin-flux v0.7.0 (init container) |
 | CPU | req: 150m, limits: 500m |
 | Memory | req: 256Mi, limits: 512Mi |
 
