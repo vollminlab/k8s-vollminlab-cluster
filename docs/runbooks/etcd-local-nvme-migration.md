@@ -102,6 +102,27 @@ quorum throughout, so there is no downtime.
 Do the **leader last** (or step it down first) to avoid an extra election mid-move. Identify the
 leader with `IS LEADER = true` in the endpoint status table.
 
+```mermaid
+flowchart TD
+    PRE0["Pre-flight: three CP VMs on three distinct hosts,<br/>etcd DB size, target datastore free space,<br/>a Completed Velero backup as the rollback floor"] --> ORD["Order the members — leader last.<br/><i>k8scp03, then k8scp02, then k8scp01</i>"]
+    ORD --> HEALTH
+
+    HEALTH{"Pre-check: do all three members<br/>report is healthy?"}
+    HEALTH -->|"no"| HOLD["Stop. Quorum is 2 of 3 —<br/>moving now has no margin."]
+    HEALTH -->|"yes"| MOVE["Storage vMotion this VM's disks to<br/>its own host's local NVMe — all VMDKs.<br/><i>VM stays powered on, sub-second stun</i>"]
+
+    MOVE --> GATE{"GATE — both must hold:<br/>three of three is healthy, and<br/>RAFT APPLIED INDEX converged and advancing"}
+    GATE -->|"not yet"| GATE
+    GATE -->|"unhealthy, or latency regressed"| RB["Roll back this VM's disks to the old datastore.<br/>Do not touch the next member."]
+    GATE -->|"converged"| NEXT{"Members remaining?"}
+
+    NEXT -->|"yes — next member"| HEALTH
+    NEXT -->|"no"| POST["Per VM: DRS must-run-on-this-host rule,<br/>HA restart disabled.<br/>Then reclaim the vacated CP datastore."]
+
+    classDef gate fill:#bf8700,stroke:#bf8700,color:#fff
+    class GATE gate
+```
+
 For each CP VM, in order `k8scp03 → k8scp02 → k8scp01` (non-leader members first; adjust to your
 live leader):
 

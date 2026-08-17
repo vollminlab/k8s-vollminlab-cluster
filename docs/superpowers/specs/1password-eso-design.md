@@ -41,21 +41,28 @@ Both `1password` and `external-secrets` are new namespaces following existing cl
 
 ### 3.2 Data Flow
 
-```
-1Password.com (cloud)
-       ↑  HTTPS :443
-1password-connect  (1password ns)
-  ├── credentials.json + ESO token Secret  ← manually bootstrapped during DR
-  └── PVC: 1Gi Longhorn (local cache — serves existing secrets if cloud briefly unreachable)
-       ↑  HTTP :8080 (cluster-internal)
-ClusterSecretStore  (name: onepassword-cluster-store)
-  └── connectTokenSecretRef → namespace: 1password / secret: onepassword-connect-token
-       ↑  resolves ExternalSecret CRs
-ESO operator  (external-secrets ns)
-       ↑
-All app namespaces → ExternalSecret CRs → K8s Secrets → pods
-                                                          ↓
-                                               Reloader detects Secret changes → restarts annotated pods
+```mermaid
+flowchart TD
+    OP["1Password.com<br/><i>Homelab vault — the source of truth</i>"] -->|"HTTPS 443"| CN["1password-connect<br/><i>1password namespace, single replica</i>"]
+    CN --> CACHE["Longhorn PVC, 1Gi<br/><i>local cache</i>"]
+    CACHE -.->|"cloud briefly unreachable:<br/>already-known secrets still resolve"| CN
+    CN -->|"HTTP 8080, cluster-internal"| CSS["ClusterSecretStore<br/>onepassword-cluster-store"]
+    CSS --> ESO["ESO operator<br/><i>external-secrets namespace</i>"]
+    ESO -->|"resolves, every refreshInterval"| ES["ExternalSecret CRs<br/><i>one per app, in the app's own namespace</i>"]
+    ES --> SEC["Kubernetes Secrets<br/><i>creationPolicy: Owner</i>"]
+    SEC --> POD["Pods<br/><i>secretKeyRef / valuesFrom</i>"]
+    SEC --> REL["Reloader"]
+    REL -->|"restarts annotated workloads"| POD
+
+    subgraph manual["Manually bootstrapped — the only non-automated inputs, applied before Flux"]
+        B1["1password-credentials.json"]
+        B2["Connect access token Secret"]
+    end
+    B1 -.->|"Connect cannot start without it"| CN
+    B2 -.->|"connectTokenSecretRef"| CSS
+
+    classDef boot fill:#8250df,stroke:#8250df,color:#fff
+    class B1,B2 boot
 ```
 
 ### 3.3 Why ClusterSecretStore (not per-namespace SecretStore)
