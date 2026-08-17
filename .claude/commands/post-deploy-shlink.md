@@ -10,7 +10,7 @@ Create all `go.vollminlab.com/<slug>` short links via the Shlink REST API. Run t
 ## Prerequisites
 
 1. Shlink backend is running and reachable at `https://go.vollminlab.com`
-2. You have the initial API key (from `shlink-credentials` SealedSecret, key `initial-api-key`)
+2. You have the initial API key (from the `shlink-credentials` Secret, key `initial-api-key`, materialized by ESO)
 3. Retrieve the key: `op read "op://Homelab/shlink-credentials/initial-api-key"` (or `kubectl get secret shlink-credentials -n shlink -o jsonpath='{.data.initial-api-key}' | base64 -d`)
 
 ## Steps
