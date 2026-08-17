@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: velero-pvb-healer
+  namespace: velero
+  labels:
+    app: velero-pvb-healer
+    env: production
+    category: storage
+spec:
+  # 10 min tick + a 15 min stall threshold => worst-case detection ~25 min,
+  # against the 4h itemOperationTimeout that is the only thing currently
+  # breaking the deadlock.
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      # backoffLimit 2 (not 0): the script never self-fails — every path returns
+      # 0 — so a Failed job means the pod died externally, usually the
+      # descheduler evicting this tiny Burstable pod off a hot node. With
+      # backoffLimit 0 that eviction alone would raise KubeJobFailed. Retrying is
+      # safe: the run is stateless and the cooldown annotation is written before
+      # the delete, so a retry cannot double-heal.
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: velero-pvb-healer
+            env: production
+            category: storage
+        spec:
+          serviceAccountName: velero-pvb-healer
+          restartPolicy: Never
+          containers:
+            - name: velero-pvb-healer
+              image: docker.io/alpine/kubectl:1.33.4
+              command: ["/bin/sh", "/scripts/heal.sh"]
+              env:
+                - name: PVB_NAMESPACE
+                  value: "velero"
+                # 15 min. Normal Prepared -> InProgress is seconds; the longest
+                # legitimate wait is a sibling PVB holding the node's single
+                # datapath slot, and that case is excluded by the InProgress
+                # guard rather than by this threshold.
+                - name: STALL_SECONDS
+                  value: "900"
+                - name: COOLDOWN_SECONDS
+                  value: "3600"
+                - name: NODE_AGENT_SELECTOR
+                  value: "name=node-agent"
+                - name: DRY_RUN
+                  value: "false"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 48Mi
+                limits:
+                  cpu: 200m
+                  # Headroom, not the fix -- the fix is scoping the PVB list in
+                  # heal.sh. 64Mi OOMKilled every run, and because the healer had
+                  # never once completed there was no evidence 64Mi sufficed even
+                  # for a kubectl call returning a handful of objects. 128Mi
+                  # covers the Go runtime baseline with margin.
+                  memory: 128Mi
+          volumes:
+            - name: script
+              configMap:
+                name: velero-pvb-healer-script

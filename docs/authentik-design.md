@@ -1,7 +1,13 @@
 # Authentik SSO Design
 
 **Created:** 2026-05-05
-**Status:** Approved — ready for implementation
+**Status:** Implemented — retained as the original design record
+
+> **Historical document.** This captures the design as approved on 2026-05-05 and is deliberately
+> not rewritten. One thing has changed since: every `SealedSecret` referenced below is now an
+> `ExternalSecret` sourced from 1Password via ESO — SealedSecrets were retired and the controller
+> removed on 2026-05-31. For the secrets workflow as it stands today see `.claude/rules/secrets.md`;
+> for the deployed architecture see `docs/cluster-reference.md`.
 
 ## Goal
 
