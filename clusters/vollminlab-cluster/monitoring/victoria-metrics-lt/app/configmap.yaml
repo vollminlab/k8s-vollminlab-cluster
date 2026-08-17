@@ -32,14 +32,19 @@ data:
           - ReadWriteOnce
         size: 750Gi
 
-      # Keeping this distinct from the hot tier's identity is deliberate: velero's
-      # victoria-metrics-b2 schedule must never sweep this 750Gi cold volume into
-      # a daily FSB pass.
+      # Keeping this distinct from the hot tier's identity is deliberate: no
+      # velero schedule may ever sweep this 750Gi cold volume into a daily FSB
+      # pass. FSB would walk a directory that background merges are actively
+      # rewriting and produce a torn copy; the backup-cronjob.yaml in this
+      # directory is the supported path, because vmbackup snapshots first.
       #
       # NOTE: the app key below does NOT survive — the chart sets its own
       # app=server on the pod, so both tiers end up labelled app=server and this
       # value only ever reaches env/category. The separation still holds, but it
       # holds by accident, via app.kubernetes.io/instance=victoria-metrics-lt.
+      # That same chart behaviour is what silently broke velero's old
+      # victoria-metrics-b2 schedule, which selected a label nothing carried and
+      # backed up zero volumes for its whole life (replaced by grafana-b2, #1078).
       # Do not rely on the app key here for backup scoping.
       #
       # Backup for this tier is TrueNAS ZFS snapshots of the pool_0 dataset (4wk,

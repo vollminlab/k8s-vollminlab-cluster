@@ -9,7 +9,7 @@ metadata:
     category: observability
 spec:
   # 07:30 UTC — deliberately clear of every velero window (03:00 daily-full,
-  # 04:00 daily-b2, 05:00 victoria-metrics-b2, 06:00 monthly-b2). All worker
+  # 04:00 daily-b2, 05:00 grafana-b2, 06:00 monthly-b2). All worker
   # VMDKs share one datastore and a full FSB pass already drives I/O-stall high;
   # this reads the same spindles, so it does not overlap with them.
   schedule: "30 7 * * *"
