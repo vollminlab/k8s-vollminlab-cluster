@@ -228,3 +228,51 @@ kubectl logs -n velero $(kubectl get pods -n velero --sort-by=.metadata.creation
 ## Gate for Cilium migration (Phase 8)
 
 Do not start the Cilium CNI migration until a `daily-full` backup shows `Completed` status and a test restore has been validated. First expected clean backup: **2026-04-23 at 2am UTC** (after circular backup fix in PR #410).
+
+## Backblaze B2 rejects `x-amz-tagging` — velero-plugin-for-aws is pinned at v1.14.0
+
+**Do not bump `velero-plugin-for-aws`.** `renovate.json5` holds it at v1.14.0 with
+`allowedVersions: "<=1.14.0"`, and the image line in the velero `configmap.yaml` says so too.
+
+The plugin sets `PutObjectInput.Tagging` unconditionally, even when the BSL's `tagging` config is
+empty — which is the default and our case:
+
+```go
+input := &s3.PutObjectInput{ Bucket: ..., Key: ..., Body: body, Tagging: aws.String(o.tagging) }
+```
+
+`aws-sdk-go-v2` used to drop the resulting empty header. From `service/s3` v1.97.3 it serializes
+`x-amz-tagging:` instead, and Backblaze rejects the header's *presence* — their S3 docs state it
+"will be explicitly rejected if it is included on the Copy Object (or Put Object) API calls".
+Every B2 backup then fails on the final `velero-backup.json` upload:
+
+```
+InvalidArgument: Unsupported header 'x-amz-tagging' received for this API call
+```
+
+**There is no config workaround.** An empty tag is exactly what breaks, and a non-empty one is
+rejected too, because B2 does not support object tagging at all. **v1.14.1 is not safe either** —
+`object_store.go` is byte-identical across v1.14.0/.1/.2, and the SDK jump (`service/s3`
+v1.48.0 → v1.97.3) landed in v1.14.1. The only safe version is v1.14.0.
+
+**When lifting the pin:** confirm upstream sets `Tagging` only when non-empty, and expect to also
+need `checksumAlgorithm: ""` on the `b2` BSL — the same SDK family breaks B2 on
+`x-amz-sdk-checksum-algorithm`, and that knob is currently unset because the old SDK never
+triggered it.
+
+### Two traps this incident is the canonical example of
+
+**A merged image bump is not a running image bump.** v1.14.2 merged 2026-08-11; the velero pod did
+not restart until 2026-08-17T03:19, and the first B2 backup after that restart failed. Six days
+separated the commit from the breakage, so the git-blame window and the outage window do not
+overlap. Never rule out a bump because "that merged last week and was fine" — check the pod's
+actual start time and its initContainer image:
+
+```bash
+kubectl get pods -n velero -l app.kubernetes.io/name=velero \
+  -o custom-columns='NAME:.metadata.name,START:.status.startTime,PLUGIN:.spec.initContainers[0].image'
+```
+
+**A healthy `daily-full` proves nothing about B2.** MinIO accepts `x-amz-tagging`; B2 does not. The
+schedule most likely to be watched is the one that cannot see this class of bug. When changing
+anything in the object-store path, verify against **both** BSLs.
