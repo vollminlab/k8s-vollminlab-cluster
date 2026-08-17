@@ -3,4 +3,4 @@ kind: Kustomization
 metadata:
   name: longhorn-trim
 resources:
-  - cronjob.yaml
+  - recurringjob.yaml

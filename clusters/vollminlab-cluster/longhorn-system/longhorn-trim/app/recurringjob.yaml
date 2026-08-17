@@ -1,0 +1,32 @@
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: filesystem-trim
+  namespace: longhorn-system
+  labels:
+    app: longhorn-trim
+    env: production
+    category: storage
+spec:
+  name: filesystem-trim
+  # Longhorn is thin-provisioned and only learns a block is free when the
+  # filesystem issues a discard, so `actualSize` drifts far above real usage
+  # until something trims. Measured 2026-08-17: prometheus held 19.5G of
+  # actualSize against 3.5G of live filesystem.
+  #
+  # This replaces a hand-rolled CronJob that curl'd the Longhorn REST API
+  # (#869). Longhorn 1.12.1 began shipping its own NetworkPolicies, and the
+  # `longhorn-manager` policy only admits Longhorn's own pods -- so from the
+  # 2026-08-17 03:20 chart upgrade onward the CronJob's volume listing was
+  # silently blocked and it trimmed 0 volumes while still exiting 0. A native
+  # RecurringJob runs as a longhorn-manager-owned pod, which that policy
+  # already allows, so it cannot be cut off by future chart policy changes.
+  task: filesystem-trim
+  # 06:00, after the 00:00-05:30 backup window and before the 12:00
+  # snapshot-retention purge -- trim is real replica I/O on the shared pool.
+  cron: "0 6 * * *"
+  # Every volume without explicit recurring-job labels.
+  groups:
+    - default
+  concurrency: 2
+  labels: {}
