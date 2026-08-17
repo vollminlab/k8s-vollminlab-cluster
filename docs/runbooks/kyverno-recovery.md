@@ -1,5 +1,34 @@
 # Kyverno Emergency Recovery
 
+Both recoveries below hinge on an ordering constraint where the intuitive order
+is the broken one: deleting the ClusterPolicy is not what unblocks the webhook
+(the restart is), and reconciling is not what clears a stuck HelmRelease (the
+rollback is).
+
+```mermaid
+flowchart TD
+    S{"Which failure?"}
+    S -->|"every pod op denied by<br/>mutate.kyverno.svc-fail"| K1["Read the broken policy name<br/>out of the denial message"]
+    S -->|"HelmRelease READY=False,<br/>error unchanged after the fix"| H1["helm history RELEASE"]
+
+    K1 --> K2["kubectl delete clusterpolicy BROKEN"]
+    K2 --> K3["kubectl rollout restart<br/>deployment/kyverno-admission-controller"]
+    K2 -.-> NOTE["Deleting the object is not enough —<br/>the compiled rule stays in the webhook's memory"]
+    K3 --> K4["Server-side dry-run a throwaway Deployment"]
+    K4 --> D{"Which webhook denies now?"}
+    D -->|"validate — restrict-default-namespace<br/><i>expected, mutations are flowing</i>"| KOK["Unblocked. Fix the policy in git, PR, merge,<br/>then flux resume kustomization kyverno-policies"]
+    D -->|"mutate.kyverno.svc-fail, still"| K2
+
+    H1 --> H2["helm rollback RELEASE"]
+    H2 --> H3["flux reconcile source helm,<br/>then the HelmRelease"]
+    H3 --> HOK["READY=True, Helm upgrade succeeded"]
+    H1 -.->|"the intuitive order"| TRAP["flux reconcile first:<br/>the failed revision in etcd is replayed<br/>and the stale error looks permanent"]
+    TRAP -.->|"rollback is what clears it"| H2
+
+    classDef trap stroke-dasharray: 4 3
+    class NOTE,TRAP trap
+```
+
 ## Webhook blocking all mutations
 
 Symptom: `admission webhook "mutate.kyverno.svc-fail" denied the request` on every pod/deployment operation.

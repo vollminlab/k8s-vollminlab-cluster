@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero-backup-content-guard
+  namespace: velero
+  labels:
+    app: velero-backup-content-guard
+    env: production
+    category: storage
+---
+# Role, not ClusterRole: every object this reads — Schedules, Backups and
+# PodVolumeBackups — lives in the velero namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velero-backup-content-guard
+  namespace: velero
+  labels:
+    app: velero-backup-content-guard
+    env: production
+    category: storage
+rules:
+  - apiGroups: ["velero.io"]
+    resources: ["schedules", "backups", "podvolumebackups"]
+    # Strictly read-only. This guard observes and reports; it never touches a
+    # backup. Its whole output is an exit code and an Event.
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velero-backup-content-guard
+  namespace: velero
+  labels:
+    app: velero-backup-content-guard
+    env: production
+    category: storage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: velero-backup-content-guard
+subjects:
+  - kind: ServiceAccount
+    name: velero-backup-content-guard
+    namespace: velero

@@ -49,13 +49,26 @@ Two halves, in two repos:
 
 ## How a pull flows
 
-1. A pod references `docker.io/foo/bar:tag` (or `redis:7-alpine`, etc.).
-2. containerd matches `docker.io` in `certs.d` → requests the manifest from
-   `https://harbor.vollminlab.com/v2/dockerhub-proxy/...`.
-3. Harbor checks its cache; on a miss it pulls from Docker Hub (authenticated),
-   caches the layers, and serves them.
-4. Library images map to `dockerhub-proxy/library/<name>`; org images to
-   `dockerhub-proxy/<org>/<name>`.
+```mermaid
+flowchart LR
+    POD["Pod references<br/>docker.io/library/NAME:tag"] --> CTD["containerd on the node<br/><i>config_path = /etc/containerd/certs.d</i>"]
+    CTD -->|"host entry matches docker.io"| HB["Harbor proxy-cache project<br/>dockerhub-proxy"]
+    HB --> Q{"Layers already cached?"}
+    Q -->|"hit"| LOCAL["Served in-cluster —<br/>no Docker Hub request at all"]
+    Q -->|"miss"| DH["Docker Hub<br/><i>authenticated with the read-only PAT,<br/>so the limit is well above anonymous</i>"]
+    DH --> STORE["Harbor caches the layers,<br/>then serves them"]
+    LOCAL --> POD
+    STORE --> POD
+
+    CTD -.->|"fallback — the server = registry-1.docker.io line,<br/>taken only when Harbor is unreachable"| ANON["Docker Hub, anonymous<br/><i>one cluster egress IP against ~100 pulls / 6h —<br/>the 429 storms are back</i>"]
+    ANON -.-> POD
+
+    classDef fallback stroke-dasharray: 4 3
+    class ANON fallback
+```
+
+Path mapping through the proxy: library images map to
+`dockerhub-proxy/library/<name>`; org images to `dockerhub-proxy/<org>/<name>`.
 
 ## Verifying it works
 

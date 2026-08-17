@@ -37,6 +37,27 @@ Any of these, especially in combination:
 
 ## Diagnosis — is it the source volume or just a bad clone?
 
+```mermaid
+flowchart TD
+    A["One PVC's VolSync backup is stale for days,<br/>every other backup succeeds"] --> B["Longhorn says robustness=healthy<br/>and the pod has been Running for weeks"]
+    B --> C["Record the exact fsck string —<br/>inode, block, offset"]
+    C --> D["Delete the clone PVC and the stuck mover pod<br/>so VolSync rebuilds a clone from a fresh snapshot"]
+    D --> E{"Does the new clone fail at the<br/>byte-identical inode, block and offset?"}
+
+    E -->|"different error, or it mounts clean"| T["Transient — a one-off torn write.<br/>Stop here. No repair window."]
+    E -->|"identical — two independently taken snapshots<br/>cannot reproduce one defect by chance"| R["Stable on-disk corruption<br/>in the source volume"]
+
+    R --> R1["flux suspend helmrelease<br/><i>or Flux re-scales it out from under you</i>"]
+    R1 --> R2["kubectl scale deploy --replicas=0"]
+    R2 --> R3{"Longhorn volume state = detached?"}
+    R3 -->|"not yet — keep waiting"| R3
+    R3 -->|"detached"| R4["Attach in Maintenance Mode,<br/>then e2fsck -fy /dev/longhorn/PV<br/><i>never against a still-attached volume —<br/>that makes the damage worse</i>"]
+    R4 --> R5["Detach, scale back to 1, flux resume"]
+    R5 --> V{"Does replicationsource lastSyncTime advance?"}
+    V -->|"no — repaired but unproven"| R4
+    V -->|"yes"| DONE["Done. The clone mounting fsck-clean<br/>is the only real confirmation."]
+```
+
 This is the key branch. A single failed clone can be a one-off torn write and is not worth a repair
 window. Corruption in the **source** volume is.
 
