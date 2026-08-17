@@ -47,7 +47,25 @@ data:
         cpu: 100m
         memory: 256Mi
       limits:
-        cpu: 500m
+        # CPU limit raised 500m -> 2000m on 2026-08-17. Measured over 30d, the
+        # container's peak 5m-average CPU was only 0.13 cores — but 30.6% of CFS
+        # scheduling periods were throttled. Those two numbers are not in tension:
+        # audiobookshelf is a single Node process whose work arrives in short bursts
+        # (stream start, library scan, progress sync), and a 500m quota is 50ms of
+        # every 100ms period. The bursts hit the ceiling and get clipped even while
+        # the 5m average looks idle. The symptom is latency on stream start, not a
+        # visible error.
+        #
+        # Only the *limit* moves. The 100m request is left alone, so scheduling and
+        # node packing are unchanged — k8sworker02 is at 75% of CPU *requests* and
+        # already 298% overcommitted on limits, which is the normal state for a
+        # burstable node. Raising a limit consumes no allocatable capacity.
+        #
+        # 2000m also covers the one case that genuinely needs a core: if a title ever
+        # has to be transcoded, ffmpeg wants ~0.5-1 full core, and under the old limit
+        # a single transcode saturated the whole container.
+        cpu: 2000m
+        # Unchanged. 30d peak working set was 280Mi against this 750Mi ceiling.
         memory: 750Mi
     podLabels:
       app: audiobookshelf
