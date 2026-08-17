@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: velero-backup-content-guard
+  namespace: velero
+  labels:
+    app: velero-backup-content-guard
+    env: production
+    category: storage
+spec:
+  # 09:00 UTC — after every backup window (03:00 daily-full, 04:00 daily-b2,
+  # 05:00 grafana-b2, 06:00 monthly-b2) and after the 07:30 vmbackup CronJob,
+  # with slack for a queue drain. Schedules run serially and itemOperationTimeout
+  # is 4h, so a 03:00 run can still be going at 07:00; 09:00 clears that.
+  #
+  # Daily is the right cadence: this checks yesterday's outcome, not live state,
+  # and a backup that captured nothing stays wrong until someone fixes it.
+  schedule: "0 9 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      # backoffLimit 0, unlike velero-pvb-healer's 2. The healer never self-fails,
+      # so a failed pod there means external disruption and retrying is right.
+      # This script fails *on purpose* to raise KubeJobFailed — retrying would
+      # just re-observe the same broken schedule and delay the alert.
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: velero-backup-content-guard
+            env: production
+            category: storage
+        spec:
+          serviceAccountName: velero-backup-content-guard
+          restartPolicy: Never
+          containers:
+            - name: velero-backup-content-guard
+              image: docker.io/alpine/kubectl:1.33.4
+              command: ["/bin/sh", "/scripts/guard.sh"]
+              env:
+                - name: VELERO_NAMESPACE
+                  value: "velero"
+                # One missed daily run plus slack for a long serial queue drain.
+                # Matches the CronJobNotSucceededRecently threshold so the two
+                # guards agree on what "stopped running" means.
+                - name: MAX_AGE_HOURS
+                  value: "26"
+                # 768h = 32 days: one monthly run plus slack. A monthly schedule
+                # cannot satisfy the 26h default.
+                - name: MAX_AGE_OVERRIDES
+                  value: "velero-monthly-b2:768"
+                # Empty: every schedule here sets defaultVolumesToFsBackup: true,
+                # so every one is expected to produce PodVolumeBackups. Add a
+                # schedule name here only if it deliberately captures Kubernetes
+                # objects and no volume data.
+                - name: SKIP_VOLUME_CHECK
+                  value: ""
+                - name: DRY_RUN
+                  value: "false"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 48Mi
+                limits:
+                  cpu: 200m
+                  # Same 128Mi as velero-pvb-healer after #1056. Every list this
+                  # makes is label-scoped — schedules (4), one backup, and one
+                  # backup's PVBs — so it never decodes the ~7,000-object
+                  # unscoped PVB set that OOM-killed the healer at 64Mi.
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: script
+              configMap:
+                name: velero-backup-content-guard-script
+            # readOnlyRootFilesystem is on, and the script writes its schedule
+            # list to $TMPDIR. Reading that list from a file rather than a pipe
+            # is deliberate — see the comment in guard.sh main().
+            - name: tmp
+              emptyDir: {}

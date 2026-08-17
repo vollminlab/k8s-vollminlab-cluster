@@ -2,7 +2,20 @@
 
 Use this when you have a new k8s service in the `dmz` namespace that needs to be reachable from the internet via `*.vollminlab.com`.
 
-The full stack is: **Cloudflare → HAProxy DMZ → UDM firewall → k8s NodePort**
+The full stack is: **Cloudflare → HAProxy DMZ → UDM firewall → k8s NodePort**. Each
+step below configures one hop of that path:
+
+```mermaid
+flowchart LR
+    C["Internet client<br/>NAME.vollminlab.com"] --> CF["Cloudflare<br/><i>Step 3 — proxied CNAME<br/>to dynamic.vollminlab.com</i>"]
+    CF --> HA["HAProxy DMZ pair<br/>haproxydmz01 + haproxydmz02<br/><i>Step 1 — acl, use_backend, backend on both<br/>Step 4 — wildcard TLS terminates here</i>"]
+    HA -->|"Step 2b — DMZ_LAN accept"| FW["UDM firewall"]
+    FW --> NP["NodePort on 192.168.152.15 and .16<br/><i>the dmz namespace service</i>"]
+    NP -.->|"Step 2c — LAN_DMZ, established/related<br/>the easy one to forget: without it<br/>the request just hangs"| FW
+    FW -.-> HA
+
+    PG["Step 2a — port firewall group<br/><i>the NodePort number</i>"] -.->|"referenced by both rules"| FW
+```
 
 ---
 

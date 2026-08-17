@@ -6,15 +6,33 @@ How to merge a PR when the self-hosted ARC runners are down.
 
 Every CI job in this repo normally runs on the self-hosted `vollminlab` runner set
 (ARC, `actions-runner-system` namespace). Branch protection makes those jobs
-required checks with `enforce_admins` on, so:
+required checks with `enforce_admins` on. The failure mode is a closed loop:
+dead runners block the checks, the blocked checks block the PR, and that PR is
+the one that would bring the runners back.
 
-- runners die →
-- required checks can never start →
-- the PR that would **fix** the runners can never merge →
-- runners stay dead.
+```mermaid
+flowchart LR
+    subgraph deadlock["The deadlock"]
+        direction TB
+        R["ARC runners down<br/><i>actions-runner-system</i>"] --> C["Required checks never start<br/><i>enforce_admins is on, so admin merge cannot help</i>"]
+        C --> P["The PR that would fix the runners cannot merge"]
+        P --> R
+    end
 
-Admin merge does not help (`enforce_admins` is enabled), and disabling branch
-protection to escape is worse than the outage.
+    C -->|"the only exit, and it comes from outside CI"| BG["gh variable set CI_RUNNER<br/><i>a GitHub API call — nothing about it runs on a runner</i>"]
+    BG --> H["Every job moves to GitHub-hosted runners<br/><i>runs-on falls back to vars.CI_RUNNER</i>"]
+    H --> M["Checks run, the fix PR merges"]
+    M --> F["Runners healthy again"]
+    F --> U["gh variable delete CI_RUNNER<br/><i>then re-run CI on main</i>"]
+
+    H -.->|"what you give up while it is set"| W["Integration Test steps skipped —<br/>no kubeconfig, so no server-side dry-run<br/><i>job still reports success, by design</i>"]
+
+    classDef cut fill:#1f6feb,stroke:#1f6feb,color:#fff
+    class BG cut
+```
+
+Nothing inside the loop breaks it. Admin merge does not help (`enforce_admins`
+is enabled), and disabling branch protection to escape is worse than the outage.
 
 ## The escape hatch
 

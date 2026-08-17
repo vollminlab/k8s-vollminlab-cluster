@@ -5,3 +5,5 @@ resources:
   - pv.yaml
   - configmap.yaml
   - helmrelease.yaml
+  - victoria-metrics-lt-b2-credentials-externalsecret.yaml
+  - backup-cronjob.yaml

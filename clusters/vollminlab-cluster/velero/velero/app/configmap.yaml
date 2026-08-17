@@ -290,7 +290,31 @@ data:
                 operator: NotIn
                 values:
                   - volsync
-      victoria-metrics-b2:
+      # Replaces the former `victoria-metrics-b2` schedule, which selected
+      # `app: victoria-metrics` — a label no pod or PVC in this namespace has
+      # ever carried (the chart forces `app: server`). It matched zero volumes
+      # and reported Completed / 0 errors / 4 items every night, so the failure
+      # was invisible: a Velero backup that captures nothing still succeeds.
+      #
+      # It is not re-pointed at victoria-metrics, because that data does not
+      # need Velero:
+      #   * Prometheus remote-writes the SAME stream to both tiers. Measured
+      #     over 7d: 10.915B samples to each, 0 dropped, 0 failed. The hot
+      #     tier's 30d is an exact subset of the cold tier's 395d.
+      #   * The cold tier is backed up to this same bucket by vmbackup, which
+      #     takes a real VictoriaMetrics snapshot. FSB cannot — it walks a
+      #     directory that background merges are rewriting, so it would produce
+      #     a torn copy even when it "succeeds".
+      #   * Pointing it at the hot tier would add ~41 GiB of nightly FSB reads
+      #     to the shared worker datastore, in the window that already drives
+      #     PSI full I/O-stall to 26-48%, to protect redundant data.
+      #
+      # Grafana is what actually needed a backup here. `monitoring` is in
+      # excludedNamespaces on all three other schedules, so its 1 GiB sqlite DB
+      # — UI-created dashboards, users, API keys, starred/prefs — was covered
+      # by nothing. The 35 sidecar dashboards are ConfigMap-provisioned and
+      # reproducible; grafana.db is not.
+      grafana-b2:
         disabled: false
         schedule: "0 5 * * *"
         useOwnerReferencesInBackup: false
@@ -303,6 +327,13 @@ data:
             parallelFilesUpload: 2
           includedNamespaces:
             - monitoring
+          # Must be a label carried by BOTH the pod and the PVC. The pod also
+          # has `app: grafana`, but the chart does not put that on the PVC — so
+          # selecting on it would back up the volume's contents while silently
+          # dropping the PVC object needed to restore them. That asymmetry is
+          # the same shape as the bug this schedule replaces; verify with
+          # `kubectl get pvc -n monitoring <name> -o jsonpath='{.metadata.labels}'`
+          # before changing it.
           labelSelector:
             matchLabels:
-              app: victoria-metrics
+              app.kubernetes.io/name: grafana
