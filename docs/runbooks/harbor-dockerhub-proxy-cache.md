@@ -25,7 +25,8 @@ Two halves, in two repos:
      `registry_id = harbor_registry.dockerhub.registry_id` (the `registry_id`
      argument is what makes a project a proxy cache).
    - Applied via the `harbor-config` tofu-controller workspace. Credentials live
-     in the `harbor-tf-credentials` SealedSecret (`tofu` namespace):
+     in the `harbor-tf-credentials` Secret (`tofu` namespace), materialized by ESO
+     from 1Password:
      `harbor_dockerhub_user` + `harbor_dockerhub_token`.
    - PAT stored in 1Password: **`vollminlab-harbor-proxy-cache`** (Homelab vault,
      read-only, username `vollmin`).
@@ -103,18 +104,16 @@ Ready gates.
 
 1. Generate a new **read-only** PAT in Docker Hub (Account settings → Personal
    access tokens). Save it to 1Password item `vollminlab-harbor-proxy-cache`.
-2. Re-seal it into the workspace secret (preserving the other keys):
+2. Update the field in the 1Password item — ESO picks it up on its next refresh
+   (1h), or force it immediately:
    ```bash
-   kubectl create secret generic harbor-tf-credentials -n tofu \
-     --from-literal=harbor_dockerhub_user='vollmin' \
-     --from-literal=harbor_dockerhub_token='<new-pat>' \
-     --dry-run=client -o yaml \
-   | kubeseal --controller-namespace sealed-secrets \
-       --controller-name sealed-secrets-controller --format yaml \
-       --merge-into clusters/vollminlab-cluster/tofu/harbor-config/app/harbor-tf-credentials-sealedsecret.yaml
+   kubectl annotate externalsecret harbor-tf-credentials -n tofu \
+     force-sync=$(date +%s) --overwrite
+   kubectl get externalsecret harbor-tf-credentials -n tofu   # READY=True
    ```
-3. PR → merge. The `harbor-config` workspace re-applies the registry with the
-   new credential. Cached images are unaffected.
+3. The `harbor-config` workspace re-applies the registry with the new credential
+   on its next reconcile. Cached images are unaffected. No PR is needed — the
+   value lives in 1Password, not in Git.
 
 ## Troubleshooting
 
