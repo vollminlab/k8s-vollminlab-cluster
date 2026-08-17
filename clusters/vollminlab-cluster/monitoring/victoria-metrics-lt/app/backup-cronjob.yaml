@@ -54,7 +54,13 @@ spec:
                 # live data directory mid-merge and produce a torn backup.
                 - -snapshot.createURL=http://victoria-metrics-lt-server.monitoring.svc:8428/snapshot/create
                 - -snapshot.deleteURL=http://victoria-metrics-lt-server.monitoring.svc:8428/snapshot/delete
-                - -dst=s3://vollminlab-k8s-backups/victoria-metrics-lt
+                # MUST NOT share velero's bucket. Velero's b2 BackupStorageLocation
+                # has no `prefix`, so it owns that bucket's root and marks itself
+                # Unavailable if it finds any top-level directory it does not
+                # recognise. Writing victoria-metrics-lt/ there on 2026-08-17 blocked
+                # every B2 backup with "backup can't be created because
+                # BackupStorageLocation b2 is in Unavailable status".
+                - -dst=s3://vollminlab-k8s-metrics/victoria-metrics-lt
                 - -customS3Endpoint=https://s3.us-west-000.backblazeb2.com
                 - -loggerFormat=json
               envFrom:
