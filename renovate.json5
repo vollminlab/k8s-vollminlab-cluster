@@ -76,6 +76,37 @@
       "matchUpdateTypes": ["major"],
       "labels": ["renovate", "dependencies", "major-update"],
       "automerge": false
+    },
+    {
+      // Held at v1.14.0 because every later release breaks Backblaze B2.
+      //
+      // The plugin sets PutObjectInput.Tagging unconditionally, even when the
+      // BSL `tagging` config is empty. aws-sdk-go-v2 used to omit the resulting
+      // empty header; from service/s3 v1.97.3 it sends `x-amz-tagging:`, and B2
+      // rejects that header's presence outright. Every B2 backup then fails on
+      // the velero-backup.json upload with:
+      //
+      //   InvalidArgument: Unsupported header 'x-amz-tagging' received for this
+      //   API call
+      //
+      // v1.14.1 and v1.14.2 are both affected -- object_store.go is identical
+      // across .0/.1/.2 and the SDK jump landed in v1.14.1 -- so this is a
+      // hold, not a "skip one bad release". There is no config workaround: an
+      // empty tag is what breaks, and a non-empty one is rejected too, because
+      // B2 does not support object tagging at all.
+      //
+      // MinIO accepts the header, so velero-daily-full keeps passing and hides
+      // this. It went unnoticed for 6 days between the v1.14.2 merge and the
+      // pod restart that actually started running it.
+      //
+      // To lift: confirm upstream only sets Tagging when non-empty, then expect
+      // to also need `checksumAlgorithm: ""` on the b2 BSL -- the same SDK
+      // family breaks B2 on x-amz-sdk-checksum-algorithm, and that config knob
+      // is currently unset.
+      "description": "Hold velero-plugin-for-aws at v1.14.0 — later versions break Backblaze B2 (x-amz-tagging)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["velero/velero-plugin-for-aws"],
+      "allowedVersions": "<=1.14.0"
     }
   ]
 }

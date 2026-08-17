@@ -26,9 +26,27 @@ data:
         memory: 1500Mi
 
     # AWS plugin provides S3-compatible support for both MinIO and Backblaze B2
+    #
+    # PINNED AT v1.14.0 — DO NOT BUMP. See the renovate.json5 packageRule that
+    # enforces this, and the "Backblaze B2 rejects x-amz-tagging" section in
+    # .claude/rules/velero.md.
+    #
+    # Short version: the plugin sets PutObjectInput.Tagging unconditionally, even
+    # when the BSL's `tagging` config is empty (which is our case, and the
+    # default). aws-sdk-go-v2 used to drop an empty header; from service/s3
+    # v1.97.3 it serializes `x-amz-tagging:` instead. Backblaze rejects that
+    # header outright -- their S3 docs say it "will be explicitly rejected if it
+    # is included on the Copy Object (or Put Object) API calls" -- so every B2
+    # backup fails on the final velero-backup.json upload.
+    #
+    # v1.14.1 and v1.14.2 are both affected: object_store.go is byte-identical
+    # across .0/.1/.2, and the SDK jump (service/s3 v1.48.0 -> v1.97.3) landed in
+    # v1.14.1. There is no config workaround -- an empty tag is what breaks, and
+    # a non-empty one is rejected too, because B2 does not support object
+    # tagging at all. MinIO is unaffected, so daily-full masks this entirely.
     initContainers:
       - name: velero-plugin-for-aws
-        image: velero/velero-plugin-for-aws:v1.14.2
+        image: velero/velero-plugin-for-aws:v1.14.0
         imagePullPolicy: IfNotPresent
         volumeMounts:
           - mountPath: /target
