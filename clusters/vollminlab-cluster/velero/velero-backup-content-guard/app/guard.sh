@@ -158,7 +158,12 @@ pvb_count() {
 emit_event() {
   reason="$1"; msg="$2"
   [ "$DRY_RUN" = "true" ] && return 0
-  kc create -n "$VELERO_NAMESPACE" -f - >/dev/null 2>&1 <<EOF || log "  (event emit failed, continuing)"
+  # The manifest is built into a variable rather than piped straight from a
+  # heredoc so the failure path can capture kubectl's stderr. The first version
+  # sent both streams to /dev/null and logged a bare "event emit failed", which
+  # meant a 100%-reproducible API rejection looked like a transient blip for a
+  # full day. Best-effort must still be diagnosable.
+  event_manifest=$(cat <<EOF
 apiVersion: v1
 kind: Event
 metadata:
@@ -168,12 +173,35 @@ type: Warning
 reason: $reason
 message: "$msg"
 involvedObject:
-  apiVersion: v1
-  kind: Namespace
-  name: $VELERO_NAMESPACE
+  # Must be a NAMESPACED object whose namespace equals the Event's, or the API
+  # rejects it with:
+  #   involvedObject.namespace: Invalid value: "": does not match event.namespace
+  # The original version referenced the velero Namespace itself, which is
+  # cluster-scoped and therefore has no namespace to match — so every event this
+  # script tried to emit was rejected and swallowed by the "|| log" below.
+  # Pointing at our own CronJob also surfaces the findings under the Events
+  # section of kubectl describe cronjob velero-backup-content-guard.
+  #
+  # NOTE: this heredoc is UNQUOTED, because it must interpolate the reason, msg
+  # and namespace variables. The shell therefore evaluates backticks, command
+  # substitution and variable references on EVERY line here, including YAML
+  # comment lines -- YAML comments are not shell comments. Keep this block free
+  # of shell metacharacters. Two earlier revisions did not: one embedded a
+  # backtick-quoted example command, and the shell ran it and spliced 60 lines
+  # of kubectl describe output into the middle of the manifest.
+  apiVersion: batch/v1
+  kind: CronJob
+  name: velero-backup-content-guard
+  namespace: $VELERO_NAMESPACE
 source:
   component: velero-backup-content-guard
 EOF
+)
+  if ! emit_err=$(printf '%s\n' "$event_manifest" | kc create -n "$VELERO_NAMESPACE" -f - 2>&1 >/dev/null); then
+    # Deliberately non-fatal: the exit code is this script's primary signal and
+    # must not depend on the events API. But say WHY.
+    log "  (event emit failed, continuing): $emit_err"
+  fi
 }
 
 main() {
