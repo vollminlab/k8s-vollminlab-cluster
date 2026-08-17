@@ -348,6 +348,55 @@ spec:
             summary: "Longhorn node {{ $labels.node }} storage below 15% free"
             description: "Longhorn storage node {{ $labels.node }} has less than 15% free. New replicas may fail to schedule. Expand the disk or evict replicas."
 
+        # Reclaim-path outcome check. Longhorn is thin-provisioned and only learns a
+        # block is free when the filesystem discards it, so `actualSize` drifts above
+        # real usage until the daily filesystem-trim RecurringJob runs.
+        #
+        # CronJobNotSucceededRecently (prometheusrule-gitops.yaml) already covers the
+        # job dying. It does NOT cover the job *succeeding while doing nothing*, which
+        # is exactly what happened on 2026-08-17: Longhorn 1.12.1 shipped a
+        # NetworkPolicy that blocked the old trim CronJob's API calls, and it logged
+        # "trimmed 0 volumes" and exited 0 every night (#1086). This alert watches the
+        # outcome instead of the mechanism, so it catches any future failure of the
+        # reclaim path regardless of cause.
+        #
+        # kubelet reports one series per node for RWX volumes (pvc-completed-downloads
+        # is mounted on several), so the right-hand side MUST be aggregated with
+        # `max by` — an unaggregated join fails with "many-to-many matching not allowed"
+        # rather than returning a wrong number.
+        #
+        # Threshold: measured floor after a working trim is ~26GB, which is space held
+        # by the deliberately retained snapshots of snapshot-retention (retain: 3), not
+        # waste. It was 67GB with trim broken. 60GB sits above the floor and below the
+        # broken state; revisit if snapshot retention changes.
+        - alert: LonghornStaleSpaceHigh
+          expr: |
+            sum(
+              longhorn_volume_actual_size_bytes
+              - on (pvc_namespace, pvc) group_left()
+                max by (pvc_namespace, pvc) (
+                  label_replace(
+                    label_replace(
+                      kubelet_volume_stats_used_bytes,
+                      "pvc_namespace", "$1", "namespace", "(.+)"
+                    ),
+                    "pvc", "$1", "persistentvolumeclaim", "(.+)"
+                  )
+                )
+            ) > 60e9
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn is holding {{ $value | humanize1024 }}B more than its filesystems use"
+            description: >-
+              Longhorn allocated size exceeds live filesystem usage cluster-wide by
+              {{ $value | humanize1024 }}B, above the ~26GB expected from retained
+              snapshots. The daily filesystem-trim RecurringJob is probably running but
+              reclaiming nothing — check that it logs per-volume "Running recurring
+              filesystem trim" lines, not just a successful exit:
+              `kubectl logs -n longhorn-system -l job-name=<latest filesystem-trim job>`.
+
     - name: minio
       rules:
         - alert: MinioDiskUsageHigh
