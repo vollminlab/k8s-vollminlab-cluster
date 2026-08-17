@@ -139,5 +139,5 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   # - ingress.yaml
-  # - *-sealedsecret.yaml
+  # - *-externalsecret.yaml
 ```

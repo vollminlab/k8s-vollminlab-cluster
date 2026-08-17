@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero-pvb-healer
+  namespace: velero
+  labels:
+    app: velero-pvb-healer
+    env: production
+    category: storage
+---
+# Role, not ClusterRole: everything the healer touches — PodVolumeBackups and
+# the node-agent DaemonSet pods — lives in the velero namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velero-pvb-healer
+  namespace: velero
+  labels:
+    app: velero-pvb-healer
+    env: production
+    category: storage
+rules:
+  - apiGroups: ["velero.io"]
+    resources: ["podvolumebackups"]
+    # patch is for the cooldown annotation, which is what stops the healer
+    # looping on a PVB that is stuck for some reason a node-agent restart
+    # cannot fix.
+    verbs: ["get", "list", "patch"]
+  - apiGroups: ["velero.io"]
+    resources: ["backups"]
+    # Read-only. Used to narrow the podvolumebackups list to the backups that are
+    # still running -- an unscoped PVB list is thousands of objects and OOM-kills
+    # the healer pod before it does any work.
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    # delete is scoped by the -l name=node-agent selector in the script; RBAC
+    # cannot express that, so the Role is namespace-bound instead.
+    verbs: ["get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velero-pvb-healer
+  namespace: velero
+  labels:
+    app: velero-pvb-healer
+    env: production
+    category: storage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: velero-pvb-healer
+subjects:
+  - kind: ServiceAccount
+    name: velero-pvb-healer
+    namespace: velero

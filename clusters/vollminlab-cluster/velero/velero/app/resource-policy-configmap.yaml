@@ -1,6 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # Name is historical — this policy now covers more than SMB. Renaming it would
+  # require updating the three `resourcePolicy.name` refs in configmap.yaml in
+  # lockstep, so the name is kept and the scope documented here instead.
   name: velero-skip-smb-policy
   namespace: velero
   labels:
@@ -11,8 +14,44 @@ data:
   policy.yaml: |
     version: v1
     volumePolicies:
+      # NAS shares — backed up by TrueNAS itself, not by Velero.
       - conditions:
           storageClass:
             - smb
+        action:
+          type: skip
+
+      # emptyDir is scratch space by definition: the kubelet deletes it when the
+      # pod is removed, so a restored pod can never receive its contents. Backing
+      # it up produces no recoverable data and is the single largest source of
+      # PodVolumeBackup failures on this cluster:
+      #
+      #   * "error identifying unique volume path on host" — the pod's
+      #     /host_pods/<uid> tree disappears mid-run (CNPG failovers, tf-runner
+      #     Jobs completing). Every volume of that pod fails together.
+      #   * "pods <x> not found" — same cause, later in the sequence.
+      #
+      # Measured 2026-08-11: of the FSB volumes Velero would attempt cluster-wide,
+      # 27 are live emptyDir and ~48 more are emptyDir already suppressed by
+      # per-app `backup.velero.io/backup-volumes-excludes` annotations, against
+      # 44 real PVCs. So ~63% of all FSB work was ephemeral scratch. Removing it
+      # also shortens the backup window, which is the mitigation for the nightly
+      # PSI I/O-stall (node-agent loadConcurrency is already pinned at 1 — see
+      # configmap.yaml).
+      #
+      # This supersedes the per-app annotation approach used in PRs #1009, #1033,
+      # #1034 and #1035. Those annotations are now redundant but harmless; leave
+      # them until a separate cleanup PR.
+      #
+      # Only emptyDir is listed. Velero's FSB path already skips hostPath, secret,
+      # configMap, projected and downwardAPI volumes unconditionally
+      # (pkg/util/podvolume/pod_volume.go GetVolumesByPod, v1.18.1), so listing
+      # them here would be dead configuration.
+      #
+      # PVC-backed volumes are deliberately NOT skipped — pgdata, registry-data,
+      # config, metadata, media, backupdir and datadir hold real state.
+      - conditions:
+          volumeTypes:
+            - emptyDir
         action:
           type: skip

@@ -24,6 +24,60 @@ import {
   id = "13"
 }
 
+# Brand
+# Adopted so flow_recovery can be managed. See brand.tf before touching this.
+import {
+  to = authentik_brand.default
+  id = "927170f2-2f03-4a38-a93d-7dc78ab2ce61"
+}
+
+# Force-password-reset machinery on default-authentication-flow.
+# Pre-existing live configuration, previously untracked by tofu.
+import {
+  to = authentik_policy_expression.reset_password_check
+  id = "69de4175-d6d4-4ab5-98d5-28a579e2f40b"
+}
+
+import {
+  to = authentik_policy_expression.reset_password_update
+  id = "2155711f-90a7-4df7-94f0-3ee4cbfc75e2"
+}
+
+import {
+  to = authentik_stage_prompt_field.reset_password_banner
+  id = "7d626c05-cca7-4d33-a899-81313c92c0b7"
+}
+
+import {
+  to = authentik_stage_prompt.force_password_reset
+  id = "84da7a0e-72ad-4963-9f75-6e65c7e74bef"
+}
+
+import {
+  to = authentik_stage_user_write.force_password_reset
+  id = "0edaaf79-4b1c-4beb-aa64-95dd687909f2"
+}
+
+import {
+  to = authentik_flow_stage_binding.force_password_reset_prompt
+  id = "853fe153-b1fa-45e5-a21d-53efe39eb529"
+}
+
+import {
+  to = authentik_flow_stage_binding.force_password_reset_write
+  id = "a0386916-df68-4349-b061-bc4aa79c8355"
+}
+
+import {
+  to = authentik_policy_binding.reset_password_check
+  id = "1572a181-c15d-4529-a86e-c0676dc24789"
+}
+
+import {
+  to = authentik_policy_binding.reset_password_update
+  id = "321ade2c-adbc-47c0-8ccd-24761f62c957"
+}
+
 # Groups
 import {
   to = authentik_group.audiobookshelf_admins

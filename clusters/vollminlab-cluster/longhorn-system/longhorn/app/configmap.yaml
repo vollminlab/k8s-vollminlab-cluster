@@ -9,6 +9,15 @@ metadata:
     category: storage
 data:
   values.yaml: |
+    # Longhorn 1.12.1 began rendering NetworkPolicies for the manager, webhook,
+    # instance-manager and backing-image components. They allow ingress only from
+    # named Longhorn pods, which silently blocked Prometheus from scraping
+    # longhorn-manager:9500 — 100% of longhorn-backend targets went down and
+    # TargetDown fired minutes after the upgrade. This cluster has never had
+    # NetworkPolicies in longhorn-system; set it explicitly so a future chart
+    # default cannot re-enable them without us choosing to.
+    networkPolicies:
+      enabled: false
     defaultSettings:
       defaultReplicaCount: 3
       defaultDataPath: /var/lib/longhorn
