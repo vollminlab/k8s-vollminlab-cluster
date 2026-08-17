@@ -76,3 +76,14 @@ resource "authentik_user" "speterson" {
     ignore_changes = [password, groups]
   }
 }
+
+resource "authentik_user" "bhasslinger" {
+  username  = "bhasslinger"
+  name      = "Brandon Hasslinger"
+  email     = "brandon.hasslinger17@gmail.com"
+  is_active = true
+
+  lifecycle {
+    ignore_changes = [password, groups]
+  }
+}
