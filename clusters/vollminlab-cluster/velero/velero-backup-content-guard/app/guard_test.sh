@@ -18,7 +18,35 @@ assert_rc() { # $1=actual_rc $2=expected_rc $3=msg
   else printf 'FAIL - %s (rc got [%s] want [%s])\n' "$3" "$1" "$2"; FAILS=$((FAILS+1)); fi
 }
 
-# Events are not under test; silence them everywhere.
+# --- emit_event manifest shape -------------------------------------------------
+# Run BEFORE emit_event is stubbed out below. This block exists because the Event
+# manifest broke twice in a row and both failures were invisible: emit_event is
+# best-effort by design, so a 100%-reproducible API rejection just logged a bare
+# "event emit failed" once a day.
+EV=/tmp/guard_test_event.$$
+VELERO_NAMESPACE=velero
+DRY_RUN=false
+kc() { cat > "$EV"; }   # capture the manifest instead of calling kubectl
+
+# A message containing the shell metacharacters most likely to be injected. The
+# heredoc that builds this manifest is unquoted, so anything evaluated here ends
+# up spliced into the YAML.
+emit_event "TestReason" 'phase Failed. Check `kubectl get nodes` and $(hostname) now.'
+
+lines=$(wc -l < "$EV" | tr -d ' ')
+if [ "$lines" -lt 40 ]; then printf 'ok   - %s\n' "emit_event manifest stays small ($lines lines, no command output spliced in)"
+else printf 'FAIL - %s\n' "emit_event manifest ballooned to $lines lines — shell evaluated something in the heredoc"; FAILS=$((FAILS+1)); fi
+
+grep -q '^  kind: CronJob$' "$EV"; assert_rc "$?" "0" "involvedObject is a namespaced kind"
+grep -q '^  namespace: velero$' "$EV"; assert_rc "$?" "0" "involvedObject carries a namespace (the API rejects it otherwise)"
+# The Namespace kind is cluster-scoped, so it can never satisfy the API's
+# involvedObject.namespace == event.namespace rule. Guard against a regression.
+grep -q 'kind: Namespace' "$EV"; assert_rc "$?" "1" "involvedObject is NOT the cluster-scoped Namespace kind"
+# Signatures of the two real injections: kubectl describe output, and a hostname.
+grep -qE 'Pod Template:|Node-Selectors:|Concurrency Policy:' "$EV"; assert_rc "$?" "1" "no kubectl describe output spliced into the manifest"
+rm -f "$EV"
+
+# Events are not under test beyond this point; silence them everywhere.
 emit_event() { :; }
 
 # --- strip_zero / rfc3339_to_epoch (shared with heal.sh) ---
