@@ -331,7 +331,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | Namespace | flux-system |
 | Ingress | `headlamp.vollminlab.com` |
 | TLS | wildcard-tls |
-| Plugin | headlamp-plugin-flux v0.6.0 (init container) |
+| Plugin | headlamp-plugin-flux v0.7.0 (init container) |
 | CPU | req: 150m, limits: 500m |
 | Memory | req: 256Mi, limits: 512Mi |
 
@@ -780,7 +780,7 @@ per-namespace port table.
 | Min runners | 4 |
 | Max runners | 10 |
 | Runner image | `ghcr.io/actions/actions-runner:2.332.0` |
-| DinD sidecar | `docker:26-dind` (privileged, tcp://localhost:2375) |
+| DinD sidecar | `docker:29-dind` (privileged, tcp://localhost:2375) |
 | Runner CPU | req: 500m, limits: 2000m |
 | Runner memory | req: 512Mi, limits: 2Gi |
 
