@@ -780,7 +780,7 @@ per-namespace port table.
 | Min runners | 4 |
 | Max runners | 10 |
 | Runner image | `ghcr.io/actions/actions-runner:2.332.0` |
-| DinD sidecar | `docker:26-dind` (privileged, tcp://localhost:2375) |
+| DinD sidecar | `docker:29-dind` (privileged, tcp://localhost:2375) |
 | Runner CPU | req: 500m, limits: 2000m |
 | Runner memory | req: 512Mi, limits: 2Gi |
 
