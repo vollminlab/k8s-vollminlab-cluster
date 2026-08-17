@@ -15,7 +15,7 @@
 
 ## Executive summary
 
-Overall posture is **solid for a homelab**: SealedSecrets-only with gitleaks CI, all ingresses TLS, a genuinely well-built DMZ (default-deny + explicit allows), strong GitOps discipline (no `:latest`, exact version pins, complete Flux indexes, no suspended resources), and a real Kyverno enforce baseline.
+Overall posture is **solid for a homelab**: ESO + 1Password with gitleaks CI (SealedSecrets-only at the time of this audit; migrated 2026-05-31), all ingresses TLS, a genuinely well-built DMZ (default-deny + explicit allows), strong GitOps discipline (no `:latest`, exact version pins, complete Flux indexes, no suspended resources), and a real Kyverno enforce baseline.
 
 The material gaps are **architectural, not "anyone can walk in"**:
 

@@ -104,15 +104,28 @@ Custom config applied via `bootstrap/coredns/coredns-configmap.yaml`. Not Flux-m
 
 These are applied manually before Flux bootstraps. They are never reconciled by Flux.
 
-### Sealed Secrets Sealing Key
+### 1Password Connect Credentials
 
-The cluster sealing key is backed up in 1Password as **"Sealed Secrets Sealing Key"**.
+The DR-critical root secret. Everything else is materialized from it, so it must exist before
+anything that consumes a Secret can start.
 
-Must be restored **before** Flux bootstraps on a new cluster. Full procedure: [bootstrap/sealed-secrets/README.md](../bootstrap/sealed-secrets/README.md).
+| Parameter | Value |
+|---|---|
+| Secret name | `onepassword-connect` |
+| Namespace | `1password` |
+| Keys | `1password-credentials.json`, `token` |
+| Backed up in | 1Password (Homelab vault) |
+| Flux-managed | **No** — it would be a chicken-and-egg dependency |
+
+Must be applied **before** Flux bootstraps on a new cluster, so 1Password Connect and ESO come up
+able to sync every other Secret from the vault.
 
 ```bash
-# Restore key before Flux bootstrap
-kubectl apply -f <exported-yaml-from-1password>
+# Apply before Flux bootstrap
+kubectl create namespace 1password
+kubectl create secret generic onepassword-connect -n 1password \
+  --from-file=1password-credentials.json=<from-1password> \
+  --from-literal=token=<from-1password>
 ```
 
 ### Bootstrap Order
@@ -234,21 +247,29 @@ All volumes are `ReadWriteMany`, `100Gi`, backed by SMB shares at `192.168.150.2
 | UI resources | req: 50m/64Mi, limits: 100m/128Mi |
 | Reporter resources | req: 50m/64Mi, limits: 100m/128Mi |
 
-### Sealed Secrets Controller
+### Secrets — External Secrets Operator + 1Password Connect
+
+Every Secret in the cluster is materialized by ESO from 1Password. The repo holds only
+`ExternalSecret` CRs that reference vault items by name — never the values.
+
+```
+1Password (Homelab vault)
+  └─ 1Password Connect        (1password ns)
+       └─ ClusterSecretStore  (onepassword-cluster-store)
+            └─ ExternalSecret (per app, in the app's own namespace)
+                 └─ Secret    (creationPolicy: Owner)
+```
 
 | Parameter | Value |
 |---|---|
-| Chart version | v2.17.1 |
-| Release name | `sealed-secrets-controller` |
-| Helm repo | https://sealed-secrets.dev |
-| Image | `bitnami/sealed-secrets-controller:0.28.0` |
-| CPU | req: 50m, limits: 100m |
-| Memory | req: 32Mi, limits: 64Mi |
-| readOnlyRootFilesystem | true |
-| runAsNonRoot | true |
-| runAsUser | 1001 |
-| fsGroup | 65534 |
-| Reconcile interval | 15m |
+| ESO namespace | `external-secrets` |
+| Connect namespace | `1password` |
+| ClusterSecretStore | `onepassword-cluster-store` (cluster-scoped — usable from any namespace) |
+| Default refresh interval | 1h |
+
+> SealedSecrets was retired on 2026-05-31 and the controller removed. There are no SealedSecrets in
+> the repo and none may be added — a committed SealedSecret would never reconcile.
+> `bootstrap/sealed-secrets/` is kept as historical reference only.
 
 ---
 
@@ -261,7 +282,7 @@ All volumes are `ReadWriteMany`, `100Gi`, backed by SMB shares at `192.168.150.2
 | GitRepository | `https://github.com/svollmi1/k8s-vollminlab-cluster.git` |
 | Branch | `main` |
 | Pull interval | 1 minute |
-| Auth | SSH key via `flux-system-sealedsecret` |
+| Auth | SSH key in the `flux-system` Secret (created by `flux bootstrap`) |
 | Reconcile interval | 10 minutes (all Kustomizations) |
 | Prune | enabled (all Kustomizations) |
 
@@ -380,7 +401,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 
 | Name | Type | Notes |
 |---|---|---|
-| `letsencrypt-cloudflare` | ACME (DNS-01) | Let's Encrypt production; Cloudflare API token from `cloudflare-api-token` SealedSecret |
+| `letsencrypt-cloudflare` | ACME (DNS-01) | Let's Encrypt production; Cloudflare API token from the `cloudflare-api-token` Secret (ESO) |
 | `selfsigned` | Self-signed | Bootstrap issuer used only to create the internal CA cert |
 | `internal-ca` | CA | Signs certs for internal bare hostnames (e.g. `vl`); backed by `internal-ca-tls` secret in `cert-manager` namespace |
 
@@ -582,7 +603,7 @@ velero restore create --from-backup <backup-name>
 
 #### Full cluster rebuild restore
 
-1. Bootstrap the cluster (CNI, Flux, Sealed Secrets key from 1Password)
+1. Bootstrap the cluster (CNI, `onepassword-connect` Secret from 1Password, then Flux)
 2. Let Flux reconcile all namespaces from Git — this recreates all deployments
 3. Deploy MinIO first: `flux reconcile kustomization minio --with-source`
 4. Deploy Velero: `flux reconcile kustomization velero --with-source`
@@ -600,7 +621,7 @@ velero restore create --from-backup <backup-name>
 |---|---|
 | Chart | TrueCharts cloudflared 16.1.1 (OCIRepository) |
 | Namespace | `mediastack` |
-| Tunnel token | SealedSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
+| Tunnel token | ExternalSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
 | CPU | req: 50m, limits: 200m |
 | Memory | req: 64Mi, limits: 128Mi |
 
@@ -611,7 +632,7 @@ Two separate tunnels are deployed — one per externally-accessible media servic
 | Parameter | Value |
 |---|---|
 | Deployment | `cloudflared` in `mediastack` |
-| Tunnel token | SealedSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
+| Tunnel token | ExternalSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
 
 | Hostname | Internal target |
 |---|---|
@@ -622,7 +643,7 @@ Two separate tunnels are deployed — one per externally-accessible media servic
 | Parameter | Value |
 |---|---|
 | Deployment | `cloudflared-jellyfin` in `mediastack` |
-| Tunnel token | SealedSecret `cloudflared-jellyfin-tunnel-credentials` (1Password: store after sealing) |
+| Tunnel token | ExternalSecret `cloudflared-jellyfin-tunnel-credentials` (1Password: "Cloudflare Jellyfin Tunnel") |
 | CPU | req: 50m, limits: 200m |
 | Memory | req: 64Mi, limits: 128Mi |
 
@@ -638,7 +659,7 @@ Two separate tunnels are deployed — one per externally-accessible media servic
 |---|---|
 | Deployment | `cloudflared-authentik` in `authentik` |
 | Image | `cloudflare/cloudflared:2026.3.0` |
-| Tunnel token | SealedSecret `cloudflared-authentik-tunnel-credentials` (1Password: "Cloudflare Authentik Tunnel") |
+| Tunnel token | ExternalSecret `cloudflared-authentik-tunnel-credentials` (1Password: "Cloudflare Authentik Tunnel") |
 | Protocol | `--protocol http2` (pinned; keeps all edge connections on TCP) |
 | CPU | req: 50m, limits: 200m |
 | Memory | req: 64Mi, limits: 128Mi |
@@ -684,7 +705,7 @@ per-namespace port table.
 | Short domains | `vollm.in` (primary), `go.vollminlab.com`, `vl.vollminlab.com` |
 | Management UI | `shlink.vollminlab.com` |
 | Database | PostgreSQL (Bitnami subchart, bundled in shlink-backend) |
-| DB credentials | SealedSecret: `shlink-credentials` |
+| DB credentials | ExternalSecret: `shlink-credentials` |
 | Backend CPU | req: 100m, limits: 500m |
 | Backend memory | req: 256Mi, limits: 512Mi |
 | PostgreSQL CPU | req: 100m, limits: 500m |
@@ -755,7 +776,7 @@ per-namespace port table.
 | Chart | gha-runner-scale-set v0.14.0 (OCIRepository) |
 | Scale set name | vollminlab |
 | GitHub scope | org (github.com/vollminlab) |
-| Auth | GitHub App (sealed secret: `arc-githubapp-secret`) |
+| Auth | GitHub App (ExternalSecret: `arc-githubapp-secret`) |
 | Min runners | 4 |
 | Max runners | 10 |
 | Runner image | `ghcr.io/actions/actions-runner:2.332.0` |
@@ -924,7 +945,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 **Widgets:** Google search, resource usage (CPU/memory), datetime, greeting, OpenWeatherMap (imperial, 5-min cache).
 
-**Secret:** `homepage-env-vars` (SealedSecret) — API keys, weather coordinates, service credentials.
+**Secret:** `homepage-env-vars` (ExternalSecret) — API keys, weather coordinates, service credentials.
 
 ### Portainer
 
@@ -983,7 +1004,7 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 | Max players | 20 |
 | Difficulty | normal |
 | Max world size | 29,999,984 |
-| RCON | enabled (sealed secret: `minecraft-rcon-secret`) |
+| RCON | enabled (ExternalSecret: `minecraft-rcon-secret`) |
 | Plugins | BlueMap v5.13 (spigot) |
 | Service type | NodePort |
 | Minecraft port | NodePort `32565` |
