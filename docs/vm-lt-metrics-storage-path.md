@@ -92,8 +92,10 @@ realized by running a second instance with a longer retention on cheap disk.
 | Retention | `30d` | `395d` — about 13 months |
 | Volume | 60Gi, `longhorn-r2` StorageClass, replicated SSD | 750Gi, `local-vm-lt` StorageClass, single spinning disk |
 | Placement | soft pod anti-affinity, floats across general workers | **hard-pinned to k8sworker01** by PV `nodeAffinity` |
-| Pod label `app` | `victoria-metrics` | `victoria-metrics-lt` |
-| Backed up by Velero | yes — `velero-victoria-metrics-b2` schedule | **no, deliberately** |
+| Pod label `app` | `server` — the chart overrides whatever `podLabels` asks for | `server` — same |
+| Distinguishing label | `app.kubernetes.io/instance: victoria-metrics` | `app.kubernetes.io/instance: victoria-metrics-lt` |
+| Backed up by Velero | **no** — the hot tier is an exact subset of the cold tier | **no, deliberately** |
+| Backed up at all | not separately; see below | yes — `vmbackup` CronJob → B2 |
 | Grafana datasource uid | `prometheus` — the default | `victoriametrics-lt` |
 
 Retention values live in each tier's `configmap.yaml` under
@@ -204,15 +206,29 @@ systemctl show kubelet.service -p DropInPaths
 systemctl show kubelet.service -p After --value | grep -o 'mnt-vm.x2dlt.mount'
 ```
 
-### 2. The pod label `app: victoria-metrics-lt` is load-bearing
+### 2. The `app` label you write in `podLabels` is not the label the pod gets
 
-The Velero schedule `velero-victoria-metrics-b2` selects on `matchLabels: {app: victoria-metrics}`.
-Labelling the cold tier `victoria-metrics` — the obvious, tidy-looking thing to do — would sweep
-750Gi of "nice to have" history into a **daily Backblaze B2 backup**, which is precisely what this
-whole design exists to avoid.
+`server.podLabels` in each tier's `configmap.yaml` sets `app: victoria-metrics` / `app:
+victoria-metrics-lt`. **Neither value reaches the pod.** The `victoria-metrics-single` chart writes
+its own `app: server` over the top, so both tiers run with an identical `app` label, and only
+`env` / `category` survive from that block.
 
-The distinct label is the only thing keeping the cold volume out of that schedule. It is set in
-`server.podLabels` in the cold tier's `configmap.yaml`. Do not "normalize" it.
+This matters because it silently broke a Velero schedule. `velero-victoria-metrics-b2` selected
+`matchLabels: {app: victoria-metrics}` — a label nothing in the namespace has ever carried — so it
+matched **zero volumes for its entire life** while reporting `Completed / 0 errors / 4 items` every
+night. An empty Velero backup is a successful Velero backup, so nothing alerted. It was replaced by
+`velero-grafana-b2` in #1078.
+
+The two tiers *are* still distinguishable, but by `app.kubernetes.io/instance`
+(`victoria-metrics` vs `victoria-metrics-lt`), which the chart sets from the release name. Any
+selector aimed at one tier must use that key, not `app`.
+
+Verify rather than trusting the values file:
+
+```bash
+kubectl get pod -n monitoring -l app.kubernetes.io/instance=victoria-metrics-lt \
+  -o jsonpath='{.items[0].metadata.labels}' | python3 -m json.tool
+```
 
 ### 3. `local` PV is not a pod `hostPath` volume
 
@@ -287,7 +303,9 @@ Reclaiming the gap is not a routine operation: it requires a storage vMotion or 
 `hosts/truenas/datasets.json`, `hosts/truenas/nfs-shares.json`, and `hosts/vsphere/datastores.json`
 all have zero matches. Those collections predate the dataset, and `datastores.json` contains only
 VMFS datastores — it has no NFS entry at all. There is also **no collector for ZFS snapshot tasks**,
-so the one backup mechanism protecting this data is not mastered anywhere in git.
+so the datastore-level snapshot protecting this data is not mastered anywhere in git. (The
+`vmbackup` CronJob is — it lives in this repo — but it protects the *data*, not the storage path
+needed to bring the volume back at all.)
 
 Anyone rebuilding from those snapshots alone will reconstruct a cluster where
 `victoria-metrics-lt-server-0` sits `Pending` forever with no clue why. This page is the
@@ -297,12 +315,23 @@ compensating control until the collectors are re-run and extended.
 
 ## Backup and disaster recovery
 
-**Velero does not back this up, on purpose.** Two independent mechanisms guarantee that:
+**Velero does not back this up, on purpose.** The `monitoring` namespace is in `excludedNamespaces`
+on every Velero schedule, and no remaining schedule's selector matches this tier.
 
-1. The `monitoring` namespace is in `excludedNamespaces` on the main Velero schedules.
-2. The `velero-victoria-metrics-b2` schedule's label selector does not match `app: victoria-metrics-lt`.
+That exclusion is not squeamishness about size. Velero's file-system backup would walk
+`/storage` while VictoriaMetrics background merges are rewriting it, so parts appear and vanish
+mid-walk — the result is a torn copy even when the backup reports success. VictoriaMetrics has to be
+asked for a snapshot first, which is what `vmbackup` does and Velero cannot.
 
-The **only** protection is a **TrueNAS ZFS snapshot task on `pool_0/vm-lt-metrics`**. Because the
+Two mechanisms protect this volume:
+
+1. **`vmbackup` CronJob → Backblaze B2**, daily at 07:30 UTC —
+   `clusters/vollminlab-cluster/monitoring/victoria-metrics-lt/app/backup-cronjob.yaml`. It asks
+   VictoriaMetrics to hardlink a consistent snapshot, uploads that to
+   `s3://vollminlab-k8s-backups/victoria-metrics-lt`, then deletes the snapshot. Runs are
+   incremental against what is already in the bucket. Failures are caught by the existing
+   `CronJobNotSucceededRecently` alert, which fires at 26h.
+2. **TrueNAS ZFS snapshot task on `pool_0/vm-lt-metrics`** — the datastore-level safety net. Because the
 transport is NFS rather than iSCSI, the 750 GiB VMDK is a plain *file* inside the ZFS snapshot —
 browsable and restorable by copying it back, rather than buried inside an opaque VMFS block device.
 That property is the entire reason NFS was chosen over iSCSI for this datastore.
@@ -407,11 +436,20 @@ systemctl show kubelet.service -p DropInPaths
 kubectl exec -n monitoring victoria-metrics-lt-server-0 -- df -h /storage
 ```
 
-Confirm the cold tier is *excluded* from backup, not merely absent from a listing:
+Confirm the cold tier is *excluded* from Velero, not merely absent from a listing — check every
+schedule's selector, since checking one by name is how a schedule that matched nothing at all went
+unnoticed for its whole life:
 
 ```bash
-kubectl get schedule velero-victoria-metrics-b2 -n velero \
-  -o jsonpath='{.spec.template.labelSelector}'   # must NOT match app=victoria-metrics-lt
+kubectl get schedules.velero.io -n velero \
+  -o custom-columns='NAME:.metadata.name,NS:.spec.template.includedNamespaces,SEL:.spec.template.labelSelector.matchLabels'
+```
+
+And confirm its own backup is actually running — a CronJob that exists is not a CronJob that works:
+
+```bash
+kubectl get jobs -n monitoring -l job-name --sort-by=.metadata.creationTimestamp | grep vmbackup
+kubectl logs -n monitoring -l job-name=<job> --tail=20
 ```
 
 ## Related
