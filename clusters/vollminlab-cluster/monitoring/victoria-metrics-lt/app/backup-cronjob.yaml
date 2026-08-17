@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: victoria-metrics-lt-backup
+  namespace: monitoring
+  labels:
+    app: victoria-metrics-lt
+    env: production
+    category: observability
+spec:
+  # 07:30 UTC — deliberately clear of every velero window (03:00 daily-full,
+  # 04:00 daily-b2, 05:00 victoria-metrics-b2, 06:00 monthly-b2). All worker
+  # VMDKs share one datastore and a full FSB pass already drives I/O-stall high;
+  # this reads the same spindles, so it does not overlap with them.
+  schedule: "30 7 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      # 2h ceiling. The first run uploads everything (~49 GiB today); every run
+      # after that is incremental against what is already in the bucket, so the
+      # steady state is the day's new parts plus whatever merges rewrote.
+      activeDeadlineSeconds: 7200
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: victoria-metrics-lt
+            env: production
+            category: observability
+        spec:
+          restartPolicy: Never
+          # No nodeSelector needed: the PVC binds a local PV whose nodeAffinity
+          # already pins scheduling to the node holding the VMDK. Duplicating it
+          # here would be a second place to update if that node ever changes.
+          securityContext:
+            # Matches the victoria-metrics container, which runs as root and owns
+            # /storage as root:root. vmbackup only reads, but it has to be able
+            # to read the snapshot tree VM creates.
+            runAsUser: 0
+            runAsGroup: 0
+          containers:
+            - name: vmbackup
+              # Kept in step with the victoria-metrics image tag by Renovate.
+              image: docker.io/victoriametrics/vmbackup:v1.149.0
+              args:
+                - -storageDataPath=/storage
+                # vmbackup asks VM to hardlink a consistent snapshot, backs that
+                # up, then deletes it. Without these two URLs it would read a
+                # live data directory mid-merge and produce a torn backup.
+                - -snapshot.createURL=http://victoria-metrics-lt-server.monitoring.svc:8428/snapshot/create
+                - -snapshot.deleteURL=http://victoria-metrics-lt-server.monitoring.svc:8428/snapshot/delete
+                - -dst=s3://vollminlab-k8s-backups/victoria-metrics-lt
+                - -customS3Endpoint=https://s3.us-west-000.backblazeb2.com
+                - -loggerFormat=json
+              envFrom:
+                - secretRef:
+                    name: victoria-metrics-lt-b2-credentials
+              volumeMounts:
+                - name: storage
+                  mountPath: /storage
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "2"
+                  memory: 1Gi
+          volumes:
+            - name: storage
+              persistentVolumeClaim:
+                # The StatefulSet's volumeClaimTemplate PVC. RWO restricts the
+                # volume to one NODE, not one pod, and the PV's nodeAffinity puts
+                # this pod on that same node — so mounting it alongside the
+                # running VM pod is allowed.
+                claimName: server-volume-victoria-metrics-lt-server-0
