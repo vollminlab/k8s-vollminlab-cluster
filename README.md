@@ -1,12 +1,66 @@
 # Vollminlab Kubernetes Cluster
 
+> A nine-node self-managed Kubernetes cluster where every workload, policy, and secret is defined as code and reconciled continuously from `main`.
+
+[![CI Pipeline](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/ci.yaml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/ci.yaml)
+[![Secret Scanning](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/secret-scanning.yaml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/secret-scanning.yaml)
+[![CodeQL](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/codeql.yml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/codeql.yml)
+![Flux CD](https://img.shields.io/badge/GitOps-Flux%20CD-5468FF?logo=flux&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-kubeadm-326CE5?logo=kubernetes&logoColor=white)
+
 GitOps-managed Kubernetes cluster. All workloads are defined as code in this repository and reconciled continuously by Flux CD.
+
+Nothing here is applied by hand. A change becomes real by merging a pull request; Flux notices within ten minutes and converges the cluster. If the cluster and this repository disagree, the repository wins.
 
 > **Full configuration reference:** [docs/cluster-reference.md](docs/cluster-reference.md) — versions, resource limits, network policies, storage layout, and every configured value in excruciating detail.
 
 ---
 
 ## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph src["Source of truth"]
+        GIT["This repository<br/><i>main branch</i>"]
+        OP["1Password<br/><i>Homelab vault</i>"]
+    end
+
+    subgraph ctrl["Control loop"]
+        FLUX["Flux CD<br/><i>reconciles every 10 min</i>"]
+        KYV["Kyverno<br/><i>admission: enforce + mutate</i>"]
+        ESO["External Secrets Operator<br/>+ 1Password Connect"]
+    end
+
+    subgraph cluster["Cluster · 3 control plane + 6 workers"]
+        WL["Workloads<br/><i>HelmReleases</i>"]
+        DMZ["DMZ namespace<br/><i>tainted nodes · default-deny</i>"]
+    end
+
+    subgraph data["Storage & recovery"]
+        LH[("Longhorn<br/>RWO + RWX")]
+        SMB[("TrueNAS SMB")]
+        BAK[("Velero + VolSync<br/>MinIO · Backblaze B2")]
+    end
+
+    NET["ingress-nginx · MetalLB · cert-manager · Authentik SSO"]
+
+    GIT -->|pull| FLUX
+    FLUX -->|apply| KYV
+    KYV -->|admitted| WL
+    KYV -->|admitted| DMZ
+    OP --> ESO
+    ESO -->|materializes Secrets| WL
+    WL --> LH
+    WL --> SMB
+    LH --> BAK
+    NET --> WL
+    NET --> DMZ
+
+    classDef truth fill:#1f6feb,stroke:#388bfd,color:#fff
+    classDef guard fill:#8250df,stroke:#a371f7,color:#fff
+    class GIT,OP truth
+    class KYV guard
+```
 
 | Layer | Tool | Role |
 |---|---|---|
