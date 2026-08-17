@@ -43,7 +43,33 @@ data:
         containers:
           - name: runner
             image: ghcr.io/actions/actions-runner:2.336.0
-            command: ["/home/runner/run.sh"]
+            # Wait for the dind sidecar before registering with GitHub.
+            #
+            # dockerd needs ~19s to bind :2375 (measured 2026-08-17: container
+            # start 01:45:58, "API listen on [::]:2375" 01:46:17) but run.sh
+            # registers this runner immediately. Inside that window GitHub can
+            # hand it a job using `services:`, which the runner initialises
+            # BEFORE any step executes — so it dies at "Initialize containers"
+            # with "Cannot connect to the Docker daemon at tcp://localhost:2375"
+            # and no workflow-level step can defend against it.
+            #
+            # Pod containers start in parallel and probes cannot order them, so
+            # the gate has to live in this command. Fails open: if dind never
+            # comes up we still register, because a runner that never appears
+            # starves all CI, which is worse than the original race.
+            command:
+              - /bin/bash
+              - -c
+              - |
+                for i in $(seq 1 120); do
+                  if curl -sf --max-time 2 http://localhost:2375/_ping >/dev/null 2>&1; then
+                    echo "runner: docker ready after ${i}s"
+                    exec /home/runner/run.sh
+                  fi
+                  sleep 1
+                done
+                echo "runner: docker not ready after 120s — registering anyway" >&2
+                exec /home/runner/run.sh
             env:
               - name: DOCKER_HOST
                 value: tcp://localhost:2375
