@@ -145,10 +145,26 @@ spec:
               off-site retention tier stale. Check 'velero backup get' and repo maintenance.
 
         - alert: KubeJobFailed
+          # Aggregated with `max by (namespace, job_name)` so the alert's identity does
+          # not include the kube-state-metrics pod that happened to report it.
+          #
+          # kube_job_failed has no `pod` label of its own, so the scrape target's `pod`
+          # and `instance` labels land on the series. Every time the KSM pod is replaced
+          # the series identity changes: the old one goes stale (alert RESOLVES) and a
+          # new one appears (alert FIRES) — while the underlying failed Job never changed.
+          # On 2026-08-17 the descheduler was cycling KSM every 30 minutes, so a single
+          # persistently-failed Job produced 7 distinct ALERTS series in 6 hours and
+          # flapped continuously.
+          #
+          # This does NOT affect KSM metrics that carry their own `pod` label
+          # (kube_pod_status_ready and friends) — there the subject pod wins and the
+          # series is stable. Only pod-less KSM metrics need this treatment; the other
+          # one on this cluster is kube_cronjob_status_last_successful_time, fixed the
+          # same way in prometheusrule-gitops.yaml.
           expr: |
-            (kube_job_failed{namespace!="velero"} > 0)
+            max by (namespace, job_name) (kube_job_failed{namespace!="velero"}) > 0
               or
-            (kube_job_failed{namespace="velero", job_name!~".*-kopia-maintain.*"} > 0)
+            max by (namespace, job_name) (kube_job_failed{namespace="velero", job_name!~".*-kopia-maintain.*"}) > 0
           for: 15m
           labels:
             severity: warning
