@@ -29,3 +29,66 @@ data:
             annotations:
               summary: "Homepage widget {{ $labels.widget }} returning persistent HTTP 500 errors"
               description: "{{ $value | humanize }} HTTP 500 errors from {{ $labels.widget }} in the last 10 minutes. A backend service is likely down or unreachable."
+  filesystem-corruption-alerts.yaml: |
+    groups:
+      # Filesystem corruption, caught at the moment an application trips over it.
+      #
+      # This is the earliest signal the ext4 corruption on pvc-audiobookshelf-metadata
+      # ever produced. Audiobookshelf crashed twice reading its own cover directory —
+      # 2026-06-29 with errno -74 (EBADMSG) and 2026-07-01 with errno -117 (EUCLEAN) —
+      # three days before the e2fsck that cleared the damaged inodes and destroyed ~200
+      # covers. Both crashes were in the logs. Nothing was watching them.
+      #
+      # Longhorn cannot supply this signal: it compares replicas to each other, not to a
+      # filesystem, so a volume whose replicas all hold identical corruption still reports
+      # `healthy`. The application hitting EIO on a read is the only thing that knows.
+      - name: filesystem-corruption
+        rules:
+          # Matched against every stream because corruption is not confined to one app,
+          # and there is no way to predict which workload lands on a damaged volume.
+          #
+          # The pattern set is deliberately restricted to errors that mean *the filesystem
+          # metadata is wrong*:
+          #   structure needs cleaning / EUCLEAN / system error -117 — ext4 has marked the
+          #     directory or inode unusable; this is the exact error ABS died on
+          #   EBADMSG / system error -74 — checksum mismatch on a metadata block
+          #
+          # `Input/output error` (EIO) is deliberately NOT in the set. On this cluster EIO
+          # is the signature of a stale Longhorn mount after a node event — common, benign
+          # once the pod restarts, and covered by the longhorn-mount-healer. Including it
+          # would bury the real signal in noise, and a noisy alert gets muted.
+          #
+          # `pod!~"loki-.*"` is not optional — without it this rule alerts on itself
+          # forever. Loki logs the text of every query it serves, once per split/shard, so
+          # each evaluation writes ~1200 lines containing this rule's own regex, which the
+          # next evaluation then matches. Measured directly: 1239 self-matches in 24h from
+          # monitoring/loki-0 during development. Excluding the stream costs nothing —
+          # Loki is not a workload that mounts a Longhorn data volume.
+          #
+          # Validated over the 7 days to 2026-08-12: zero matches on every day except the
+          # one on which these probe queries ran, and that day's only source was loki-0.
+          - alert: FilesystemCorruptionDetected
+            expr: |
+              sum by (namespace, pod) (
+                count_over_time(
+                  {job=~".+", pod!~"loki-.*"}
+                    |~ `(?i)(structure needs cleaning|EUCLEAN|EBADMSG|system error -117|system error -74)`
+                    [1h]
+                )
+              ) > 0
+            # No `for` grace period beyond a single evaluation: these errors do not appear
+            # transiently. One occurrence is worth investigating, and the window between
+            # first error and the fsck that discards data is measured in days, not weeks.
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Filesystem corruption errors from {{ $labels.namespace }}/{{ $labels.pod }}"
+              description: >-
+                {{ $value | humanize }} ext4 metadata errors logged by
+                {{ $labels.namespace }}/{{ $labels.pod }} in the last hour. The volume's
+                replicas are consistent with each other but the filesystem on them is not
+                intact, so Longhorn will keep reporting `healthy`. Do NOT let this volume
+                cold-remount before investigating: the CSI driver runs `fsck -a` on mount,
+                and that repair is what destroys data. Take a VolSync snapshot first.
+                Runbook: docs/runbooks/longhorn-ext4-corruption.md
