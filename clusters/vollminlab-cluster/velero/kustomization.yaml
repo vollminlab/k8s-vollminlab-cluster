@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - velero/app
+  - velero-backup-content-guard/app
   - velero-pvb-healer/app
