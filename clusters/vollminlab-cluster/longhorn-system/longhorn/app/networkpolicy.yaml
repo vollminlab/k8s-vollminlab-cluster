@@ -1,0 +1,32 @@
+# Longhorn 1.12.1 began shipping NetworkPolicies for its own components. The
+# chart's longhorn-manager policy admits ingress only from named Longhorn pods
+# (manager, ui, csi-plugin, recurring-job), which excludes Prometheus — 100% of
+# the longhorn-backend scrape targets went down and TargetDown fired.
+#
+# NetworkPolicies are additive, so this restores the scrape without fighting the
+# chart. Port 9500 is the longhorn-manager containerPort (verified on the pod,
+# not taken from the Service) and is what the ServiceMonitor's "manager" port
+# resolves to.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape
+  namespace: longhorn-system
+  labels:
+    app: longhorn
+    env: production
+    category: storage
+spec:
+  podSelector:
+    matchLabels:
+      app: longhorn-manager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9500

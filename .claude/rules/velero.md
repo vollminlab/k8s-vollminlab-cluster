@@ -7,7 +7,7 @@
   |---|---|---|---|
   | `velero-daily-full` | `0 3 * * *` | MinIO | 96h |
   | `velero-daily-b2` | `0 4 * * *` | Backblaze B2 | 2160h |
-  | `velero-victoria-metrics-b2` | `0 5 * * *` | Backblaze B2 | 2160h |
+  | `velero-grafana-b2` | `0 5 * * *` | Backblaze B2 | 2160h |
   | `velero-monthly-b2` | `0 6 1 * *` | Backblaze B2 | 8760h |
 
   Schedules run **serially** — a backup created while another is running goes to
@@ -17,7 +17,54 @@
   `monitoring`, `tofu`, `trivy-system`, `velero`
 - **Resource policy:** `velero-skip-smb-policy` — skips `smb` StorageClass volumes (NAS
   shares) **and all `emptyDir` volumes**. Applied to `daily-full`, `daily-b2` and
-  `monthly-b2`; `victoria-metrics-b2` has none. Name is historical, scope is wider.
+  `monthly-b2`; `grafana-b2` has none. Name is historical, scope is wider.
+
+## A Velero backup that matches nothing still reports Completed
+
+`velero-victoria-metrics-b2` selected `app: victoria-metrics`, which no pod or PVC in
+`monitoring` has ever carried — the chart forces `app: server`. It matched zero volumes
+for its entire life and reported `Completed`, `0 errors`, `4 items` every single night.
+Nothing alerts on this: phase is the only signal Velero exposes, and an empty backup is a
+successful one. `velero_backup_items_total` reads 0 for every schedule here, so it cannot
+be used as a content guard either.
+
+**So: for any schedule with a `labelSelector`, the selector is only verified by checking
+that a PodVolumeBackup was actually created.**
+
+```bash
+kubectl get podvolumebackups.velero.io -n velero \
+  -l velero.io/backup-name=<backup-name> --no-headers | wc -l   # 0 means it backed up nothing
+```
+
+**A selector must match a label carried by both the pod and the PVC.** The pod alone gets
+you a PVB (the data), the PVC alone gets you the object needed to restore into. Matching
+only the pod silently produces an unrestorable backup. `app.kubernetes.io/name` is usually
+on both; the hand-applied `app` label is usually pod-only. Verify, don't assume:
+
+```bash
+kubectl get pvc -n <ns> <pvc> -o jsonpath='{.metadata.labels}' | python3 -m json.tool
+```
+
+## The monitoring namespace is deliberately mostly unbacked
+
+`monitoring` is in `excludedNamespaces` on `daily-full`, `daily-b2` and `monthly-b2`.
+That is correct — the metrics are the bulk of it and Velero is the wrong tool:
+
+- **victoria-metrics-lt** (cold, 395d, 750Gi) is backed up by its own `vmbackup` CronJob
+  to `s3://vollminlab-k8s-backups/victoria-metrics-lt`. vmbackup asks VictoriaMetrics for
+  a real snapshot first; FSB would walk a directory that background merges are actively
+  rewriting and produce a torn copy.
+- **victoria-metrics (hot, 30d)** is intentionally **not** backed up. Prometheus
+  remote-writes the same stream to both tiers (measured 7d: 10.915B samples each, 0
+  dropped, 0 failed), so the hot tier is an exact subset of the cold tier.
+- **prometheus** (24h retention) is a scrape buffer — both tiers hold the same data longer.
+- **grafana** IS backed up (`grafana-b2`), because grafana.db holds UI-created dashboards,
+  users and API keys that exist nowhere else. The 35 sidecar dashboards are
+  ConfigMap-provisioned and reproducible from git; grafana.db is not.
+
+Before excluding a namespace, ask which of its PVCs hold state that is not reproducible
+from git and not already stored elsewhere. Here that was exactly one, and it was the one
+thing the broken schedule wasn't covering.
 - **Node-agents:** DaemonSet with DMZ toleration; 9 pods (6 workers + 3 CPs)
 - **`loadConcurrency` is pinned at the default 1 per node — do not raise it.** All worker
   VMDKs share one datastore; a full FSB pass already drives PSI full I/O-stall to 26-48%

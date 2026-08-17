@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: velero-backup-content-guard
+# Required: configMapGenerator emits a ConfigMap with no namespace, and unlike
+# kube-system the velero Flux Kustomization sets no targetNamespace, so the
+# generated ConfigMap is rejected with "namespace not specified" and takes the
+# whole velero Kustomization down with it. rbac.yaml and cronjob.yaml already
+# carry namespace: velero explicitly; this makes the generated object match.
+namespace: velero
+resources:
+  - rbac.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: velero-backup-content-guard-script
+    files:
+      - guard.sh
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: velero-backup-content-guard
+    env: production
+    category: storage

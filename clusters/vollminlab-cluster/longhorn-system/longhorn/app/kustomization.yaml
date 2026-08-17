@@ -3,6 +3,7 @@ kind: Kustomization
 metadata:
   name: longhorn-app
 resources:
+  - networkpolicy.yaml
   - configmap.yaml
   - helmrelease.yaml
   - ingress.yaml
