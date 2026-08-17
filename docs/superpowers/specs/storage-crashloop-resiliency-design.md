@@ -33,6 +33,54 @@ the wait.
 On 2026-06-20 this left radarr and sonarr crashlooping for **2+ days** (36–38 restarts each) until a
 human ran the manual scale-0→1 recovery. That manual step is the gap this design closes.
 
+The whole shape — the trap, the one exit, and where the rejected alternative lands instead
+(next section) — as a state machine:
+
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    state "Pod Running" as Running
+    state "Longhorn replica blip" as Blip
+    state "In-pod ext4 mount errored, read-only" as EIO
+    state "Container exits: radarr 134, sonarr 139" as Crash
+    state "CrashLoopBackOff" as CLBO
+
+    [*] --> Running
+    Running --> Blip : node memory or IO pressure
+    Blip --> EIO : data layer fine, Longhorn still reports healthy and attached
+    EIO --> Crash
+    Crash --> CLBO : kubelet restarts the container, never the pod
+    CLBO --> EIO : pod stays scheduled, volume stays attached, stale mount never cleared
+
+    note right of CLBO
+        The trap. No pod delete means no Longhorn detach,
+        so the loop cannot exit from inside.
+    end note
+
+    state "Deployment scaled to 0" as Zero
+    state "Waiting for detach" as Wait
+    state "Scaled back to original replicas" as Up
+
+    CLBO --> Zero : external actor — longhorn-mount-healer or a human
+    Zero --> Wait
+    Wait --> Wait : errored ext4 cannot unmount cleanly, mount reports busy
+    Wait --> Up : volumes.longhorn.io state = detached
+    Up --> Running
+
+    note right of Wait
+        The load-bearing step. Nothing stock performs it:
+        the 6 minute force-detach fires only on an unreachable node.
+    end note
+
+    state "Pod evicted" as Evicted
+    state "ContainerCreating, wedged" as Wedged
+
+    CLBO --> Evicted : rejected path — descheduler RemovePodsHavingTooManyRestarts
+    Evicted --> Wedged : replacement starts at once, no wait for detach
+    Wedged --> Wedged : races the still-attaching volume, re-triggered every cycle
+```
+
 This is **not** a node-specific problem and the fix must not be node-specific. Node memory pressure
 is *a* trigger, but the resiliency requirement is that the cluster heals itself from a stuck pod
 **regardless of which app, which node, or what triggered the stale mount**. The cure must be
