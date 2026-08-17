@@ -92,6 +92,20 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
 truth — do not rely on service port numbers.
 
+**A chart that starts shipping its own NetworkPolicies silently cuts off your automation.**
+Longhorn 1.12.1 (applied 2026-08-17 03:20) added a `longhorn-manager` policy admitting only
+Longhorn's own pods — `app: longhorn-manager`/`longhorn-ui`/`longhorn-csi-plugin`/
+`longhorn-driver-deployer`, or a pod carrying `longhorn.io/job-task` or
+`longhorn.io/managed-by: longhorn-manager`. Anything else calling `longhorn-backend:9500` is
+blocked. Two in-house consumers broke at once; only Prometheus was noticed (`allow-monitoring-scrape`,
+03:48). The daily trim CronJob kept exiting 0 while trimming nothing, because its volume listing
+came back empty — see #869's replacement.
+
+**When a chart bump adds policies, enumerate every non-chart pod that talks to that namespace's
+services, not just the one that alerted.** And prefer the chart's own primitive over a custom
+caller where one exists — a native Longhorn `RecurringJob` is covered by those selectors by
+construction, so it cannot be cut off by a future policy change.
+
 **A cloudflared tunnel needs two egress rules, not one.** Reaching the Cloudflare edge (7844) and
 reaching the tunnel's *origin* are separate hops, and only the first one fails loudly — the
 Cloudflare dashboard shows the tunnel healthy while every request 502s. In a default-deny namespace
