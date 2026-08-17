@@ -100,7 +100,7 @@ fetched from the CF API and sealed before the cloudflared pod can start.
      | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['token'])")
    ```
 
-3. **PR 2 — K8s changes**: Seal each token with kubeseal, commit SealedSecret
+3. **PR 2 — K8s changes**: Save each token to 1Password, commit an `ExternalSecret` referencing it
    + cloudflared Deployment.
 
 ---

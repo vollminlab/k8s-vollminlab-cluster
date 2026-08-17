@@ -15,7 +15,7 @@ Living document tracking planned infrastructure work. Update status as projects 
 - MinIO deployed in-cluster as the primary (fast) backup target
 - Velero with two BackupStorageLocations: `minio` (default, daily at 02:00 UTC) and `b2` (off-site, daily at 04:00 UTC)
 - Backblaze B2 bucket: `vollminlab-k8s-backups`, region `us-west-000`
-- Credentials in SealedSecrets; validation frequency tuned to 1h to limit B2 Class C API calls
+- Credentials in ExternalSecrets (originally SealedSecrets); validation frequency tuned to 1h to limit B2 Class C API calls
 - Circular backup fixed (PR #410): `minio` namespace excluded from FSB on both schedules
 - Scoped MinIO access key for Velero deployed (PR #362) — root credentials no longer used
 - **Test restore validated:** Minecraft namespace restored successfully from Velero backup — confirmed Velero can restore a running workload with PVC data intact. Phase 8 Velero gate is cleared.
@@ -80,7 +80,7 @@ Restic-based PVC replication to Backblaze B2 for 13 PVCs (CNPG clusters, Harbor 
 
 `kube-prometheus-stack` deployed in `monitoring` namespace:
 
-- Prometheus scraping cluster metrics, Grafana as the unified UI, Alertmanager → Pushover notifications via SealedSecret
+- Prometheus scraping cluster metrics, Grafana as the unified UI, Alertmanager → Pushover notifications via ExternalSecret
 - ServiceMonitors: ingress-nginx (built-in), Longhorn, Velero, cert-manager
 - Control plane metrics: etcd, controller-manager, scheduler, kube-proxy all bound to `0.0.0.0` and scraped
 - Node-exporter hostname relabeling: `instance` label is node hostname, not `ip:port`
