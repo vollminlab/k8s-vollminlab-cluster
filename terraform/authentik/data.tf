@@ -2,6 +2,21 @@ data "authentik_flow" "default_authorization_implicit" {
   slug = "default-provider-authorization-implicit-consent"
 }
 
+# Referenced by authentik_brand.default. These are authentik built-ins; the brand
+# resource takes flow UUIDs, and omitting any of them on the brand would null it
+# out in-place — which would leave the instance with no login flow.
+data "authentik_flow" "default_authentication" {
+  slug = "default-authentication-flow"
+}
+
+data "authentik_flow" "default_invalidation" {
+  slug = "default-invalidation-flow"
+}
+
+data "authentik_flow" "default_user_settings" {
+  slug = "default-user-settings-flow"
+}
+
 data "authentik_flow" "default_provider_invalidation" {
   slug = "default-provider-invalidation-flow"
 }
