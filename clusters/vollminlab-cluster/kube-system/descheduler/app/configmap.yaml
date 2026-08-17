@@ -67,7 +67,26 @@ data:
                   memory: 55
                   pods: 45
                 targetThresholds:
-                  cpu: 80
+                  # Raised 80 -> 90 on 2026-08-17. Same failure as the memory note
+                  # below, recurring on the other axis: CPU *requests* on the general
+                  # workers sit at w01 71%, w02 75%, w03 81%, w04 86%, so w03 and w04
+                  # were permanently over an 80% target. The only general node under
+                  # every underutilized threshold is w01 at 71% — w05/w06 are DMZ
+                  # nodes with a NoSchedule taint that nodeFit cannot place onto — so
+                  # there was nowhere to converge TO. The descheduler evicted 8-10
+                  # pods every 30-minute cycle, the scheduler put them back on equally
+                  # full nodes, and the loop repeated indefinitely.
+                  #
+                  # That churn was not harmless: it cycled kube-state-metrics every
+                  # 30 minutes, which changes the series identity of every pod-less
+                  # KSM metric and made KubeJobFailed flap firing/resolved against a
+                  # Job whose state never changed (fixed separately in #1081).
+                  #
+                  # 90% is above w04's current 86% and is not masking real pressure:
+                  # measured actual CPU usage is 9% on w03 and 39% on w04 against
+                  # those 81%/86% requests. The requests are oversubscribed, which is
+                  # a right-sizing question (cf. #928), not something eviction can fix.
+                  cpu: 90
                   # w03 carries a heavy immovable stateful floor (authentik-server +
                   # 3 CNPG DBs + minio) that pins its request-memory at ~70%. With the
                   # PVC guard the descheduler can only move stateless pods, so a 70%
@@ -78,6 +97,15 @@ data:
                   # on w03 is only ~55%, so this is not masking real pressure.
                   memory: 80
                   pods: 50
+                # Hard ceiling on evictions per node per cycle. The two incidents above
+                # were both "threshold set below an unreachable floor", and in both the
+                # symptom was unbounded churn — 8-10 evictions every 30 minutes, with
+                # no benefit. A threshold can be wrong again; this bounds the damage
+                # when it is, and makes the wrongness visible as a slow drift instead
+                # of a storm. Supported as a LowNodeUtilization arg in descheduler
+                # v0.36.0 (chart 0.36.0).
+                evictionLimits:
+                  node: 2
           plugins:
             balance:
               enabled:
