@@ -60,9 +60,16 @@ spec:
         # that legitimately run less than daily must be excluded by name, otherwise the
         # gap between their normal runs trips the threshold — e.g. kube-system's monthly
         # kubeadm-cert-monitor (`0 9 1 * *`) would false-fire for ~30 days between runs.
+        # Aggregated with `max by (namespace, cronjob)` for the same reason as
+        # KubeJobFailed in prometheusrule-custom.yaml: kube_cronjob_status_* carries no
+        # `pod` label of its own, so the scrape target's `pod`/`instance` labels land on
+        # the series and every kube-state-metrics pod replacement changes the alert's
+        # identity — resolving and re-firing while nothing about the CronJob changed.
+        # `max` also picks the most recent success if two KSM pods ever overlap, which is
+        # the correct reading of "last succeeded".
         - alert: CronJobNotSucceededRecently
           expr: |
-            (time() - kube_cronjob_status_last_successful_time{cronjob!="kubeadm-cert-monitor"}) > 93600
+            (time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{cronjob!="kubeadm-cert-monitor"})) > 93600
           for: 15m
           labels:
             severity: warning
