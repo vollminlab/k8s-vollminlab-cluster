@@ -421,6 +421,75 @@ spec:
             summary: "MinIO PVC {{ $labels.persistentvolumeclaim }} below 10% free"
             description: "MinIO PVC {{ $labels.persistentvolumeclaim }} has {{ $value | humanizePercentage }} free. Immediate action required — node kubelet eviction threshold is ~10-15%."
 
+    # The TrueNAS media pool backs /movies and /tv over SMB and holds ~8 TB of library.
+    # Nothing else watches it: node-exporter only sees host filesystems, and the shares
+    # are mounted inside pods via the SMB CSI driver, so they never appear in
+    # node_filesystem_*. The existing disk alerts cover VMware datastores, Longhorn and
+    # MinIO — none of them this pool.
+    #
+    # Source is the exportarr sidecars already running in radarr and sonarr, which surface
+    # the arr's own /api/v3/diskspace. Both root folders report the same underlying pool,
+    # so the two series track together; alerting on min() over both means a single alert
+    # regardless of which app notices first, and it still fires if one exporter is down.
+    #
+    # Thresholds are absolute, not percentages: the two SMB shares advertise different
+    # capacities (16T vs 18T) for one shared pool, so a percentage is meaningless here.
+    #
+    # This matters now that Radarr/Sonarr upgrades are enabled (#1090/#1092): 274 movies
+    # and 3,005 episodes sit below cutoff. Per-quality size ceilings bound each file, not
+    # the total, so the aggregate ceiling exceeds free space if it ever ran to completion.
+    - name: media-pool
+      rules:
+        - alert: MediaPoolSpaceLow
+          expr: |
+            min(
+              radarr_rootfolder_freespace_bytes
+              or sonarr_rootfolder_freespace_bytes
+            ) < 2199023255552
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "TrueNAS media pool below 2 TiB free"
+            description: >-
+              The pool behind /movies and /tv has {{ $value | humanize1024 }}B free.
+              Check the Radarr and Sonarr queues for an upgrade backlog, and confirm
+              nobody has run "Search for Cutoff Unmet" — that queues every below-cutoff
+              item at once.
+
+        - alert: MediaPoolSpaceCritical
+          expr: |
+            min(
+              radarr_rootfolder_freespace_bytes
+              or sonarr_rootfolder_freespace_bytes
+            ) < 805306368000
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "TrueNAS media pool critically low — take action now"
+            description: >-
+              The pool behind /movies and /tv has {{ $value | humanize1024 }}B free.
+              Pause the Radarr/Sonarr queues and SABnzbd before imports start failing
+              mid-write.
+
+        # The alerts above are blind if the exporters stop reporting, and a silent
+        # exporter looks identical to a healthy pool. Watch for the series disappearing.
+        - alert: MediaPoolSpaceMetricMissing
+          expr: |
+            absent(radarr_rootfolder_freespace_bytes)
+              or absent(sonarr_rootfolder_freespace_bytes)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Media pool free-space metric has stopped reporting"
+            description: >-
+              radarr_rootfolder_freespace_bytes or sonarr_rootfolder_freespace_bytes is
+              absent, so MediaPoolSpaceLow/Critical cannot fire. Check the exportarr
+              sidecar in the radarr and sonarr pods and the radarr-metrics /
+              sonarr-metrics ServiceMonitors.
+
     # Harbor is on the image-pull critical path: all 9 nodes proxy docker.io through
     # the Harbor proxy cache, so an unhealthy Harbor blocks new pod scheduling
     # cluster-wide once local image caches miss. Metrics come from the harbor-exporter
