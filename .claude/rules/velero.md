@@ -185,6 +185,35 @@ kubectl exec -n minio $(kubectl get pods -n minio -l app=minio -o jsonpath='{.it
 
 Never trigger a backup or write operation when storage is < 5% free. Check headroom first.
 
+## Velero owns its bucket's root — never write anything else into it
+
+The `b2` BackupStorageLocation sets no `prefix`, so Velero validates the bucket's **top-level
+directories** and accepts only its own (`backups/`, `kopia/`, `restores/`, `metadata/`). Anything
+else flips it to `Unavailable`:
+
+```
+BackupStorageLocation "b2" is unavailable:
+  Backup store contains invalid top-level directories: [victoria-metrics-lt]
+```
+
+**That is a hard block, not a warning** — every backup targeting it fails before it starts:
+
+```
+phase: FailedValidation
+["backup can't be created because BackupStorageLocation b2 is in Unavailable status."]
+```
+
+This happened on 2026-08-17: #1075 pointed vmbackup at
+`s3://vollminlab-k8s-backups/victoria-metrics-lt`, the same bucket velero uses, and killed all
+three B2 schedules. Fixed by giving the cold-tier metrics their own bucket
+(`vollminlab-k8s-metrics`) and their own bucket-scoped B2 key.
+
+**So: any new B2 workload gets its own bucket.** Do not add a prefix to velero's BSL to make room —
+its existing backups live at the bucket root, so a prefix orphans every one of them.
+
+And note which schedule can see it: `daily-full` writes to MinIO and stayed green throughout, exactly
+as it did during the `x-amz-tagging` incident. **Verify against both BSLs, never just the healthy one.**
+
 ## Circular backup check
 
 `defaultVolumesToFsBackup: true` backs up **every** pod's volumes by default.  
