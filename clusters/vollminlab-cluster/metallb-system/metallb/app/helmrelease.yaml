@@ -21,3 +21,45 @@ spec:
     - kind: ConfigMap
       name: metallb-values
       valuesKey: values.yaml
+  # The chart drops livenessProbe.timeoutSeconds for the frr container.
+  #
+  # configmap.yaml has asked for `frrk8s.livenessProbe.timeoutSeconds: 5` for a
+  # while and it silently only half-applied: frr-k8s's controller.yaml renders
+  # timeoutSeconds for the `controller` container but, for the `frr` container,
+  # emits only periodSeconds and failureThreshold. So frr kept Kubernetes'
+  # 1s default while controller correctly got 5s -- verified on the live
+  # DaemonSet, where failureThreshold=6 landed on BOTH containers and
+  # timeoutSeconds=5 landed on only one.
+  #
+  # A 1s timeout on an HTTPS probe is tripped by ordinary I/O stalls rather than
+  # by an unhealthy BGP daemon. On 2026-08-15 at 03:27 the frr containers on
+  # k8sworker01 and k8sworker04 were SIGTERMed (exit 143) within one second of
+  # each other, inside the 03:00 velero daily-full window -- a node-wide stall,
+  # not two independent frr failures. Restarting frr flaps BGP, so the probe was
+  # making a busy node worse.
+  #
+  # failureThreshold 6 x periodSeconds 10 still detects a genuinely hung frr in
+  # ~60s, so this loosens the per-attempt deadline without weakening detection.
+  # Remove this patch once the chart templates timeoutSeconds for frr.
+  # Strategic-merge, keyed by container name: kustomize merges containers by
+  # `name`, so this survives the chart reordering them. A JSON-patch index would
+  # not -- `frr` is currently index 1, behind `controller`, and ahead of
+  # reloader/frr-metrics/frr-status.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: DaemonSet
+              name: metallb-frr-k8s
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: metallb-frr-k8s
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: frr
+                        livenessProbe:
+                          timeoutSeconds: 5
