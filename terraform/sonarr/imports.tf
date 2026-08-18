@@ -41,3 +41,37 @@ import {
   to = sonarr_delay_profile.default
   id = "1"
 }
+
+# Quality definitions — built-in rows that can only be updated, never created,
+# so each one needs an import block before tofu will manage it.
+# IDs fetched 2026-08-18 via kubectl exec sonarr /api/v3/qualitydefinition
+
+import {
+  to = sonarr_quality_definition.raw_hd
+  id = "10"
+}
+
+import {
+  to = sonarr_quality_definition.bluray_1080p_remux
+  id = "17"
+}
+
+import {
+  to = sonarr_quality_definition.webrip_2160p
+  id = "19"
+}
+
+import {
+  to = sonarr_quality_definition.webdl_2160p
+  id = "20"
+}
+
+import {
+  to = sonarr_quality_definition.bluray_2160p
+  id = "21"
+}
+
+import {
+  to = sonarr_quality_definition.bluray_2160p_remux
+  id = "22"
+}
