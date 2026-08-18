@@ -1,12 +1,21 @@
 # Quality profiles imported from Radarr API
 # Retrieved 2026-05-14 via kubectl exec radarr /api/v3/qualityprofile
 # language id=1 = English
+#
+# upgrade_allowed is true on every profile. With it false (the previous state)
+# Radarr treats the *highest allowed quality* as the cutoff, so any existing file
+# "meets cutoff" and no release is ever grabbed as a replacement — a 720p file
+# stays 720p forever no matter how many searches you run.
+#
+# cutoff is the quality at which upgrading stops. Items *below* cutoff take the
+# best allowed release they see, which can be 2160p on the profiles that allow it
+# — per-quality size ceilings in quality-definitions.tf are what bound that.
 
-# Profile: Any (id=1) — all qualities allowed, no upgrade
+# Profile: Any (id=1) — 519 of 589 movies. All qualities allowed, up to Remux-2160p.
 resource "radarr_quality_profile" "any" {
   name            = "Any"
-  upgrade_allowed = false
-  cutoff          = 20 # Bluray-1080p
+  upgrade_allowed = true
+  cutoff          = 7 # Bluray-1080p — stop upgrading once a 1080p Blu-ray is in place
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
@@ -125,11 +134,11 @@ resource "radarr_quality_profile" "any" {
   ]
 }
 
-# Profile: SD (id=2) — SD and WEB 480p / Bluray 480p/576p allowed, no upgrade
+# Profile: SD (id=2) — unused (0 movies). SD and WEB 480p / Bluray 480p/576p.
 resource "radarr_quality_profile" "sd" {
   name            = "SD"
-  upgrade_allowed = false
-  cutoff          = 20 # upgrade_allowed = false, so cutoff is irrelevant
+  upgrade_allowed = true
+  cutoff          = 21 # Bluray-576p — top of this profile's own list
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
@@ -188,11 +197,11 @@ resource "radarr_quality_profile" "sd" {
   ]
 }
 
-# Profile: HD-720p (id=3) — 720p qualities only, no upgrade
+# Profile: HD-720p (id=3) — unused (0 movies). 720p qualities only.
 resource "radarr_quality_profile" "hd_720p" {
   name            = "HD-720p"
-  upgrade_allowed = false
-  cutoff          = 6 # Bluray-720p
+  upgrade_allowed = true
+  cutoff          = 6 # Bluray-720p — top of this profile's own list
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
@@ -219,11 +228,11 @@ resource "radarr_quality_profile" "hd_720p" {
   ]
 }
 
-# Profile: HD-1080p (id=4) — 1080p qualities only, no upgrade
+# Profile: HD-1080p (id=4) — unused (0 movies). 1080p qualities only.
 resource "radarr_quality_profile" "hd_1080p" {
   name            = "HD-1080p"
-  upgrade_allowed = false
-  cutoff          = 7 # Bluray-1080p
+  upgrade_allowed = true
+  cutoff          = 7 # Bluray-1080p — stops short of Remux-1080p (32-39 GB)
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
@@ -254,11 +263,11 @@ resource "radarr_quality_profile" "hd_1080p" {
   ]
 }
 
-# Profile: Ultra-HD (id=5) — 4K qualities only, no upgrade
+# Profile: Ultra-HD (id=5) — unused (0 movies). 4K qualities only.
 resource "radarr_quality_profile" "ultra_hd" {
   name            = "Ultra-HD"
-  upgrade_allowed = false
-  cutoff          = 31 # Remux-2160p
+  upgrade_allowed = true
+  cutoff          = 19 # Bluray-2160p — stops short of Remux-2160p (50-90 GB)
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
@@ -289,11 +298,11 @@ resource "radarr_quality_profile" "ultra_hd" {
   ]
 }
 
-# Profile: HD - 720p/1080p (id=6) — 720p and 1080p qualities, no upgrade
+# Profile: HD - 720p/1080p (id=6) — 70 movies. 720p and 1080p qualities.
 resource "radarr_quality_profile" "hd_720p_1080p" {
   name            = "HD - 720p/1080p"
-  upgrade_allowed = false
-  cutoff          = 6 # Bluray-720p
+  upgrade_allowed = true
+  cutoff          = 7 # Bluray-1080p — was 6 (Bluray-720p), which capped this profile at 720p
   lifecycle { ignore_changes = [quality_groups] }
 
   language = {
