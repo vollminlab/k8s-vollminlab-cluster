@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: portainer-data
+  namespace: portainer
+  labels:
+    app: portainer
+    env: production
+    category: apps
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Replaces a `local-path` claim, which local-path-provisioner backs with a
+  # hostPath directory on one node. That cost four things, none of them obvious
+  # from the pod spec (which declares an ordinary PVC, so Kyverno's hostPath
+  # policy never saw it):
+  #   - no backup at all: velero's FSB path skips hostPath volumes
+  #     unconditionally, and portainer has no VolSync ReplicationSource
+  #   - hard-pinned to k8sworker02 by a *required* PV nodeAffinity
+  #   - a single unreplicated copy, with reclaimPolicy Delete
+  #   - invisible to monitoring: kubelet publishes no volume_stats for it, so
+  #     KubePersistentVolumeFillingUp could never fire on it
+  # Longhorn fixes all four for free and makes portainer consistent with every
+  # other stateful workload here -- this was the last local-path PVC in the cluster.
+  storageClassName: longhorn
+  resources:
+    requests:
+      # Portainer's BoltDB + certs are tens of MB; the old claim was 10Gi
+      # because local-path costs nothing to over-provision. On Longhorn this is
+      # x3 replicas, so size it for the data. Longhorn expands online if needed.
+      storage: 5Gi

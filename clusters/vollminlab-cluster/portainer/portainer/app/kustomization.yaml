@@ -3,6 +3,7 @@ kind: Kustomization
 metadata:
   name: portainer-app
 resources:
+  - pvc.yaml
   - helmrelease.yaml
   - configmap.yaml
   - ingress.yaml
