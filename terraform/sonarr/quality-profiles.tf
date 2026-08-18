@@ -27,6 +27,12 @@
 # is why the inversion survived from the 2026-05-14 import until now. Do not re-add it —
 # it hides exactly this class of bug.
 #
+# A single-quality group must NOT carry a group-level `name`. Radarr and Sonarr only
+# store a name for real multi-quality groups (the WEB tiers, ids 1000-1003); for a group
+# of one they return `name: null`, and the provider then fails the apply with
+# "Provider produced inconsistent result after apply ... .name: was cty.StringVal(\"CAM\"),
+# but now null". The old `ignore_changes = [quality_groups]` masked this.
+#
 # To verify after any change to this file, read the live order back and confirm index 0
 # is the worst quality:
 #   kubectl exec -n mediastack <pod> -c <app> -- sh -c \
@@ -54,11 +60,9 @@ resource "sonarr_quality_profile" "any" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -70,15 +74,12 @@ resource "sonarr_quality_profile" "any" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -90,7 +91,6 @@ resource "sonarr_quality_profile" "any" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -102,27 +102,21 @@ resource "sonarr_quality_profile" "any" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -134,11 +128,9 @@ resource "sonarr_quality_profile" "any" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
@@ -152,11 +144,9 @@ resource "sonarr_quality_profile" "sd" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -168,15 +158,12 @@ resource "sonarr_quality_profile" "sd" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -188,7 +175,6 @@ resource "sonarr_quality_profile" "sd" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -200,27 +186,21 @@ resource "sonarr_quality_profile" "sd" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -232,11 +212,9 @@ resource "sonarr_quality_profile" "sd" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
@@ -250,11 +228,9 @@ resource "sonarr_quality_profile" "hd_720p" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -266,15 +242,12 @@ resource "sonarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -286,7 +259,6 @@ resource "sonarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -298,27 +270,21 @@ resource "sonarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -330,11 +296,9 @@ resource "sonarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
@@ -348,11 +312,9 @@ resource "sonarr_quality_profile" "hd_1080p" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -364,15 +326,12 @@ resource "sonarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -384,7 +343,6 @@ resource "sonarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -396,27 +354,21 @@ resource "sonarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -428,11 +380,9 @@ resource "sonarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
@@ -446,11 +396,9 @@ resource "sonarr_quality_profile" "ultra_hd" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -462,15 +410,12 @@ resource "sonarr_quality_profile" "ultra_hd" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -482,7 +427,6 @@ resource "sonarr_quality_profile" "ultra_hd" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -494,27 +438,21 @@ resource "sonarr_quality_profile" "ultra_hd" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -526,11 +464,9 @@ resource "sonarr_quality_profile" "ultra_hd" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
@@ -544,11 +480,9 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
 
   quality_groups = [
     {
-      name      = "Bluray-2160p Remux"
       qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
     },
     {
-      name      = "Bluray-2160p"
       qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
@@ -560,15 +494,12 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      name      = "HDTV-2160p"
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
     {
-      name      = "Bluray-1080p Remux"
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
-      name      = "Bluray-1080p"
       qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
@@ -580,7 +511,6 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      name      = "Bluray-720p"
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -592,27 +522,21 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      name      = "Raw-HD"
       qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
     },
     {
-      name      = "HDTV-1080p"
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
-      name      = "HDTV-720p"
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
     },
     {
-      name      = "Bluray-576p"
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "Bluray-480p"
       qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
-      name      = "DVD"
       qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
     },
     {
@@ -624,11 +548,9 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      name      = "SDTV"
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
     {
-      name      = "Unknown"
       qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
