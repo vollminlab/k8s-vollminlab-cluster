@@ -39,12 +39,19 @@
 #     "curl -s -H 'X-Api-Key: $KEY' 'http://localhost:<port>/api/v3/qualityprofile/1'" \
 #     | python3 -c "import json,sys;print([i.get('quality',{}).get('name') for i in json.load(sys.stdin)['items']][:4])"
 #
-# KNOWN DEFECT, still not addressed here: live state has *every* quality flagged allowed on
-# *every* profile, so the names SD / HD-720p / HD-1080p / Ultra-HD / HD - 720p/1080p describe
-# nothing — all six differ only by cutoff. Radarr's equivalents are correctly restricted.
-# This PR fixes the *ranking* of those qualities, not *which* are allowed; narrowing them
-# would drop 4K from the 6 series on HD - 720p/1080p, which is a product decision, not a bug
-# fix, so it stays separate.
+# 2160p is deliberately absent from every profile except Ultra-HD. TV is where uncapped
+# growth hurts: 3,005 of 3,934 episode files sit below cutoff, and the per-quality size
+# ceilings in quality-definitions.tf bound each file, not the total. At the 2160p ceilings
+# that backlog tops out around 39 TB; capped at 1080p it is ~17 TB. Free space on the pool
+# behind /tv is ~12.8 TiB and is shared with /movies, so 4K on the default profile is not
+# something the pool can absorb. Ultra-HD keeps 4K because that is the profile's entire
+# purpose; it currently has 0 series, so assigning one is a deliberate act.
+#
+# PARTIALLY REMAINING DEFECT: below 2160p these profiles still allow everything, so the
+# names SD / HD-720p / HD-1080p / HD - 720p/1080p still do not describe what they permit —
+# they now differ only by cutoff and by the 2160p exclusion. Radarr's equivalents are
+# properly restricted. Narrowing the rest is cosmetic once 4K is out of the picture, since
+# cutoff already governs where upgrading stops.
 #
 # upgrade_allowed is true on every profile. With it false (the previous state) Sonarr treats the
 # highest allowed quality as the cutoff, so any existing file "meets cutoff" and nothing is ever
@@ -52,30 +59,13 @@
 # list (SDTV / HDTV-720p / HDTV-1080p / HDTV-2160p) under a comment saying "cutoff irrelevant",
 # which is only true while upgrades are off.
 
-# Profile: Any (id=1) — 82 of 88 series. Every quality is allowed live, up to Bluray-2160p Remux.
+# Profile: Any (id=1) — 82 of 88 series. Everything up to Bluray-1080p Remux; no 2160p.
 resource "sonarr_quality_profile" "any" {
   name            = "Any"
   upgrade_allowed = true
   cutoff          = 7 # Bluray-1080p — stop upgrading once a 1080p Blu-ray is in place
 
   quality_groups = [
-    {
-      qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
-    },
-    {
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      id   = 1003
-      name = "WEB 2160p"
-      qualities = [
-        { id = 17, name = "WEBRip-2160p", source = "webRip", resolution = 2160 },
-        { id = 18, name = "WEBDL-2160p", source = "web", resolution = 2160 },
-      ]
-    },
-    {
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
-    },
     {
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
@@ -144,23 +134,6 @@ resource "sonarr_quality_profile" "sd" {
 
   quality_groups = [
     {
-      qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
-    },
-    {
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      id   = 1003
-      name = "WEB 2160p"
-      qualities = [
-        { id = 17, name = "WEBRip-2160p", source = "webRip", resolution = 2160 },
-        { id = 18, name = "WEBDL-2160p", source = "web", resolution = 2160 },
-      ]
-    },
-    {
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
-    },
-    {
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
@@ -227,23 +200,6 @@ resource "sonarr_quality_profile" "hd_720p" {
   cutoff          = 6 # Bluray-720p
 
   quality_groups = [
-    {
-      qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
-    },
-    {
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      id   = 1003
-      name = "WEB 2160p"
-      qualities = [
-        { id = 17, name = "WEBRip-2160p", source = "webRip", resolution = 2160 },
-        { id = 18, name = "WEBDL-2160p", source = "web", resolution = 2160 },
-      ]
-    },
-    {
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
-    },
     {
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
@@ -312,23 +268,6 @@ resource "sonarr_quality_profile" "hd_1080p" {
 
   quality_groups = [
     {
-      qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
-    },
-    {
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      id   = 1003
-      name = "WEB 2160p"
-      qualities = [
-        { id = 17, name = "WEBRip-2160p", source = "webRip", resolution = 2160 },
-        { id = 18, name = "WEBDL-2160p", source = "web", resolution = 2160 },
-      ]
-    },
-    {
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
-    },
-    {
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
     {
@@ -388,7 +327,7 @@ resource "sonarr_quality_profile" "hd_1080p" {
   ]
 }
 
-# Profile: Ultra-HD (id=5) — unused (0 series).
+# Profile: Ultra-HD (id=5) — unused (0 series). The only profile that still permits 2160p.
 resource "sonarr_quality_profile" "ultra_hd" {
   name            = "Ultra-HD"
   upgrade_allowed = true
@@ -479,23 +418,6 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
   cutoff          = 7 # Bluray-1080p — was 4 (HDTV-720p), which capped this profile at 720p
 
   quality_groups = [
-    {
-      qualities = [{ id = 21, name = "Bluray-2160p Remux", source = "blurayRaw", resolution = 2160 }]
-    },
-    {
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      id   = 1003
-      name = "WEB 2160p"
-      qualities = [
-        { id = 17, name = "WEBRip-2160p", source = "webRip", resolution = 2160 },
-        { id = 18, name = "WEBDL-2160p", source = "web", resolution = 2160 },
-      ]
-    },
-    {
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
-    },
     {
       qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
     },
