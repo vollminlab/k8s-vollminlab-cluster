@@ -16,7 +16,12 @@ data:
       enabled: false
     persistence:
       enabled: true
-      existingClaim: portainer
+      # portainer-data (Longhorn) replaces the old `portainer` claim, which was
+      # local-path -> hostPath on k8sworker02: unbacked, unreplicated, node-pinned
+      # and invisible to volume metrics. See pvc.yaml.
+      # The claim is declared in pvc.yaml rather than left to the chart so it is
+      # GitOps-managed -- the old one existed only in the cluster, in no manifest.
+      existingClaim: portainer-data
     resources:
       limits:
         cpu: 100m
