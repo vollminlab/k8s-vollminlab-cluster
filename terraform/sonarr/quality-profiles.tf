@@ -1,9 +1,11 @@
 # Quality profiles imported from Sonarr API
 # Retrieved 2026-05-14 via kubectl exec sonarr /api/v3/qualityprofile
 # Sonarr v4 quality sources: television, web, webRip, dvd, bluray, televisionRaw, blurayRaw, unknown
-# Note: all 18 quality groups are included in every profile because Sonarr's API always returns
-# the full quality list per profile (with per-quality allowed flags). Unlike Radarr, omitting
-# non-allowed qualities causes drift on import.
+# Each profile lists ONLY the qualities it allows, matching Radarr's convention. Sonarr's API
+# returns the full quality list per profile with per-quality allowed flags; the provider takes
+# the allowed subset and the app keeps the rest flagged not-allowed. An earlier note here
+# claimed omitting non-allowed qualities causes drift on import — that was written during the
+# 2026-05-14 import and is not what happens; Radarr has always been written this way.
 #
 # ORDERING IS DELIBERATELY BEST-FIRST. DO NOT "FIX" IT TO READ WORST-FIRST.
 #
@@ -47,11 +49,15 @@
 # something the pool can absorb. Ultra-HD keeps 4K because that is the profile's entire
 # purpose; it currently has 0 series, so assigning one is a deliberate act.
 #
-# PARTIALLY REMAINING DEFECT: below 2160p these profiles still allow everything, so the
-# names SD / HD-720p / HD-1080p / HD - 720p/1080p still do not describe what they permit —
-# they now differ only by cutoff and by the 2160p exclusion. Radarr's equivalents are
-# properly restricted. Narrowing the rest is cosmetic once 4K is out of the picture, since
-# cutoff already governs where upgrading stops.
+# Until 2026-08-18 every profile allowed every quality, so five of the six had byte-identical
+# allowed sets and three (Any, HD-1080p, HD - 720p/1080p) were indistinguishable in every
+# respect. The names described nothing. They are now scoped to match their names, which is why
+# renaming alone could never have fixed this — five profiles would have needed the same name.
+#
+# "Any" is the one genuine rename: #1095 removed 2160p from it for storage reasons, so it is no
+# longer "any" and is now "Any - up to 1080p". Nothing references profiles by name except Seerr,
+# which stores activeProfileId=6 alongside a display-only activeProfileName — and profile 6
+# (HD - 720p/1080p) is deliberately NOT renamed, so Seerr is untouched.
 #
 # upgrade_allowed is true on every profile. With it false (the previous state) Sonarr treats the
 # highest allowed quality as the cutoff, so any existing file "meets cutoff" and nothing is ever
@@ -60,10 +66,12 @@
 # which is only true while upgrades are off.
 
 # Profile: Any (id=1) — 82 of 88 series. Everything up to Bluray-1080p Remux; no 2160p.
+
+# Profile: Any - up to 1080p — 82 of 88 series. Everything below 2160p, which #1095 removed for storage reasons — hence the rename: it is no longer "any".
 resource "sonarr_quality_profile" "any" {
-  name            = "Any"
+  name            = "Any - up to 1080p"
   upgrade_allowed = true
-  cutoff          = 7 # Bluray-1080p — stop upgrading once a 1080p Blu-ray is in place
+  cutoff          = 7 # Bluray-1080p
 
   quality_groups = [
     {
@@ -81,6 +89,12 @@ resource "sonarr_quality_profile" "any" {
       ]
     },
     {
+      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
+    },
+    {
+      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
+    },
+    {
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -90,12 +104,6 @@ resource "sonarr_quality_profile" "any" {
         { id = 14, name = "WEBRip-720p", source = "webRip", resolution = 720 },
         { id = 5, name = "WEBDL-720p", source = "web", resolution = 720 },
       ]
-    },
-    {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
     },
     {
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
@@ -126,7 +134,7 @@ resource "sonarr_quality_profile" "any" {
   ]
 }
 
-# Profile: SD (id=2) — unused (0 series).
+# Profile: SD — unused (0 series). SD sources only.
 resource "sonarr_quality_profile" "sd" {
   name            = "SD"
   upgrade_allowed = true
@@ -134,40 +142,6 @@ resource "sonarr_quality_profile" "sd" {
 
   quality_groups = [
     {
-      qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      id   = 1002
-      name = "WEB 1080p"
-      qualities = [
-        { id = 15, name = "WEBRip-1080p", source = "webRip", resolution = 1080 },
-        { id = 3, name = "WEBDL-1080p", source = "web", resolution = 1080 },
-      ]
-    },
-    {
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
-    },
-    {
-      id   = 1001
-      name = "WEB 720p"
-      qualities = [
-        { id = 14, name = "WEBRip-720p", source = "webRip", resolution = 720 },
-        { id = 5, name = "WEBDL-720p", source = "web", resolution = 720 },
-      ]
-    },
-    {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
-    },
-    {
       qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
@@ -187,13 +161,10 @@ resource "sonarr_quality_profile" "sd" {
     {
       qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
     },
-    {
-      qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
-    },
   ]
 }
 
-# Profile: HD-720p (id=3) — unused (0 series).
+# Profile: HD-720p — unused (0 series). 720p only.
 resource "sonarr_quality_profile" "hd_720p" {
   name            = "HD-720p"
   upgrade_allowed = true
@@ -201,20 +172,6 @@ resource "sonarr_quality_profile" "hd_720p" {
 
   quality_groups = [
     {
-      qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      id   = 1002
-      name = "WEB 1080p"
-      qualities = [
-        { id = 15, name = "WEBRip-1080p", source = "webRip", resolution = 1080 },
-        { id = 3, name = "WEBDL-1080p", source = "web", resolution = 1080 },
-      ]
-    },
-    {
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -226,45 +183,16 @@ resource "sonarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
-    },
-    {
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
-    },
-    {
-      qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
-    },
-    {
-      qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
-    },
-    {
-      id   = 1000
-      name = "WEB 480p"
-      qualities = [
-        { id = 12, name = "WEBRip-480p", source = "webRip", resolution = 480 },
-        { id = 8, name = "WEBDL-480p", source = "web", resolution = 480 },
-      ]
-    },
-    {
-      qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
 }
 
-# Profile: HD-1080p (id=4) — unused (0 series).
+# Profile: HD-1080p — unused (0 series). 1080p only.
 resource "sonarr_quality_profile" "hd_1080p" {
   name            = "HD-1080p"
   upgrade_allowed = true
-  cutoff          = 7 # Bluray-1080p — stops short of Bluray-1080p Remux
+  cutoff          = 7 # Bluray-1080p
 
   quality_groups = [
     {
@@ -282,56 +210,16 @@ resource "sonarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
-    },
-    {
-      id   = 1001
-      name = "WEB 720p"
-      qualities = [
-        { id = 14, name = "WEBRip-720p", source = "webRip", resolution = 720 },
-        { id = 5, name = "WEBDL-720p", source = "web", resolution = 720 },
-      ]
-    },
-    {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
       qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
-    },
-    {
-      qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
-    },
-    {
-      qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
-    },
-    {
-      id   = 1000
-      name = "WEB 480p"
-      qualities = [
-        { id = 12, name = "WEBRip-480p", source = "webRip", resolution = 480 },
-        { id = 8, name = "WEBDL-480p", source = "web", resolution = 480 },
-      ]
-    },
-    {
-      qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
 }
 
-# Profile: Ultra-HD (id=5) — unused (0 series). The only profile that still permits 2160p.
+# Profile: Ultra-HD — unused (0 series). The only profile permitting 2160p.
 resource "sonarr_quality_profile" "ultra_hd" {
   name            = "Ultra-HD"
   upgrade_allowed = true
-  cutoff          = 19 # Bluray-2160p — stops short of Bluray-2160p Remux
+  cutoff          = 19 # Bluray-2160p
 
   quality_groups = [
     {
@@ -351,71 +239,14 @@ resource "sonarr_quality_profile" "ultra_hd" {
     {
       qualities = [{ id = 16, name = "HDTV-2160p", source = "television", resolution = 2160 }]
     },
-    {
-      qualities = [{ id = 20, name = "Bluray-1080p Remux", source = "blurayRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      id   = 1002
-      name = "WEB 1080p"
-      qualities = [
-        { id = 15, name = "WEBRip-1080p", source = "webRip", resolution = 1080 },
-        { id = 3, name = "WEBDL-1080p", source = "web", resolution = 1080 },
-      ]
-    },
-    {
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
-    },
-    {
-      id   = 1001
-      name = "WEB 720p"
-      qualities = [
-        { id = 14, name = "WEBRip-720p", source = "webRip", resolution = 720 },
-        { id = 5, name = "WEBDL-720p", source = "web", resolution = 720 },
-      ]
-    },
-    {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
-    },
-    {
-      qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
-    },
-    {
-      qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
-    },
-    {
-      id   = 1000
-      name = "WEB 480p"
-      qualities = [
-        { id = 12, name = "WEBRip-480p", source = "webRip", resolution = 480 },
-        { id = 8, name = "WEBDL-480p", source = "web", resolution = 480 },
-      ]
-    },
-    {
-      qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
-    },
   ]
 }
 
-# Profile: HD - 720p/1080p (id=6) — 6 series.
+# Profile: HD - 720p/1080p — 6 series, and the profile Seerr requests into (activeProfileId=6). 720p and 1080p only.
 resource "sonarr_quality_profile" "hd_720p_1080p" {
   name            = "HD - 720p/1080p"
   upgrade_allowed = true
-  cutoff          = 7 # Bluray-1080p — was 4 (HDTV-720p), which capped this profile at 720p
+  cutoff          = 7 # Bluray-1080p
 
   quality_groups = [
     {
@@ -433,6 +264,9 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
+      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
+    },
+    {
       qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
@@ -444,36 +278,7 @@ resource "sonarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      qualities = [{ id = 10, name = "Raw-HD", source = "televisionRaw", resolution = 1080 }]
-    },
-    {
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "television", resolution = 1080 }]
-    },
-    {
       qualities = [{ id = 4, name = "HDTV-720p", source = "television", resolution = 720 }]
-    },
-    {
-      qualities = [{ id = 22, name = "Bluray-576p", source = "bluray", resolution = 576 }]
-    },
-    {
-      qualities = [{ id = 13, name = "Bluray-480p", source = "bluray", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 480 }]
-    },
-    {
-      id   = 1000
-      name = "WEB 480p"
-      qualities = [
-        { id = 12, name = "WEBRip-480p", source = "webRip", resolution = 480 },
-        { id = 8, name = "WEBDL-480p", source = "web", resolution = 480 },
-      ]
-    },
-    {
-      qualities = [{ id = 1, name = "SDTV", source = "television", resolution = 480 }]
-    },
-    {
-      qualities = [{ id = 0, name = "Unknown", source = "unknown", resolution = 0 }]
     },
   ]
 }
