@@ -2,6 +2,34 @@
 # Retrieved 2026-05-14 via kubectl exec radarr /api/v3/qualityprofile
 # language id=1 = English
 #
+# ORDERING IS DELIBERATELY BEST-FIRST. DO NOT "FIX" IT TO READ WORST-FIRST.
+#
+# Radarr and Sonarr rank quality by position in this list, index 0 = WORST. But the
+# devopsarr provider writes the list REVERSED, so what you put here comes out backwards
+# in the app. Listing best-first is what produces a correct worst-first ranking live.
+#
+# Measured 2026-08-18 on two profiles independently: the tf order was worst-first, and
+# the live API read back the exact reverse in both cases. The API itself round-trips
+# order faithfully (verified by POSTing a scratch profile with a known order and reading
+# it back), so the reversal is the provider's, not the API's.
+#
+# The cost of getting this backwards is not cosmetic. Before this change every profile
+# was inverted live: WEBDL-720p outranked Bluray-1080p, so Radarr reported
+# `qualityCutoffNotMet: false` for 720p files and rejected all 97 candidate releases with
+# "Existing file meets cutoff" — only 1 of ~315 sub-1080p movies was eligible to upgrade.
+# In the "Any" profile it also meant WORKPRINT ranked 29 and CAM 28 against Remux-2160p
+# at 3: a cam rip beat a 4K remux.
+#
+# `lifecycle { ignore_changes = [quality_groups] }` used to sit on every profile here and
+# is why the inversion survived from the 2026-05-14 import until now. Do not re-add it —
+# it hides exactly this class of bug.
+#
+# To verify after any change to this file, read the live order back and confirm index 0
+# is the worst quality:
+#   kubectl exec -n mediastack <pod> -c <app> -- sh -c \
+#     "curl -s -H 'X-Api-Key: $KEY' 'http://localhost:<port>/api/v3/qualityprofile/1'" \
+#     | python3 -c "import json,sys;print([i.get('quality',{}).get('name') for i in json.load(sys.stdin)['items']][:4])"
+#
 # upgrade_allowed is true on every profile. With it false (the previous state)
 # Radarr treats the *highest allowed quality* as the cutoff, so any existing file
 # "meets cutoff" and no release is ever grabbed as a replacement — a 720p file
@@ -16,7 +44,6 @@ resource "radarr_quality_profile" "any" {
   name            = "Any"
   upgrade_allowed = true
   cutoff          = 7 # Bluray-1080p — stop upgrading once a 1080p Blu-ray is in place
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -24,96 +51,12 @@ resource "radarr_quality_profile" "any" {
 
   quality_groups = [
     {
-      name      = "WORKPRINT"
-      qualities = [{ id = 24, name = "WORKPRINT", source = "workprint", resolution = 0 }]
+      name      = "Remux-2160p"
+      qualities = [{ id = 31, name = "Remux-2160p", source = "bluray", resolution = 2160 }]
     },
     {
-      name      = "CAM"
-      qualities = [{ id = 25, name = "CAM", source = "cam", resolution = 0 }]
-    },
-    {
-      name      = "TELESYNC"
-      qualities = [{ id = 26, name = "TELESYNC", source = "telesync", resolution = 0 }]
-    },
-    {
-      name      = "TELECINE"
-      qualities = [{ id = 27, name = "TELECINE", source = "telecine", resolution = 0 }]
-    },
-    {
-      name      = "REGIONAL"
-      qualities = [{ id = 29, name = "REGIONAL", source = "dvd", resolution = 480 }]
-    },
-    {
-      name      = "DVDSCR"
-      qualities = [{ id = 28, name = "DVDSCR", source = "dvd", resolution = 480 }]
-    },
-    {
-      name      = "SDTV"
-      qualities = [{ id = 1, name = "SDTV", source = "tv", resolution = 480 }]
-    },
-    {
-      name      = "DVD"
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 0 }]
-    },
-    {
-      name      = "DVD-R"
-      qualities = [{ id = 23, name = "DVD-R", source = "dvd", resolution = 480 }]
-    },
-    {
-      id   = 1000
-      name = "WEB 480p"
-      qualities = [
-        { id = 8, name = "WEBDL-480p", source = "webdl", resolution = 480 },
-        { id = 12, name = "WEBRip-480p", source = "webrip", resolution = 480 },
-      ]
-    },
-    {
-      name      = "Bluray-480p"
-      qualities = [{ id = 20, name = "Bluray-480p", source = "bluray", resolution = 480 }]
-    },
-    {
-      name      = "Bluray-576p"
-      qualities = [{ id = 21, name = "Bluray-576p", source = "bluray", resolution = 576 }]
-    },
-    {
-      name      = "HDTV-720p"
-      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
-    },
-    {
-      id   = 1001
-      name = "WEB 720p"
-      qualities = [
-        { id = 5, name = "WEBDL-720p", source = "webdl", resolution = 720 },
-        { id = 14, name = "WEBRip-720p", source = "webrip", resolution = 720 },
-      ]
-    },
-    {
-      name      = "Bluray-720p"
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
-    },
-    {
-      name      = "HDTV-1080p"
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
-    },
-    {
-      id   = 1002
-      name = "WEB 1080p"
-      qualities = [
-        { id = 3, name = "WEBDL-1080p", source = "webdl", resolution = 1080 },
-        { id = 15, name = "WEBRip-1080p", source = "webrip", resolution = 1080 },
-      ]
-    },
-    {
-      name      = "Bluray-1080p"
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      name      = "Remux-1080p"
-      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      name      = "HDTV-2160p"
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "tv", resolution = 2160 }]
+      name      = "Bluray-2160p"
+      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
       id   = 1003
@@ -124,12 +67,96 @@ resource "radarr_quality_profile" "any" {
       ]
     },
     {
-      name      = "Bluray-2160p"
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
+      name      = "HDTV-2160p"
+      qualities = [{ id = 16, name = "HDTV-2160p", source = "tv", resolution = 2160 }]
     },
     {
-      name      = "Remux-2160p"
-      qualities = [{ id = 31, name = "Remux-2160p", source = "bluray", resolution = 2160 }]
+      name      = "Remux-1080p"
+      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
+    },
+    {
+      name      = "Bluray-1080p"
+      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
+    },
+    {
+      id   = 1002
+      name = "WEB 1080p"
+      qualities = [
+        { id = 3, name = "WEBDL-1080p", source = "webdl", resolution = 1080 },
+        { id = 15, name = "WEBRip-1080p", source = "webrip", resolution = 1080 },
+      ]
+    },
+    {
+      name      = "HDTV-1080p"
+      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
+    },
+    {
+      name      = "Bluray-720p"
+      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
+    },
+    {
+      id   = 1001
+      name = "WEB 720p"
+      qualities = [
+        { id = 5, name = "WEBDL-720p", source = "webdl", resolution = 720 },
+        { id = 14, name = "WEBRip-720p", source = "webrip", resolution = 720 },
+      ]
+    },
+    {
+      name      = "HDTV-720p"
+      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
+    },
+    {
+      name      = "Bluray-576p"
+      qualities = [{ id = 21, name = "Bluray-576p", source = "bluray", resolution = 576 }]
+    },
+    {
+      name      = "Bluray-480p"
+      qualities = [{ id = 20, name = "Bluray-480p", source = "bluray", resolution = 480 }]
+    },
+    {
+      id   = 1000
+      name = "WEB 480p"
+      qualities = [
+        { id = 8, name = "WEBDL-480p", source = "webdl", resolution = 480 },
+        { id = 12, name = "WEBRip-480p", source = "webrip", resolution = 480 },
+      ]
+    },
+    {
+      name      = "DVD-R"
+      qualities = [{ id = 23, name = "DVD-R", source = "dvd", resolution = 480 }]
+    },
+    {
+      name      = "DVD"
+      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 0 }]
+    },
+    {
+      name      = "SDTV"
+      qualities = [{ id = 1, name = "SDTV", source = "tv", resolution = 480 }]
+    },
+    {
+      name      = "DVDSCR"
+      qualities = [{ id = 28, name = "DVDSCR", source = "dvd", resolution = 480 }]
+    },
+    {
+      name      = "REGIONAL"
+      qualities = [{ id = 29, name = "REGIONAL", source = "dvd", resolution = 480 }]
+    },
+    {
+      name      = "TELECINE"
+      qualities = [{ id = 27, name = "TELECINE", source = "telecine", resolution = 0 }]
+    },
+    {
+      name      = "TELESYNC"
+      qualities = [{ id = 26, name = "TELESYNC", source = "telesync", resolution = 0 }]
+    },
+    {
+      name      = "CAM"
+      qualities = [{ id = 25, name = "CAM", source = "cam", resolution = 0 }]
+    },
+    {
+      name      = "WORKPRINT"
+      qualities = [{ id = 24, name = "WORKPRINT", source = "workprint", resolution = 0 }]
     },
   ]
 }
@@ -139,7 +166,6 @@ resource "radarr_quality_profile" "sd" {
   name            = "SD"
   upgrade_allowed = true
   cutoff          = 21 # Bluray-576p — top of this profile's own list
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -147,36 +173,12 @@ resource "radarr_quality_profile" "sd" {
 
   quality_groups = [
     {
-      name      = "WORKPRINT"
-      qualities = [{ id = 24, name = "WORKPRINT", source = "workprint", resolution = 0 }]
+      name      = "Bluray-576p"
+      qualities = [{ id = 21, name = "Bluray-576p", source = "bluray", resolution = 576 }]
     },
     {
-      name      = "CAM"
-      qualities = [{ id = 25, name = "CAM", source = "cam", resolution = 0 }]
-    },
-    {
-      name      = "TELESYNC"
-      qualities = [{ id = 26, name = "TELESYNC", source = "telesync", resolution = 0 }]
-    },
-    {
-      name      = "TELECINE"
-      qualities = [{ id = 27, name = "TELECINE", source = "telecine", resolution = 0 }]
-    },
-    {
-      name      = "REGIONAL"
-      qualities = [{ id = 29, name = "REGIONAL", source = "dvd", resolution = 480 }]
-    },
-    {
-      name      = "DVDSCR"
-      qualities = [{ id = 28, name = "DVDSCR", source = "dvd", resolution = 480 }]
-    },
-    {
-      name      = "SDTV"
-      qualities = [{ id = 1, name = "SDTV", source = "tv", resolution = 480 }]
-    },
-    {
-      name      = "DVD"
-      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 0 }]
+      name      = "Bluray-480p"
+      qualities = [{ id = 20, name = "Bluray-480p", source = "bluray", resolution = 480 }]
     },
     {
       id   = 1000
@@ -187,12 +189,36 @@ resource "radarr_quality_profile" "sd" {
       ]
     },
     {
-      name      = "Bluray-480p"
-      qualities = [{ id = 20, name = "Bluray-480p", source = "bluray", resolution = 480 }]
+      name      = "DVD"
+      qualities = [{ id = 2, name = "DVD", source = "dvd", resolution = 0 }]
     },
     {
-      name      = "Bluray-576p"
-      qualities = [{ id = 21, name = "Bluray-576p", source = "bluray", resolution = 576 }]
+      name      = "SDTV"
+      qualities = [{ id = 1, name = "SDTV", source = "tv", resolution = 480 }]
+    },
+    {
+      name      = "DVDSCR"
+      qualities = [{ id = 28, name = "DVDSCR", source = "dvd", resolution = 480 }]
+    },
+    {
+      name      = "REGIONAL"
+      qualities = [{ id = 29, name = "REGIONAL", source = "dvd", resolution = 480 }]
+    },
+    {
+      name      = "TELECINE"
+      qualities = [{ id = 27, name = "TELECINE", source = "telecine", resolution = 0 }]
+    },
+    {
+      name      = "TELESYNC"
+      qualities = [{ id = 26, name = "TELESYNC", source = "telesync", resolution = 0 }]
+    },
+    {
+      name      = "CAM"
+      qualities = [{ id = 25, name = "CAM", source = "cam", resolution = 0 }]
+    },
+    {
+      name      = "WORKPRINT"
+      qualities = [{ id = 24, name = "WORKPRINT", source = "workprint", resolution = 0 }]
     },
   ]
 }
@@ -202,7 +228,6 @@ resource "radarr_quality_profile" "hd_720p" {
   name            = "HD-720p"
   upgrade_allowed = true
   cutoff          = 6 # Bluray-720p — top of this profile's own list
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -210,8 +235,8 @@ resource "radarr_quality_profile" "hd_720p" {
 
   quality_groups = [
     {
-      name      = "HDTV-720p"
-      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
+      name      = "Bluray-720p"
+      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
     },
     {
       id   = 1001
@@ -222,8 +247,8 @@ resource "radarr_quality_profile" "hd_720p" {
       ]
     },
     {
-      name      = "Bluray-720p"
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
+      name      = "HDTV-720p"
+      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
     },
   ]
 }
@@ -233,7 +258,6 @@ resource "radarr_quality_profile" "hd_1080p" {
   name            = "HD-1080p"
   upgrade_allowed = true
   cutoff          = 7 # Bluray-1080p — stops short of Remux-1080p (32-39 GB)
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -241,8 +265,12 @@ resource "radarr_quality_profile" "hd_1080p" {
 
   quality_groups = [
     {
-      name      = "HDTV-1080p"
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
+      name      = "Remux-1080p"
+      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
+    },
+    {
+      name      = "Bluray-1080p"
+      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
       id   = 1002
@@ -253,12 +281,8 @@ resource "radarr_quality_profile" "hd_1080p" {
       ]
     },
     {
-      name      = "Bluray-1080p"
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
-    },
-    {
-      name      = "Remux-1080p"
-      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
+      name      = "HDTV-1080p"
+      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
     },
   ]
 }
@@ -268,7 +292,6 @@ resource "radarr_quality_profile" "ultra_hd" {
   name            = "Ultra-HD"
   upgrade_allowed = true
   cutoff          = 19 # Bluray-2160p — stops short of Remux-2160p (50-90 GB)
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -276,8 +299,12 @@ resource "radarr_quality_profile" "ultra_hd" {
 
   quality_groups = [
     {
-      name      = "HDTV-2160p"
-      qualities = [{ id = 16, name = "HDTV-2160p", source = "tv", resolution = 2160 }]
+      name      = "Remux-2160p"
+      qualities = [{ id = 31, name = "Remux-2160p", source = "bluray", resolution = 2160 }]
+    },
+    {
+      name      = "Bluray-2160p"
+      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
     },
     {
       id   = 1003
@@ -288,12 +315,8 @@ resource "radarr_quality_profile" "ultra_hd" {
       ]
     },
     {
-      name      = "Bluray-2160p"
-      qualities = [{ id = 19, name = "Bluray-2160p", source = "bluray", resolution = 2160 }]
-    },
-    {
-      name      = "Remux-2160p"
-      qualities = [{ id = 31, name = "Remux-2160p", source = "bluray", resolution = 2160 }]
+      name      = "HDTV-2160p"
+      qualities = [{ id = 16, name = "HDTV-2160p", source = "tv", resolution = 2160 }]
     },
   ]
 }
@@ -303,7 +326,6 @@ resource "radarr_quality_profile" "hd_720p_1080p" {
   name            = "HD - 720p/1080p"
   upgrade_allowed = true
   cutoff          = 7 # Bluray-1080p — was 6 (Bluray-720p), which capped this profile at 720p
-  lifecycle { ignore_changes = [quality_groups] }
 
   language = {
     id = 1
@@ -311,24 +333,12 @@ resource "radarr_quality_profile" "hd_720p_1080p" {
 
   quality_groups = [
     {
-      name      = "HDTV-720p"
-      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
+      name      = "Remux-1080p"
+      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
     },
     {
-      id   = 1001
-      name = "WEB 720p"
-      qualities = [
-        { id = 5, name = "WEBDL-720p", source = "webdl", resolution = 720 },
-        { id = 14, name = "WEBRip-720p", source = "webrip", resolution = 720 },
-      ]
-    },
-    {
-      name      = "Bluray-720p"
-      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
-    },
-    {
-      name      = "HDTV-1080p"
-      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
+      name      = "Bluray-1080p"
+      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
     },
     {
       id   = 1002
@@ -339,12 +349,24 @@ resource "radarr_quality_profile" "hd_720p_1080p" {
       ]
     },
     {
-      name      = "Bluray-1080p"
-      qualities = [{ id = 7, name = "Bluray-1080p", source = "bluray", resolution = 1080 }]
+      name      = "HDTV-1080p"
+      qualities = [{ id = 9, name = "HDTV-1080p", source = "tv", resolution = 1080 }]
     },
     {
-      name      = "Remux-1080p"
-      qualities = [{ id = 30, name = "Remux-1080p", source = "bluray", resolution = 1080 }]
+      name      = "Bluray-720p"
+      qualities = [{ id = 6, name = "Bluray-720p", source = "bluray", resolution = 720 }]
+    },
+    {
+      id   = 1001
+      name = "WEB 720p"
+      qualities = [
+        { id = 5, name = "WEBDL-720p", source = "webdl", resolution = 720 },
+        { id = 14, name = "WEBRip-720p", source = "webrip", resolution = 720 },
+      ]
+    },
+    {
+      name      = "HDTV-720p"
+      qualities = [{ id = 4, name = "HDTV-720p", source = "tv", resolution = 720 }]
     },
   ]
 }
