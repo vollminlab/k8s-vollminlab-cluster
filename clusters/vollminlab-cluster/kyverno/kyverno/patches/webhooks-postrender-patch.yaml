@@ -10,6 +10,8 @@ spec:
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      # */5 schedule: 240s < the 300s interval. Observed runtime 13s.
+      activeDeadlineSeconds: 240
       backoffLimit: 2
       template:
         metadata:

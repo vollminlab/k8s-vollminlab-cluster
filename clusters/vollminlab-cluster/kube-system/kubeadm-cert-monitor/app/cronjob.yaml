@@ -19,6 +19,8 @@ spec:
         env: production
         category: core
     spec:
+      # Monthly, reads cert expiry on three CPs.
+      activeDeadlineSeconds: 900
       ttlSecondsAfterFinished: 3600
       backoffLimit: 0
       template:
