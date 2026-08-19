@@ -66,12 +66,31 @@ data:
       # NOTE: This sets the env var, but server.properties must be manually set to 29999984
       # The server.properties file is in a PVC and persists across restarts
       # Manual fix applied: max-world-size=29999984 in /data/server.properties
-      maxWorldSize: 29999984
+      #
+      # QUOTED deliberately. Unquoted, YAML parses this as a number and the env var
+      # renders as MAX_WORLD_SIZE=2.9999984e+07 -- verified on the live pod. It is
+      # inert today only because OVERRIDE_SERVER_PROPERTIES is unset, so nothing ever
+      # writes that string into server.properties. It would become a real corruption
+      # the moment anyone enables the override.
+      maxWorldSize: "29999984"
       rcon:
         enabled: true
         # Password is now stored in SealedSecret and passed via environment variable
     extraEnv:
       SIMULATION_DISTANCE: "6"
+      # --- Reduce what internet scanners learn from a server-list ping ----------
+      # 29 days of logs show ~13 probes from scanners (ScanProbe, KittyScan,
+      # herobrine, JohnCDupe and friends) and 0 successful logins -- the whitelist
+      # held every time. These two settings do not add access control, they shrink
+      # what an unauthenticated probe gets back.
+      #
+      # hide-online-players: the status ping otherwise returns the current player
+      # list, which is exactly what server-cataloguing scanners harvest.
+      HIDE_ONLINE_PLAYERS: "TRUE"
+      # rate-limit: packets/sec per connection before the server kicks. Vanilla
+      # default is 0, i.e. disabled. 300 is the commonly used safe value -- high
+      # enough that normal play never approaches it, low enough to blunt a flood.
+      RATE_LIMIT: "300"
       PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/lfk408pd/bluemap-5.13-spigot.jar"
       OVERRIDE_WHITELIST: "TRUE"
     # RCON password from secret (itzg/minecraft-server supports RCON_PASSWORD env var)
