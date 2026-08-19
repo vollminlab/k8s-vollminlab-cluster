@@ -1,0 +1,115 @@
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: ignore-vendor-resource-requirements
+  namespace: kyverno
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  # Workloads exempt from require-resources ONLY. Every one of these is either
+  # impossible to configure from this repo, or small enough that a memory limit
+  # buys nothing and only adds an OOMKill mode. Peaks below are 30d maxima from
+  # VictoriaMetrics, measured 2026-08-19.
+  #
+  # This exception deliberately does NOT cover trivy-system/trivy-operator
+  # (1117Mi peak) or harbor/harbor-registry (532Mi peak) — those are the two
+  # genuinely large unbounded consumers and are chart-settable, so they get
+  # real limits instead of an exemption.
+  match:
+    any:
+      # --- Created at runtime by longhorn-manager, not by the Helm chart. -----
+      # These carry `app: longhorn` rather than their own component name, so
+      # inject-resource-requirements cannot target them either.
+      # Peaks: csi-plugin 383Mi, driver-deployer 12Mi, engine-image ~21Mi.
+      - resources:
+          kinds:
+            - DaemonSet
+          namespaces:
+            - longhorn-system
+          names:
+            - "longhorn-csi-plugin"
+            - "engine-image-ei-*"
+      - resources:
+          kinds:
+            - Deployment
+          namespaces:
+            - longhorn-system
+          names:
+            - "longhorn-driver-deployer"
+
+      # --- Owned by kubeadm; no Helm values exist. Peak 79Mi. ----------------
+      - resources:
+          kinds:
+            - DaemonSet
+          namespaces:
+            - kube-system
+          names:
+            - "kube-proxy"
+
+      # --- Created by the authentik operator itself. Peak 42Mi. --------------
+      - resources:
+          kinds:
+            - Deployment
+          namespaces:
+            - authentik
+          names:
+            - "ak-outpost-*"
+
+      # --- kube-prometheus-stack + loki. -------------------------------------
+      # The StatefulSets fail only on their sidecars (config-reloader 37Mi,
+      # loki-sc-rules 89Mi); the main containers are already limited. Grafana
+      # fails on grafana-sc-dashboard 92Mi / grafana-sc-datasources 85Mi.
+      # Operator 35Mi, node-exporter 62Mi.
+      - resources:
+          kinds:
+            - Deployment
+            - StatefulSet
+            - DaemonSet
+          namespaces:
+            - monitoring
+          names:
+            - "kube-prometheus-stack-grafana"
+            - "kube-prometheus-stack-operator"
+            - "kube-prometheus-stack-prometheus-node-exporter"
+            - "alertmanager-kube-prometheus-stack-alertmanager"
+            - "prometheus-kube-prometheus-stack-prometheus"
+            - "loki"
+
+      # --- metallb speaker stack. Peaks: frr 43Mi, statuscleaner 28Mi. -------
+      - resources:
+          kinds:
+            - DaemonSet
+            - Deployment
+          namespaces:
+            - metallb-system
+          names:
+            - "metallb-frr-k8s"
+            - "metallb-frr-k8s-statuscleaner"
+
+      # --- tailscale operator. Peak 95Mi. -----------------------------------
+      - resources:
+          kinds:
+            - Deployment
+          namespaces:
+            - tailscale
+          names:
+            - "operator"
+
+      # --- harbor front-end pieces. Peaks: nginx 23Mi, portal 13Mi, ----------
+      # redis 12Mi. harbor-registry is excluded on purpose (see above).
+      - resources:
+          kinds:
+            - Deployment
+            - StatefulSet
+          namespaces:
+            - harbor
+          names:
+            - "harbor-nginx"
+            - "harbor-portal"
+            - "harbor-redis"
+  exceptions:
+    - policyName: require-resources
+      ruleNames:
+        - require-limits
