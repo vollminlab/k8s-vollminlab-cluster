@@ -16,6 +16,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Weekly, one govc call.
+      activeDeadlineSeconds: 900
       # WITHOUT THIS THE ALERT NEVER CLEARS. kube_job_failed is reported per Job
       # OBJECT, and failedJobsHistoryLimit only evicts a failed Job when three
       # NEWER failures replace it -- so once this fires, rotating the password and

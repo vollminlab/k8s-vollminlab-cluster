@@ -11,6 +11,8 @@ spec:
   schedule: "0 2 * * *"  # Run daily at 2 AM
   jobTemplate:
     spec:
+      # Daily image/container prune across nodes.
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 3600  # Clean up completed jobs after 1 hour
       template:
         metadata:

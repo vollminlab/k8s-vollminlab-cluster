@@ -14,6 +14,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Daily. Defrag is I/O-bound and can legitimately take minutes on shared storage.
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 3600
       # The descheduler (LowNodeUtilization, every 30m) can evict this short-lived
       # pod mid-run as a stateless rebalance victim — it has no PVC/local storage,

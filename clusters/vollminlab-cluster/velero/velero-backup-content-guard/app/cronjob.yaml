@@ -23,6 +23,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Daily. Observed runtime 12s; 900s is ~75x.
+      activeDeadlineSeconds: 900
       ttlSecondsAfterFinished: 86400
       # backoffLimit 0, unlike velero-pvb-healer's 2. The healer never self-fails,
       # so a failed pod there means external disruption and retrying is right.

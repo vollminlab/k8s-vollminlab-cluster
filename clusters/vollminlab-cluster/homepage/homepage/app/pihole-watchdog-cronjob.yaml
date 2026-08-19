@@ -142,6 +142,9 @@ spec:
   failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      # */5 schedule: 240s < the 300s interval, so a hung run self-terminates before it blocks
+      # the next tick. Observed runtime 7s.
+      activeDeadlineSeconds: 240
       template:
         metadata:
           labels:
