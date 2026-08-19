@@ -9,7 +9,12 @@
   "prConcurrentLimit": 10,
   "labels": ["renovate", "dependencies"],
   "commitMessagePrefix": "chore(deps):",
-  "enabledManagers": ["flux", "github-actions", "custom.regex"],
+  // "terraform" added 2026-08-19. Until then no manager saw terraform/, so provider
+  // upgrades never appeared as a PR -- and with no lockfiles, `~>` constraints and
+  // approvePlan: auto on a 10m interval, a new provider release auto-applied itself to
+  // production within minutes of publication. Lockfiles (committed in the same change)
+  // stop the silent upgrade; this makes the upgrade visible and reviewable.
+  "enabledManagers": ["flux", "github-actions", "custom.regex", "terraform"],
   "ignorePaths": [
     "clusters/vollminlab-cluster/flux-system/gotk-components.yaml"
   ],
@@ -63,7 +68,18 @@
     "tautulli-repo": "https://k8s-at-home.com/charts/",
     "velero-repo": "https://vmware-tanzu.github.io/helm-charts"
   },
+  "terraform": {
+    "managerFilePatterns": ["/^terraform/.+/versions\.tf$/"],
+  },
   "packageRules": [
+    {
+      // These apply to live infrastructure the moment they merge (approvePlan: auto,
+      // interval 10m), so they must not be grouped with chart bumps or auto-anything.
+      "matchManagers": ["terraform"],
+      "commitMessagePrefix": "chore(tofu):",
+      "labels": ["renovate", "dependencies", "terraform", "review-carefully"],
+      "automerge": false,
+    },
     {
       "description": "Require manual review for all Flux HelmRelease updates",
       "matchManagers": ["flux"],
