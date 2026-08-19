@@ -19,6 +19,7 @@ resources:
   - prometheusrule-eso.yaml
   - prometheusrule-gitops.yaml
   - prometheusrule-victoria-metrics.yaml
+  - prometheusrule-volsync.yaml
   - nodes-dashboard-configmap.yaml
   - longhorn-dashboard-configmap.yaml
   - minio-dashboard-configmap.yaml
