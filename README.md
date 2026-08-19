@@ -112,7 +112,6 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   ingress-nginx/                        # Ingress controller
   kube-system/                          # metrics-server, smb-csi-driver, descheduler
   kyverno/                              # Policy engine + ClusterPolicies + policy-reporter
-  local-path-storage/                   # Node-local storage provisioner
   longhorn-system/                      # Distributed block storage + rebalancing controller
   mediastack/                           # Jellyfin, *arr stack, downloaders, Audiobookshelf
   metallb-system/                       # Bare-metal load balancer
@@ -184,13 +183,12 @@ themselves:
 | Longhorn | longhorn-system | Distributed block storage (RWO + RWX) |
 | Longhorn Rebalancing Controller | longhorn-system | Evens replica distribution across nodes |
 | SMB CSI Driver | kube-system | SMB/CIFS network shares |
-| Local Path Provisioner | local-path-storage | Node-local storage |
 | MinIO | minio | S3-compatible object storage (Velero backend) |
 | Velero | velero | Cluster backup — MinIO (2am) + Backblaze B2 (4am) |
 | VolSync | volsync-system | PVC replication to backup targets |
 
 StorageClasses: `longhorn` (default), `longhorn-r1`, `longhorn-r2`, `longhorn-dmz`,
-`longhorn-static`, `local-path`, `local-vm-lt`, `smb`.
+`longhorn-static`, `local-vm-lt`, `smb`.
 
 ### Observability
 

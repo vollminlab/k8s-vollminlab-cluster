@@ -25,7 +25,6 @@ resources:
   - external-dns-kustomization.yaml
   - external-secrets-kustomization.yaml
   - homepage-kustomization.yaml
-  - local-path-storage-kustomization.yaml
   - longhorn-system-kustomization.yaml
   - mediastack-kustomization.yaml
   - monitoring-kustomization.yaml
