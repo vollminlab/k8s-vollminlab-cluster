@@ -617,6 +617,25 @@ jobs:
             fi
             echo "  ✅ $RELEASE_NAME renders and strict-parses cleanly"
 
+            # Drop nodePort before the dry-run. nodePort is allocated cluster-wide,
+            # not per namespace, and this repo pins it deliberately (minecraft on
+            # 32565). So the value in the rendered manifest is by definition already
+            # held by the live Service, and the dry-run below reports
+            #   The Service "minecraft" is invalid: spec.ports[0].nodePort:
+            #   Invalid value: 32565: provided port is already allocated
+            # on every PR that touches such an app, whatever the change was — a
+            # NetworkPolicy edit that never goes near the Service still fails.
+            # Integration Test is a required check, so that blocked the merge.
+            #
+            # This does not relax validation: schema, Kyverno admission and every
+            # other field are still dry-run exactly as before. It removes the one
+            # field that cannot be meaningfully checked against a cluster already
+            # running the real object. It also does not touch the manifest — the
+            # pinned port stays pinned, which is deliberate for a port players
+            # connect to.
+            yq eval -i '(select(.kind == "Service") | .spec.ports[]?) |= del(.nodePort)' \
+              "$RENDER_DIR/rendered.yaml"
+
             # ── Server-side dry-run: real admission chain, zero side effects ────
             if kubectl apply --dry-run=server -n "$TEST_NAMESPACE" \
                  -f "$RENDER_DIR/rendered.yaml" > "$RENDER_DIR/dryrun.out" 2>&1; then
