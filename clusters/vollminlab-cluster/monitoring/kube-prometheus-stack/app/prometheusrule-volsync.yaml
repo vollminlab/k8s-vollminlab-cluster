@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: volsync-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: volsync
+      rules:
+        # Added 2026-08-19. Before this file, the only occurrence of "volsync" in any
+        # PrometheusRule on the cluster was an *exclusion* (pod!~"volsync-src-.*" inside
+        # PodNotReady). VolSync protects 13 PVCs and is the only backup system writing
+        # directly offsite to B2, and nothing watched it: a ReplicationSource that
+        # stopped syncing would have shown up solely as a stale status.lastSyncTime
+        # that no rule read.
+        #
+        # These series are exported by the volsync controller in volsync-system, so
+        # `namespace` is always volsync-system -- the PVC's own namespace is
+        # `obj_namespace` and the ReplicationSource is `obj_name`. Annotations use
+        # those, not $labels.namespace, or every alert would name volsync-system.
+
+        # VolSync's own freshness verdict: it sets this to 1 when a source has missed
+        # its trigger window. Preferred over reimplementing staleness from
+        # sync_duration timestamps, because the controller already knows each
+        # source's schedule (all 13 are daily, staggered 10 min apart 00:00-02:00).
+        - alert: VolSyncVolumeOutOfSync
+          expr: volsync_volume_out_of_sync > 0
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "VolSync replication source is out of sync"
+            description: >-
+              ReplicationSource {{ $labels.obj_namespace }}/{{ $labels.obj_name }} ({{ $labels.method }}) has been out of sync for over an hour. Its PVC is no
+              longer being replicated to B2.
+        # A source that misses its window repeatedly but recovers before the hour is up
+        # never trips the rule above. Warning-level, because a single missed interval on
+        # a daily schedule is usually contention rather than breakage.
+        - alert: VolSyncMissedIntervals
+          expr: increase(volsync_missed_intervals_total[24h]) > 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "VolSync source is missing its sync intervals"
+            description: "ReplicationSource {{ $labels.obj_namespace }}/{{ $labels.obj_name }} has missed {{ $value }} sync intervals in 24h."
+        # The metrics-absent case, matching CNPGClusterNoMetrics. If the volsync
+        # controller dies or its ServiceMonitor breaks, every rule above silently stops
+        # evaluating -- which is the same class of blind spot this whole file exists to
+        # close.
+        - alert: VolSyncNoMetrics
+          expr: absent(volsync_volume_out_of_sync)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No VolSync metrics being scraped"
+            description: >-
+              Prometheus has not scraped any volsync_volume_out_of_sync samples for 30 minutes -- the volsync controller or its ServiceMonitor may be down, which
+              would also silence every other VolSync alert.
