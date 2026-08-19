@@ -32,10 +32,12 @@ spec:
           resources:
             requests:
               cpu: 100m
-              # Idles at ~0-100Mi; spikes only briefly during a headless-Chromium
-              # Cloudflare solve. 192Mi request / 768Mi limit keeps solve headroom
-              # while reclaiming the over-provisioned 512Mi/2Gi.
-              memory: 192Mi
+              # Re-measured 2026-08-19 over 14d: p50 374Mi, p95 412Mi, peak 767.7Mi
+              # against the old 768Mi limit -- clipped exactly at the ceiling, and it
+              # OOMKilled twice in 30d. The old 192Mi request was also below its own
+              # p50, so it was mis-sized in both directions at once. The 'idles at
+              # ~0-100Mi' note above was wrong: headless Chromium stays resident.
+              memory: 448Mi
             limits:
               cpu: 1000m
-              memory: 768Mi
+              memory: 1Gi

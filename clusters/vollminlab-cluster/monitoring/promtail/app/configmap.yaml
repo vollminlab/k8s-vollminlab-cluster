@@ -22,13 +22,16 @@ data:
         value: "true"
         effect: NoSchedule
 
+    # 14d measured: p50 246Mi, p95 252Mi, peak 256Mi -- pinned at the old 256Mi limit on
+    # all 9 nodes, i.e. the ceiling was truncating demand rather than measuring it. The
+    # old 64Mi request under-declared steady state to the scheduler by ~4x across 9 pods.
     resources:
       requests:
         cpu: 50m
-        memory: 64Mi
+        memory: 256Mi
       limits:
         cpu: 200m
-        memory: 256Mi
+        memory: 512Mi
 
     podLabels:
       app: promtail

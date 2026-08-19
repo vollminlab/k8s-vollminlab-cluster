@@ -73,10 +73,10 @@ data:
             # is driven by ~600k active head series, NOT retention — the 24h cut
             # (PR #834) did not reduce it. Under-requesting silently over-commits
             # the node and worsened memory pressure.
-            memory: 2560Mi
+            memory: 3584Mi
           limits:
             cpu: 2000m
-            memory: 3584Mi
+            memory: 4608Mi
         storageSpec:
           volumeClaimTemplate:
             spec:
@@ -303,15 +303,18 @@ data:
         env: production
         category: observability
       # Kyverno requires CPU+memory requests and limits on every pod. The subchart
-      # ships with resources: {} (none), so KSM ran unbounded. Sized from observed
-      # usage: ~43Mi steady, ~127Mi 24h peak — 256Mi limit gives ~2x headroom.
+      # ships with resources: {} (none), so KSM ran unbounded.
+      # Re-measured 2026-08-19 over 14d: p50 154Mi, p95 238Mi, peak 252Mi. The old
+      # numbers came from a 24h window when the cluster held fewer objects; KSM's
+      # footprint scales with object count, so it had grown into its 256Mi ceiling
+      # (98% of limit at peak) and will keep growing.
       resources:
         requests:
           cpu: 25m
-          memory: 96Mi
+          memory: 256Mi
         limits:
           cpu: 200m
-          memory: 256Mi
+          memory: 384Mi
       # Relax the liveness probe so a brief kube-apiserver blip does not crash-loop
       # KSM. /livez makes a live API call; the default 5s timeout / 3 failures (~30s)
       # is too tight on this cluster, which sees occasional shared-storage etcd
