@@ -224,15 +224,15 @@ All volumes are `ReadWriteMany`, `100Gi`, backed by SMB shares at `192.168.150.2
 |---|---|---|---|
 | `restrict-default-namespace` | enforce | validate | Block all workloads in `default` namespace |
 | `restrict-privileged` | enforce | validate | Block privileged containers; exempts: kube-system, calico-system, longhorn-system, metallb-system, csi-driver, tigera-operator, ingress-nginx |
-| `restrict-hostpath-usage` | enforce | validate | Block hostPath volumes; exempts: kube-system, calico-system, longhorn-system, monitoring, tigera-operator |
+| `restrict-hostpath-usage` | enforce | validate | Block hostPath volumes; exempts: kube-system, calico-system, longhorn-system, monitoring, tigera-operator, velero |
 | `restrict-latest-tag` | enforce | validate | Block `:latest` image tags on Deployment/StatefulSet/DaemonSet |
-| `restrict-loadbalancer-services` | enforce | validate | LoadBalancer type only allowed in `ingress-nginx` and `dmz` namespaces |
-| `require-standard-labels` | enforce | validate | Require `app`, `env`, `category` labels on Deployments, StatefulSets, DaemonSets, Pods, Namespaces, Services; exempts: kube-system, default |
+| `restrict-loadbalancer-services` | enforce | validate | LoadBalancer type only allowed in `ingress-nginx`, `dmz`, `harbor` and `ci-test-*` namespaces |
+| `require-standard-labels` | enforce | validate | Require `app`, `env`, `category` labels on Deployments, StatefulSets, DaemonSets, Pods, Namespaces, Services; exempts: kube-system, kyverno |
 | `require-resources` | enforce | validate | Require CPU + memory **requests** and a **memory limit** on every container; exempts Flux deployments. A CPU limit is deliberately not required — see below |
 | `restrict-image-registries` | enforce | validate | Images must come from: harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev (short names without a domain also allowed) |
 | `dmz-restrict-external-access` | enforce | validate | Block `external-access=true` and `internet-egress=true` labels outside `dmz` namespace |
 | `dmz-enforce-node-placement` | audit | mutate | Auto-inject `nodeSelector: role=dmz` and toleration `dmz=Exists:NoSchedule` on all pods in `dmz` namespace |
-| `inject-namespace-labels` | audit | mutate | Auto-copy `app`, `env`, `category` labels from namespace to workloads; exempts: longhorn-system, flux-system, monitoring |
+| `inject-namespace-labels` | audit | mutate | Auto-copy `app`, `env`, `category` labels from namespace to workloads (no namespace exclusions) |
 | `inject-pod-labels` | audit | mutate | Auto-copy the same labels onto pods |
 | `inject-resource-requirements` | audit | mutate | Inject resources for Longhorn workloads the chart cannot set: csi-attacher, csi-provisioner, csi-resizer, csi-snapshotter, longhorn-ui, longhorn-manager |
 | `mutate-default-sa-automount` | audit | mutate | Disable token automount on the `default` ServiceAccount |
