@@ -182,6 +182,46 @@ spec:
             summary: "Velero daily-full backup metric absent — Velero may not be running"
             description: "velero_backup_last_status for schedule=velero-daily-full is missing. Velero may be down or metrics scraping has failed."
 
+        # --- Coverage for the two unwatched schedules -----------------------------
+        # Added 2026-08-19. Every rule above pins schedule="velero-daily-full" (4 of
+        # them) or "velero-daily-b2" (1), leaving velero-grafana-b2 and
+        # velero-monthly-b2 with no alerting at all. grafana-b2 is the one that
+        # matters most: grafana.db holds UI-created dashboards, users and API keys
+        # that exist nowhere else, and it was the only copy nothing watched.
+
+        # Schedule-agnostic failure catch. No time threshold needed -- a reported
+        # failure is a failure whatever the cadence -- so this covers monthly-b2 too,
+        # where any staleness threshold would have to be over a month wide.
+        - alert: VeleroAnyBackupFailed
+          expr: |
+            velero_backup_last_status == 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero backup failed for schedule {{ $labels.schedule }}"
+            description: "The most recent backup for schedule={{ $labels.schedule }} reported failure. This rule is deliberately not pinned to a schedule name so new schedules are covered the day they are created."
+        - alert: VeleroGrafanaBackupStale
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-grafana-b2"} > 26 * 3600
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Velero grafana-b2 backup is stale"
+            description: "velero-grafana-b2 last succeeded {{ $value | humanizeDuration }} ago (threshold 26h). grafana.db holds dashboards, users and API keys that are not reproducible from git."
+        # Monthly cadence: threshold set to 32 days, matching the 768h override the
+        # velero-backup-content-guard CronJob already applies to this schedule.
+        - alert: VeleroMonthlyBackupStale
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule="velero-monthly-b2"} > 768 * 3600
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero monthly-b2 backup is stale"
+            description: "velero-monthly-b2 last succeeded {{ $value | humanizeDuration }} ago (threshold 32d, matching the content guard's 768h override for this schedule)."
+
     - name: node-disk
       rules:
         - alert: NodeDiskSpaceLow
