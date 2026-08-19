@@ -39,18 +39,31 @@ All traffic is denied by default via `networkpolicy-default-deny.yaml`
 - **Allows**: UDP/TCP port 53 to kube-dns in kube-system namespace
 - **Required for**: Service discovery, external domain resolution
 
-#### External Ingress
-- **Policy**: `networkpolicy-allow-external-ingress.yaml`
-- **Allows**: All ingress traffic from any source (0.0.0.0/0)
-- **Applies to**: Pods with label `external-access: "true"`
-- **Use for**: NodePort services, LoadBalancer services
+#### Per-app policies — the pattern actually in use
 
-#### Internet Egress
-- **Policy**: `networkpolicy-allow-internet-egress.yaml`
-- **Allows**: Egress to internet (excluding private networks)
-- **Applies to**: Pods with label `internet-egress: "true"`
-- **Blocks**: RFC 1918 private networks, link-local, loopback
-- **Use for**: Downloading updates, external API calls
+Each workload ships its own NetworkPolicy next to its manifests
+(`<app>/app/networkpolicy.yaml`) selecting that app's own label and naming the exact
+ports it needs. `minecraft` and `masters-league` both do this.
+
+Prefer it over a blanket label. A per-app policy states which ports are open and to
+whom, so the exposure is reviewable in the same diff that creates it.
+
+> **Removed 2026-08-19: the `external-access` / `internet-egress` label mechanism.**
+> Two namespace-wide policies used to grant blanket 0.0.0.0/0 ingress (or RFC1918-excluded
+> egress) to any pod carrying those labels. They matched **zero pods for their entire life** —
+> every DMZ workload chose a per-app policy instead — and a label that opens a pod to the whole
+> internet without writing a considered rule is a footgun in the one namespace where that
+> matters most.
+>
+> The Kyverno `dmz-restrict-external-access` ClusterPolicy is deliberately **kept**. It blocks
+> those labels outside the DMZ namespace, so it still fails closed if anyone reintroduces them
+> expecting the old behaviour.
+
+#### Egress to the internet
+
+Grant it in the app's own policy. `masters-league` is the reference: `0.0.0.0/0` on the
+specific port, with an `except:` list for RFC 1918 so a DMZ workload cannot reach the internal
+network.
 
 ## Deployed Services
 

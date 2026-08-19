@@ -5,5 +5,3 @@ metadata:
 resources:
   - networkpolicy-default-deny.yaml
   - networkpolicy-allow-dns.yaml
-  - networkpolicy-allow-external-ingress.yaml
-  - networkpolicy-allow-internet-egress.yaml

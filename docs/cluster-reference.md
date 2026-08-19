@@ -1003,8 +1003,6 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 |---|---|
 | `default-deny-all` | Block all ingress and egress |
 | `allow-dns` | Allow egress to `10.96.0.10:53` UDP/TCP |
-| `allow-external-ingress` | Allow ingress from `0.0.0.0/0` for pods labeled `external-access=true` |
-| `allow-internet-egress` | Allow egress to internet (non-RFC1918, non-link-local, non-loopback) for pods labeled `internet-egress=true` |
 
 ### Minecraft Server
 
