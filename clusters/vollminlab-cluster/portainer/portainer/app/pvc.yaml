@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # Reuses the original claim name, free again now that the old local-path claim
+  # is gone. End state is one correctly-named, correctly-sized, GitOps-managed PVC.
+  name: portainer
+  namespace: portainer
+  labels:
+    app: portainer
+    env: production
+    category: apps
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Longhorn, not local-path. local-path-provisioner backs claims with a hostPath
+  # directory on one node, which cost four things that were invisible from the pod
+  # spec (so Kyverno's hostPath policy never saw them): no backup at all (velero's
+  # FSB skips hostPath), a *required* nodeAffinity pinning it to one node, a single
+  # unreplicated copy, and no kubelet volume_stats so KubePersistentVolumeFillingUp
+  # could never fire.
+  storageClassName: longhorn
+  resources:
+    requests:
+      # 1Gi, down from the 5Gi first chosen in #1101. Measured after that migration:
+      # the entire dataset is 156K (8 files -- BoltDB, certs, keys). 5Gi was sized on
+      # an assumption of "tens of MB" and is x3 replicas on Longhorn, so it burned
+      # 15Gi of scheduling ledger for 156K of data -- and w01/w05 already sit near
+      # 78% scheduled. Longhorn cannot shrink a volume, so correcting it means
+      # another copy; doing it now while the dataset is trivially small.
+      # Expands online if it ever needs to.
+      storage: 1Gi

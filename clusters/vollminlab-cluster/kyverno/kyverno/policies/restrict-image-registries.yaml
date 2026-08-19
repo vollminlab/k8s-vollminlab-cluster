@@ -35,7 +35,7 @@ spec:
           mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
           Short names without an explicit domain are also permitted.
         foreach:
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             deny:
               conditions:
                 all:
@@ -60,7 +60,7 @@ spec:
           mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev.
           Short names without an explicit domain are also permitted.
         foreach:
-          - list: "spec.template.spec.initContainers || `[]`"
+          - list: "request.object.spec.template.spec.initContainers || `[]`"
             deny:
               conditions:
                 all:

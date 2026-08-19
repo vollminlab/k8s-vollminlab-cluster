@@ -89,6 +89,24 @@ data:
     registry:
       credentials:
         existingSecret: harbor-core-credentials
+      # Both containers ran unbounded until 2026-08-19. Sized from 30d peaks
+      # in VictoriaMetrics: registry 532Mi, registryctl 10Mi. No CPU limit —
+      # throttling degrades push/pull latency and cannot protect the node the
+      # way a memory ceiling does (see require-resources).
+      registry:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+      controller:
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
 
     core:
       resources:
