@@ -43,3 +43,76 @@ spec:
           annotations:
             summary: "CNPG replication lag high"
             description: "Standby in cluster {{ $labels.namespace }}/{{ $labels.cluster }} is lagging by {{ $value | humanizeDuration }} (threshold 5m)."
+        # --- Backup / WAL-archiving health -------------------------------------
+        # Added 2026-08-19 after vollmint-db was found never to have completed a
+        # backup in the 24 days it had existed. Nothing here alerted, because every
+        # rule above watches liveness, not recoverability: the Cluster reported
+        # "Cluster in healthy state" throughout and the failure lived only in
+        # .status.conditions.
+        #
+        # Replicas report 0 for the backup timestamp series -- only the primary
+        # publishes real values -- so every rule below aggregates with max by(job)
+        # to take the primary's number. Comparing the raw series would fire on
+        # every standby permanently.
+        #
+        # These metrics carry `job` ("<ns>/<cluster>") and `namespace`, but NOT a
+        # `cluster` label, so annotations here use $labels.job.
+
+        # The fastest, least ambiguous signal that archiving has broken: WAL segments
+        # pile up in pg_wal marked "ready" when barman cannot ship them. vollmint sat
+        # at 142 for weeks. This fires within 30 minutes of archiving stopping, and it
+        # is what should have caught it on day one.
+        - alert: CNPGWALArchiveBacklog
+          expr: max by (job, namespace) (cnpg_collector_pg_wal_archive_status{value="ready"}) > 20
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG WAL archiving is backing up"
+            description: >-
+              {{ $labels.job }} has {{ $value }} WAL segments waiting to be archived. Postgres cannot recycle an unarchived segment, so pg_wal will grow until the
+              PVC fills. Check the barman endpoint is reachable -- a NetworkPolicy drop shows as 'Connect timeout' in the instance log.
+        # The backstop: no recoverable point in time exists at all. Deliberately a
+        # long `for` -- a freshly bootstrapped cluster legitimately has no
+        # recoverability point until its ScheduledBackup first fires, which can be
+        # most of a day away. 24h still catches a genuine break on day two.
+        - alert: CNPGNoRecoverabilityPoint
+          expr: max by (job, namespace) (cnpg_collector_first_recoverability_point) == 0
+          for: 24h
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG cluster has no recoverable point in time"
+            description: >-
+              {{ $labels.job }} reports first_recoverability_point=0 -- there is no point-in-time recovery available for this database at all. Either it has never
+              completed a base backup, or WAL archiving has never worked.
+        # A backup did complete once, but not recently. Guarded on > 0 so it cannot
+        # double-fire with CNPGNoRecoverabilityPoint above (a 0 timestamp would
+        # otherwise read as ~56 years stale).
+        - alert: CNPGBackupStale
+          expr: |
+            (max by (job, namespace) (cnpg_collector_last_available_backup_timestamp) > 0)
+            and
+            (time() - max by (job, namespace) (cnpg_collector_last_available_backup_timestamp) > 26 * 3600)
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "CNPG backup is stale"
+            description: "{{ $labels.job }} last completed a backup {{ $value | humanizeDuration }} ago (threshold 26h). All CNPG schedules on this cluster are daily."
+        # The most recent backup attempt failed more recently than the last success.
+        # Warning rather than critical: a single failed attempt with a good backup
+        # behind it is recoverable, and CNPGBackupStale escalates if it persists.
+        - alert: CNPGBackupFailing
+          expr: |
+            max by (job, namespace) (cnpg_collector_last_failed_backup_timestamp)
+            >
+            max by (job, namespace) (cnpg_collector_last_available_backup_timestamp)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "CNPG last backup attempt failed"
+            description: >-
+              {{ $labels.job }} has a failed backup attempt newer than its last successful one. If a Backup object is stuck in a non-terminal phase (e.g.
+              walArchivingFailing) the controller will refuse to start any further backup until it is deleted.
