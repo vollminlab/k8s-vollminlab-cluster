@@ -339,7 +339,6 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | `kyverno` | `./clusters/vollminlab-cluster/kyverno` | Health checks on 4 deployments |
 | `kyverno-policies` | `./clusters/vollminlab-cluster/kyverno/kyverno/policies` | dependsOn: kyverno |
 | `kyverno-webhooks-patch` | patch only | |
-| `local-path-storage` | `./clusters/vollminlab-cluster/local-path-storage` | |
 | `longhorn-system` | `./clusters/vollminlab-cluster/longhorn-system` | |
 | `mediastack` | `./clusters/vollminlab-cluster/mediastack` | |
 | `metallb-system` | `./clusters/vollminlab-cluster/metallb-system` | |
@@ -384,7 +383,6 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | jellyfin-repo | HelmRepository | https://jellyfin.github.io/jellyfin-helm/ |
 | kyverno-repo | HelmRepository | https://kyverno.github.io/kyverno |
 | kyverno-policyreporter-repo | HelmRepository | https://kyverno.github.io/policy-reporter |
-| local-path-provisioner-repo | GitRepository | https://github.com/rancher/local-path-provisioner (tag: v0.0.35) |
 | longhorn-repo | HelmRepository | https://charts.longhorn.io |
 | metallb-repo | HelmRepository | https://metallb.github.io/metallb |
 | metrics-server-repo | HelmRepository | https://kubernetes-sigs.github.io/metrics-server/ |
@@ -492,16 +490,6 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | SMB shares | movies, tv, completed-downloads, incomplete-downloads |
 | Mount uid/gid | 568 |
 
-### Local Path Provisioner
-
-> **Note:** Uses `GitRepository` instead of `HelmRepository`. Rancher has never published an official Helm repository for this chart (upstream issue open since 2020). The chart lives only inside the GitHub repo at `deploy/chart/local-path-provisioner`. This is intentional and not an oversight — the `GitRepository` approach pins directly to an upstream release tag with no third-party intermediary.
-
-| Parameter | Value |
-|---|---|
-| Chart source | GitRepository (rancher/local-path-provisioner tag v0.0.35) |
-| Chart path | `deploy/chart/local-path-provisioner` |
-| Values | defaults only |
-
 ### PVC Inventory
 
 | PVC | Namespace | Size | StorageClass | Access |
@@ -520,7 +508,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-plex-config` | mediastack | 20Gi | longhorn | RWO |
 | `pvc-tautulli-config` | mediastack | 1Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
-| `portainer` | portainer | 10Gi | local-path | RWO |
+| `portainer` | portainer | 1Gi | longhorn | RWO |
 | `minio` | minio | 75Gi | longhorn | RWO |
 
 ---
@@ -985,7 +973,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Chart version | v1.0.59 |
 | Helm repo | https://portainer.io/helm |
 | Service type | ClusterIP |
-| Config PVC | 10Gi local-path RWO |
+| Config PVC | 1Gi longhorn RWO |
 | Edge agent | enabled (tunnel port 30776) |
 | Security context | runAsUser=0 (root — required by Portainer) |
 | CPU | req: 100m, limits: 100m |

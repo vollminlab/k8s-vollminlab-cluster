@@ -5,6 +5,13 @@ creating a **new** claim and copying the data across. This is the general form o
 procedure used for Prometheus (`longhorn` → `longhorn-r2`) and Portainer
 (`local-path` → `longhorn`).
 
+> **`local-path` no longer exists on this cluster.** The provisioner was removed once
+> Portainer — its last consumer — moved to Longhorn, leaving zero PVCs and zero PVs. The
+> `local-path` material below is kept because it is the clearest worked example of migrating
+> off a backend with no safety net, and because the same hazards apply to any hostPath-backed
+> StorageClass someone might add later. For genuine node-local storage this cluster uses
+> statically provisioned `local-vm-lt` PVs (`Retain`), not a dynamic provisioner.
+
 ## Why the obvious approach fails
 
 Deleting the PVC and letting the controller recreate it does **not** work when an
