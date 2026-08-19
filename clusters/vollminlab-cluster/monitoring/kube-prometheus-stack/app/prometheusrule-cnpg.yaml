@@ -69,7 +69,9 @@ spec:
             severity: critical
           annotations:
             summary: "CNPG WAL archiving is backing up"
-            description: "{{ $labels.job }} has {{ $value }} WAL segments waiting to be archived. Postgres cannot recycle an unarchived segment, so pg_wal will grow until the PVC fills. Check the barman endpoint is reachable -- a NetworkPolicy drop shows as 'Connect timeout' in the instance log."
+            description: >-
+              {{ $labels.job }} has {{ $value }} WAL segments waiting to be archived. Postgres cannot recycle an unarchived segment, so pg_wal will grow until the
+              PVC fills. Check the barman endpoint is reachable -- a NetworkPolicy drop shows as 'Connect timeout' in the instance log.
         # The backstop: no recoverable point in time exists at all. Deliberately a
         # long `for` -- a freshly bootstrapped cluster legitimately has no
         # recoverability point until its ScheduledBackup first fires, which can be
@@ -81,7 +83,9 @@ spec:
             severity: critical
           annotations:
             summary: "CNPG cluster has no recoverable point in time"
-            description: "{{ $labels.job }} reports first_recoverability_point=0 -- there is no point-in-time recovery available for this database at all. Either it has never completed a base backup, or WAL archiving has never worked."
+            description: >-
+              {{ $labels.job }} reports first_recoverability_point=0 -- there is no point-in-time recovery available for this database at all. Either it has never
+              completed a base backup, or WAL archiving has never worked.
         # A backup did complete once, but not recently. Guarded on > 0 so it cannot
         # double-fire with CNPGNoRecoverabilityPoint above (a 0 timestamp would
         # otherwise read as ~56 years stale).
@@ -109,4 +113,6 @@ spec:
             severity: warning
           annotations:
             summary: "CNPG last backup attempt failed"
-            description: "{{ $labels.job }} has a failed backup attempt newer than its last successful one. If a Backup object is stuck in a non-terminal phase (e.g. walArchivingFailing) the controller will refuse to start any further backup until it is deleted."
+            description: >-
+              {{ $labels.job }} has a failed backup attempt newer than its last successful one. If a Backup object is stuck in a non-terminal phase (e.g.
+              walArchivingFailing) the controller will refuse to start any further backup until it is deleted.

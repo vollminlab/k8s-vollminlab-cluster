@@ -35,7 +35,9 @@ spec:
             severity: critical
           annotations:
             summary: "VolSync replication source is out of sync"
-            description: "ReplicationSource {{ $labels.obj_namespace }}/{{ $labels.obj_name }} ({{ $labels.method }}) has been out of sync for over an hour. Its PVC is no longer being replicated to B2."
+            description: >-
+              ReplicationSource {{ $labels.obj_namespace }}/{{ $labels.obj_name }} ({{ $labels.method }}) has been out of sync for over an hour. Its PVC is no
+              longer being replicated to B2.
         # A source that misses its window repeatedly but recovers before the hour is up
         # never trips the rule above. Warning-level, because a single missed interval on
         # a daily schedule is usually contention rather than breakage.
@@ -58,4 +60,6 @@ spec:
             severity: warning
           annotations:
             summary: "No VolSync metrics being scraped"
-            description: "Prometheus has not scraped any volsync_volume_out_of_sync samples for 30 minutes -- the volsync controller or its ServiceMonitor may be down, which would also silence every other VolSync alert."
+            description: >-
+              Prometheus has not scraped any volsync_volume_out_of_sync samples for 30 minutes -- the volsync controller or its ServiceMonitor may be down, which
+              would also silence every other VolSync alert.

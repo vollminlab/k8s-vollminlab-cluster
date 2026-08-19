@@ -200,7 +200,9 @@ spec:
             severity: critical
           annotations:
             summary: "Velero backup failed for schedule {{ $labels.schedule }}"
-            description: "The most recent backup for schedule={{ $labels.schedule }} reported failure. This rule is deliberately not pinned to a schedule name so new schedules are covered the day they are created."
+            description: >-
+              The most recent backup for schedule={{ $labels.schedule }} reported failure. This rule is deliberately not pinned to a schedule name so new schedules
+              are covered the day they are created.
         - alert: VeleroGrafanaBackupStale
           expr: |
             time() - velero_backup_last_successful_timestamp{schedule="velero-grafana-b2"} > 26 * 3600
