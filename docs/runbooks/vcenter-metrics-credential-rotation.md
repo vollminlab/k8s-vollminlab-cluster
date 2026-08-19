@@ -29,6 +29,23 @@ alerting we already have rather than adding an exporter, a Pushgateway or a new 
 Because it derives expiry from `ROTATED_AT`, forgetting to bump that makes the alert fire **early,
 never late**.
 
+## What the alert looks like, and when it clears
+
+`KubeJobFailed` is `severity: warning` with `for: 15m`. Alertmanager's default route sends warnings
+to **Pushover at priority 0**, repeating every 12h; only `severity: critical` goes to the priority-1
+`pushover-critical` route. So expect a normal-priority phone notification roughly 15 minutes after
+the Monday 08:17 run, repeating twice a day until it resolves.
+
+**The Job carries `ttlSecondsAfterFinished: 259200` (3 days) and that is load-bearing.**
+`kube_job_failed` is reported per Job *object*, and `failedJobsHistoryLimit` only evicts a failed Job
+once three newer failures replace it. Without the TTL, rotating the password would make later runs
+succeed while the original failed Job kept `kube_job_failed=1` and the alert pinned on permanently.
+(Not hypothetical: `velero/sealed-secrets-minio-kopia-maintain-job-1782995457971` failed on
+2026-07-02 and still reported `kube_job_failed=1` six weeks later.)
+
+With the TTL the behaviour is: fires Monday, self-clears Thursday, re-fires the next Monday if still
+unrotated — a weekly nag rather than a stuck alert. Once you rotate and bump `ROTATED_AT`, it stops.
+
 ## Rotation procedure
 
 Confirm which account you are touching first — there are three similar 1Password items:

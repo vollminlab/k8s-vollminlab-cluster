@@ -16,6 +16,19 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # WITHOUT THIS THE ALERT NEVER CLEARS. kube_job_failed is reported per Job
+      # OBJECT, and failedJobsHistoryLimit only evicts a failed Job when three
+      # NEWER failures replace it -- so once this fires, rotating the password and
+      # bumping ROTATED_AT makes later runs succeed while the old failed Job keeps
+      # kube_job_failed=1 and KubeJobFailed pinned on forever. Proof this is real:
+      # velero/sealed-secrets-minio-kopia-maintain-job-1782995457971 failed on
+      # 2026-07-02 and STILL reports kube_job_failed=1 six weeks later (it is quiet
+      # only because KubeJobFailed excludes velero kopia-maintain jobs).
+      #
+      # 3 days on a weekly schedule: the alert fires Monday, self-clears Thursday,
+      # and re-fires the next Monday if still unrotated -- a weekly nag rather than
+      # a stuck alert. Once rotated, it simply never comes back.
+      ttlSecondsAfterFinished: 259200
       # Not 0: a transient pod failure would otherwise mark the Job Failed and
       # fire a false alert. The check is deterministic, so retries cannot flip a
       # genuine "expiring" result to OK -- they only absorb infrastructure blips.
