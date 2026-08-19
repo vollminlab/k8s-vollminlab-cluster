@@ -29,14 +29,6 @@ data:
           operator: Equal
           value: "true"
           effect: NoSchedule
-      resources:
-        requests:
-          cpu: 100m
-          memory: 384Mi
-        limits:
-          cpu: 500m
-          memory: 768Mi
-
     trivy:
       ignoreUnfixed: true
       # Use an in-memory analysis cache for scan jobs. Trivy >=0.66 added a
@@ -69,3 +61,17 @@ data:
 
     serviceMonitor:
       enabled: true
+
+    # The trivy-operator Deployment reads TOP-LEVEL `resources`. These lived
+    # under `operator.resources` until 2026-08-19, which the chart does not
+    # reference at all (same silent-drop as scanJobTolerations above), so the
+    # operator ran completely unbounded — 1117Mi 30d peak, the largest
+    # unbounded consumer in the cluster. The old dead values capped memory at
+    # 768Mi, below that peak, so simply re-nesting them would have OOMKilled it.
+    # No CPU limit: throttling a scan backlog buys nothing (see require-resources).
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1536Mi

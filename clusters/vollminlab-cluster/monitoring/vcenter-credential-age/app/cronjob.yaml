@@ -1,0 +1,86 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vcenter-credential-age
+  namespace: monitoring
+  labels:
+    app: vcenter-credential-age
+    env: production
+    category: observability
+spec:
+  # Weekly. The thing being watched moves one day per day, so anything more
+  # frequent is noise; WARN_DAYS 14 leaves two checks before expiry.
+  schedule: "17 8 * * 1"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # WITHOUT THIS THE ALERT NEVER CLEARS. kube_job_failed is reported per Job
+      # OBJECT, and failedJobsHistoryLimit only evicts a failed Job when three
+      # NEWER failures replace it -- so once this fires, rotating the password and
+      # bumping ROTATED_AT makes later runs succeed while the old failed Job keeps
+      # kube_job_failed=1 and KubeJobFailed pinned on forever. Proof this is real:
+      # velero/sealed-secrets-minio-kopia-maintain-job-1782995457971 failed on
+      # 2026-07-02 and STILL reports kube_job_failed=1 six weeks later (it is quiet
+      # only because KubeJobFailed excludes velero kopia-maintain jobs).
+      #
+      # 3 days on a weekly schedule: the alert fires Monday, self-clears Thursday,
+      # and re-fires the next Monday if still unrotated -- a weekly nag rather than
+      # a stuck alert. Once rotated, it simply never comes back.
+      ttlSecondsAfterFinished: 259200
+      # Not 0: a transient pod failure would otherwise mark the Job Failed and
+      # fire a false alert. The check is deterministic, so retries cannot flip a
+      # genuine "expiring" result to OK -- they only absorb infrastructure blips.
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: vcenter-credential-age
+            env: production
+            category: observability
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: check
+              image: alpine:3.23.4
+              command: ["/bin/sh", "/scripts/check.sh"]
+              env:
+                # Update ROTATED_AT whenever the password is rotated -- that is the
+                # single manual step this design trades for needing no credentials.
+                # Forgetting it makes the alert fire EARLY, never late.
+                - name: ACCOUNT
+                  value: prometheus-exporter@vsphere.local
+                - name: ROTATED_AT
+                  value: "2026-08-18"
+                # vCenter SSO Local Password Policy PasswordLifetimeDays.
+                # Read it back with: govc sso.lpp.info
+                - name: LIFETIME_DAYS
+                  value: "90"
+                - name: WARN_DAYS
+                  value: "14"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: vcenter-credential-age-scripts
+                defaultMode: 0555

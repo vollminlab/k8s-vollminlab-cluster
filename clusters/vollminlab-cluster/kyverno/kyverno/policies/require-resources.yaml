@@ -3,10 +3,14 @@ kind: ClusterPolicy
 metadata:
   name: require-resources
   annotations:
-    policies.kyverno.io/title: Require CPU/Memory Requests & Limits
+    policies.kyverno.io/title: Require Resource Requests & a Memory Limit
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
-    policies.kyverno.io/description: "Ensures that all containers define CPU and memory requests and limits."
+    policies.kyverno.io/description: "Ensures every container declares CPU and memory requests and a memory limit."
+    # A CPU limit is deliberately NOT required. Throttling degrades
+    # latency-sensitive workloads and cannot protect the node from
+    # exhaustion the way a memory limit does, which is why coredns and
+    # kyverno-admission-controller both omit theirs upstream.
     kyverno.io/enable-background: "true"
   labels:
     app: kyverno
@@ -32,15 +36,14 @@ spec:
               app.kubernetes.io/part-of: flux
       skipBackgroundRequests: false
       validate:
-        message: "All containers must have CPU and memory requests and limits."
+        message: "All containers must declare CPU and memory requests and a memory limit."
         foreach:
-          - list: "spec.template.spec.containers"
+          - list: "request.object.spec.template.spec.containers"
             pattern:
               resources:
                 requests:
                   cpu: "?*"
                   memory: "?*"
                 limits:
-                  cpu: "?*"
                   memory: "?*"
         # allowExistingViolations: false  # Not supported in current Kyverno CLI version

@@ -16,6 +16,9 @@ data:
       enabled: false
     persistence:
       enabled: true
+      # Declared in pvc.yaml rather than left to the chart, so the claim is
+      # GitOps-managed -- the pre-#1101 one existed only in the cluster, in no
+      # manifest, and nothing would have recreated it.
       existingClaim: portainer
     resources:
       limits:
