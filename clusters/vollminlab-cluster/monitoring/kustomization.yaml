@@ -15,5 +15,6 @@ resources:
   - kube-prometheus-stack/app
   - loki/app
   - promtail/app
+  - vcenter-credential-age/app
   - victoria-metrics/app
   - victoria-metrics-lt/app
