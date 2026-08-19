@@ -90,6 +90,9 @@ bootstrap/                              # Manual bootstrap only — NOT Flux-man
   coredns/                              # CoreDNS config reference
   sealed-secrets/                       # Historical reference only — controller removed 2026-05-31
 
+build/                                  # In-house container image sources, built by CI on a tag
+  b2-exporter/                          # Backblaze B2 bucket metrics -> monitoring/ (b2-exporter/v* tag)
+
 clusters/vollminlab-cluster/            # Everything Flux reconciles
   flux-system/
     repositories/                       # HelmRepository / OCIRepository / GitRepository sources
@@ -131,6 +134,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
 docs/                                   # Documentation (synced to the Obsidian vault)
   runbooks/                             # Operational runbooks
 scripts/                                # Utility scripts
+terraform/                              # OpenTofu modules reconciled in-cluster by tofu-controller
 ```
 
 > CI enforces this block. `scripts/check-readme-structure.sh` runs in the **Validate Kubernetes
