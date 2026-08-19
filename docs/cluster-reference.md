@@ -222,19 +222,50 @@ All volumes are `ReadWriteMany`, `100Gi`, backed by SMB shares at `192.168.150.2
 
 | Policy | Mode | Action | Rule |
 |---|---|---|---|
-| `restrict-default` | enforce | validate | Block all workloads in `default` namespace |
+| `restrict-default-namespace` | enforce | validate | Block all workloads in `default` namespace |
 | `restrict-privileged` | enforce | validate | Block privileged containers; exempts: kube-system, calico-system, longhorn-system, metallb-system, csi-driver, tigera-operator, ingress-nginx |
 | `restrict-hostpath-usage` | enforce | validate | Block hostPath volumes; exempts: kube-system, calico-system, longhorn-system, monitoring, tigera-operator |
 | `restrict-latest-tag` | enforce | validate | Block `:latest` image tags on Deployment/StatefulSet/DaemonSet |
 | `restrict-loadbalancer-services` | enforce | validate | LoadBalancer type only allowed in `ingress-nginx` and `dmz` namespaces |
-| `require-standard-labels` | audit | validate | Require `app`, `env`, `category` labels on Deployments, StatefulSets, DaemonSets, Pods, Namespaces, Services; exempts: kube-system, default |
-| `require-resources` | enforce | validate | Require CPU/memory requests and limits on all containers; exempts Flux deployments |
-| `dmz-enforce-node-placement` | enforce | mutate | Auto-inject `nodeSelector: role=dmz` and toleration `dmz=Exists:NoSchedule` on all pods in `dmz` namespace |
+| `require-standard-labels` | enforce | validate | Require `app`, `env`, `category` labels on Deployments, StatefulSets, DaemonSets, Pods, Namespaces, Services; exempts: kube-system, default |
+| `require-resources` | enforce | validate | Require CPU + memory **requests** and a **memory limit** on every container; exempts Flux deployments. A CPU limit is deliberately not required — see below |
+| `restrict-image-registries` | enforce | validate | Images must come from: harbor.vollminlab.com, ghcr.io, quay.io, registry.k8s.io, docker.io, mirror.gcr.io, oci.trueforge.org, reg.kyverno.io, us-docker.pkg.dev (short names without a domain also allowed) |
 | `dmz-restrict-external-access` | enforce | validate | Block `external-access=true` and `internet-egress=true` labels outside `dmz` namespace |
-| `inject-namespace-labels` | — | mutate | Auto-copy `app`, `env`, `category` labels from namespace to workloads; exempts: longhorn-system, flux-system, monitoring |
-| `inject-resource-requirements` | — | mutate | Auto-inject resource limits for Longhorn sidecar containers (CSI attacher, provisioner, resizer, snapshotter, UI, manager, driver) |
+| `dmz-enforce-node-placement` | audit | mutate | Auto-inject `nodeSelector: role=dmz` and toleration `dmz=Exists:NoSchedule` on all pods in `dmz` namespace |
+| `inject-namespace-labels` | audit | mutate | Auto-copy `app`, `env`, `category` labels from namespace to workloads; exempts: longhorn-system, flux-system, monitoring |
+| `inject-pod-labels` | audit | mutate | Auto-copy the same labels onto pods |
+| `inject-resource-requirements` | audit | mutate | Inject resources for Longhorn workloads the chart cannot set: csi-attacher, csi-provisioner, csi-resizer, csi-snapshotter, longhorn-ui, longhorn-manager |
+| `mutate-default-sa-automount` | audit | mutate | Disable token automount on the `default` ServiceAccount |
+| `mutate-default-sa-pod-automount` | audit | mutate | Same, for pods that use the `default` ServiceAccount |
 
-**PolicyException: `ignore-flux-core`** — Exempts all Flux controllers and the `kyverno` HelmRelease from all policies.
+Every mutate policy is Audit — a mutation either applies or it does not, so there is
+nothing for it to block.
+
+**Why `require-resources` does not require a CPU limit.** CPU throttling degrades
+latency-sensitive workloads and cannot protect a node from exhaustion the way a memory
+limit does. `coredns` and `kyverno-admission-controller` both omit theirs upstream and
+pass the policy unchanged. Set requests plus a memory limit; add a CPU limit only for a
+specific reason.
+
+### PolicyExceptions
+
+| Name | Scope |
+|---|---|
+| `ignore-flux-core` | All Flux controllers and the `kyverno` HelmRelease, from all policies |
+| `ignore-calico-cni` | Calico / tigera-operator workloads |
+| `ignore-longhorn-dynamic-pods` | Longhorn objects created by the controller, not by GitOps |
+| `ignore-tailscale-connector` | Tailscale Connector StatefulSets |
+| `ignore-kyverno-hook-pods` | Kyverno's own Helm hook pods |
+| `ignore-kubeadm-cert-renew` | kubeadm certificate-renewal pods |
+| `ignore-ci-test-namespaces` | `ci-test-*` namespaces, for the label policy |
+| `ignore-vendor-resource-requirements` | 17 name patterns covering 21 live vendor workloads, `require-resources` only — each entry carries its measured 30d memory peak. Also scoped to `ci-test-*`, because CI dry-runs charts into an ephemeral namespace where the production scope would not match |
+
+**A policy with zero pass results is enforcing nothing.** `foreach.list` is a JMESPath
+against the rule context and must be rooted at `request.object`; a bare
+`spec.template.spec.containers` resolves to null, the loop iterates nothing, and the rule
+emits no result at all — so Policy Reporter shows 0 fail because it also shows 0 pass.
+`require-resources`, `restrict-image-registries` and `inject-resource-requirements` were
+all silently inert this way until 2026-08-19 (#1104, #1107, #1109).
 
 ### Policy Reporter
 
