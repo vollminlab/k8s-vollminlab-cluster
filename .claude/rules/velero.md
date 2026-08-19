@@ -61,10 +61,40 @@ That is correct — the metrics are the bulk of it and Velero is the wrong tool:
 - **grafana** IS backed up (`grafana-b2`), because grafana.db holds UI-created dashboards,
   users and API keys that exist nowhere else. The 35 sidecar dashboards are
   ConfigMap-provisioned and reproducible from git; grafana.db is not.
+- **loki** stores its chunks in **S3, not on its PVC** — `object_store: s3`, bucket `loki`,
+  endpoint `minio.minio.svc.cluster.local:9000`. `storage-loki-0` holds only the local TSDB
+  index and WAL, measured **79.7 MB of a 5.2 GB volume**; FSB would copy a rebuildable cache
+  and still miss every log line. The durable copy is the `loki` bucket in MinIO — which is
+  itself unbacked, because `minio` is excluded to prevent the backup store being backed up
+  into itself (see *Circular backup check*). So a MinIO loss loses the logs outright. That is
+  accepted: retention is 720h, and everything that consumes those logs (alert rules,
+  dashboards) is in git.
+- **alertmanager** (3 × 1Gi, measured **0 MB used**) holds only silences and the notification
+  dedup log. The routing config comes from the `alertmanager-pushover-config` ExternalSecret,
+  so the sole loss on a rebuild is whichever silences were active — and a silence expires on
+  its own anyway.
 
 Before excluding a namespace, ask which of its PVCs hold state that is not reproducible
 from git and not already stored elsewhere. Here that was exactly one, and it was the one
 thing the broken schedule wasn't covering.
+
+**Every PVC in an excluded namespace needs a stated reason in that list.** An entry that is
+merely absent is indistinguishable from one that was forgotten — which is the same failure
+as an empty backup reporting `Completed`. `loki` and `alertmanager` sat unlisted here until
+2026-08-19; both turned out to be fine, but nothing in the setup would have said so.
+
+To re-check the whole cluster — which PVCs are protected by neither Velero nor VolSync:
+
+```bash
+kubectl get replicationsources.volsync.backube -A          # the other backup system
+kubectl get podvolumebackups.velero.io -n velero \
+  -o jsonpath='{range .items[*]}{.spec.pod.namespace}/{.spec.pod.name}/{.spec.volume}{"\n"}{end}'
+```
+
+**Map PVBs to PVCs per *pod*, not per namespace.** A PVB records the pod's *volume* name, and
+names like `storage`, `data` and `pgdata` repeat across pods in one namespace. Keying on
+`(namespace, volume)` silently collapses them — doing exactly that on 2026-08-19 reported
+Grafana as never backed up and the live CNPG primaries as orphans. All three were false.
 - **Node-agents:** DaemonSet with DMZ toleration; 9 pods (6 workers + 3 CPs)
 - **`loadConcurrency` is pinned at the default 1 per node — do not raise it.** All worker
   VMDKs share one datastore; a full FSB pass already drives PSI full I/O-stall to 26-48%
