@@ -5,5 +5,4 @@ metadata:
 resources:
   - namespace.yaml
   - networkpolicies
-  - pvc.yaml
   - portainer
