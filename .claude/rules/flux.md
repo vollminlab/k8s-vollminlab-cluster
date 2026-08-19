@@ -21,9 +21,15 @@ clusters/vollminlab-cluster/
 ## App file structure (every app)
 
 ```
-helmrelease.yaml       # Required — HelmRelease CR
-configmap.yaml         # Required — Helm values via valuesFrom ConfigMap
+helmrelease.yaml       # Required *for Helm apps* — HelmRelease CR
+configmap.yaml         # Required *for Helm apps* — Helm values via valuesFrom ConfigMap
 kustomization.yaml     # Required — lists all resources in this dir
+
+There are two archetypes, and only the first uses the two files above.
+Measured 2026-08-19: **53 of 89 `app/` dirs are Helm-based; 36 are raw-manifest**
+(Deployment/CronJob/CNPG `Cluster`/Terraform CR + `kustomization.yaml`) — e.g. every
+`tofu/*-config/app/`, every CNPG `*-db/app/`, `kube-system/etcd-defrag/app/`. A raw-manifest
+app dir having no `helmrelease.yaml` is correct, not drift.
 ingress.yaml           # Optional
 pvc-*.yaml             # Optional
 *-externalsecret.yaml  # Optional (ESO + 1Password — never plain Secret)
@@ -48,7 +54,10 @@ This is what causes Flux to sync the chart source. Without it the HelmRelease ca
 
 ## Source repository conventions
 
-- File always named `[app-name]-helmrepository.yaml` regardless of kind
+- `HelmRepository`/`GitRepository` → `[app-name]-helmrepository.yaml` / `-gitrepository.yaml`
+- `OCIRepository` → `[app-name]-ocirepository.yaml`. (This rule previously said
+  `-helmrepository.yaml` *regardless of kind*; **0 of the 14 OCIRepository files follow that** and
+  all 14 use `-ocirepository.yaml`. The rule was wrong, the files are consistent.)
 - `metadata.name: [app-name]-repo` — always suffix with `-repo`, no exceptions
 - Named after the **app being deployed**, not the chart author
 - HTTP registry → `kind: HelmRepository` (`source.toolkit.fluxcd.io/v1`)
@@ -84,7 +93,14 @@ Every resource kind follows a predictable pattern. Use this table when creating 
 | ConfigMap (Helm values) | `{app-name}-values` | `configmap.yaml` |
 | Ingress | `{app-name}-ingress` (add qualifier for split ingresses: `{app-name}-{qualifier}-ingress`) | `ingress.yaml` or `ingress-{qualifier}.yaml` |
 | ExternalSecret | `{app-name}-{purpose}` — never use `-secret` as suffix (redundant) | `{metadata.name}-externalsecret.yaml` |
-| Flux Kustomization CR | `{namespace}-{app}` | `{app}-kustomization.yaml` |
+| Flux Kustomization CR | `{app}` (see note) | `{app}-kustomization.yaml` |
+
+**Flux Kustomization CR naming**: this table previously specified `{namespace}-{app}`. Measured
+2026-08-19: **1 of 41 follows that** (`monitoring-vmware-exporter`); the other 40 use the bare app
+or namespace name, and `docs/runbooks/flux-templates.md` has always shown `name: [app-name]`. The
+table now matches the codebase and the template. Two genuine filename↔name mismatches remain and
+are worth fixing on contact: `kyverno-webhooks-patch-kustomization.yaml` → `kyverno-patches`, and
+`volsync-kustomization.yaml` → `volsync-system`.
 
 **ExternalSecret filename rule**: the filename base **must exactly equal** `metadata.name`. Stripping `-externalsecret.yaml` from the filename must give you the object name. See `secrets.md` for the full ESO + 1Password workflow.
 
