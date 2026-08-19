@@ -19,20 +19,22 @@ spec:
                 - StatefulSet
               namespaces:
                 - longhorn-system
+              # longhorn-csi-plugin, longhorn-driver-deployer and every
+              # engine-image-ei-* object carry `app: longhorn`, not their own
+              # component name, so they cannot be targeted by this selector.
+              # Rules for them existed here but could never fire; they are
+              # covered by a PolicyException instead.
               selector:
                 matchExpressions:
                   - key: app
                     operator: In
                     values:
-                      - longhorn-driver-deployer
                       - longhorn-ui
                       - csi-attacher
                       - csi-provisioner
                       - csi-resizer
                       - csi-snapshotter
-                      - longhorn-csi-plugin
                       - longhorn-manager
-                      - engine-image-ei-db6c2b6f
       mutate:
         foreach:
           - list: "request.object.spec.template.spec.containers || `[]`"
@@ -116,25 +118,6 @@ spec:
               all:
                 - key: "{{element.name}}"
                   operator: Equals
-                  value: longhorn-driver-deployer
-            patchStrategicMerge:
-              spec:
-                template:
-                  spec:
-                    containers:
-                      - (name): longhorn-driver-deployer
-                        resources:
-                          requests:
-                            cpu: "10m"
-                            memory: "32Mi"
-                          limits:
-                            cpu: "50m"
-                            memory: "64Mi"
-          - list: "request.object.spec.template.spec.containers || `[]`"
-            preconditions:
-              all:
-                - key: "{{element.name}}"
-                  operator: Equals
                   value: longhorn-ui
             patchStrategicMerge:
               spec:
@@ -164,45 +147,7 @@ spec:
                         resources:
                           requests:
                             cpu: "100m"
-                            memory: "300Mi"
+                            memory: "384Mi"
                           limits:
-                            cpu: "300m"
-                            memory: "512Mi"
-          - list: "request.object.spec.template.spec.containers || `[]`"
-            preconditions:
-              all:
-                - key: "{{element.name}}"
-                  operator: Equals
-                  value: longhorn-csi-plugin
-            patchStrategicMerge:
-              spec:
-                template:
-                  spec:
-                    containers:
-                      - (name): longhorn-csi-plugin
-                        resources:
-                          requests:
-                            cpu: "20m"
-                            memory: "64Mi"
-                          limits:
-                            cpu: "100m"
-                            memory: "128Mi"
-          - list: "request.object.spec.template.spec.containers || `[]`"
-            preconditions:
-              all:
-                - key: "{{element.name}}"
-                  operator: Equals
-                  value: engine-image
-            patchStrategicMerge:
-              spec:
-                template:
-                  spec:
-                    containers:
-                      - (name): engine-image
-                        resources:
-                          requests:
-                            cpu: "10m"
-                            memory: "32Mi"
-                          limits:
-                            cpu: "50m"
-                            memory: "64Mi"
+                            cpu: "1"
+                            memory: "1Gi"
