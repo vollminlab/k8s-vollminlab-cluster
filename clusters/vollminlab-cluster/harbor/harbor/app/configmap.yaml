@@ -136,14 +136,20 @@ data:
       readinessProbe:
         timeoutSeconds: 5
 
+    # Sized from measured usage, not the chart default. Steady state is ~136Mi, so the
+    # old 64Mi request under-declared it to the scheduler by 2x. The old 256Mi limit was
+    # 1/4 of upstream's and OOMKilled the scanner 7 times (last 2026-08-19T03:19Z, exit
+    # 137); peak samples pinned at exactly 255Mi, which is the ceiling truncating demand
+    # rather than the real requirement. Limit now matches the chart default (1Gi).
+    # container_oom_events_total read 0 throughout — the kubelet lastState is the truth.
     trivy:
       resources:
         requests:
           cpu: 100m
-          memory: 64Mi
+          memory: 256Mi
         limits:
           cpu: 500m
-          memory: 256Mi
+          memory: 1Gi
 
     # The exporter deployment template only applies exporter.podLabels — the global
     # podLabels below does not reach it, so the Kyverno-required labels must be set here.
