@@ -39,10 +39,11 @@ spec:
             - name: metrics
               containerPort: 9707
               protocol: TCP
+          # Normalised across all six exportarr instances: 64Mi/256Mi.
           resources:
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 64Mi
             limits:
               cpu: 150m
-              memory: 64Mi
+              memory: 256Mi

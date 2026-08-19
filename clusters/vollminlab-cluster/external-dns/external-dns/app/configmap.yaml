@@ -31,13 +31,15 @@ data:
       env: production
       category: networking
 
+    # 14d measured: p50 110Mi, p95 117Mi, peak 119Mi against a 128Mi limit -- 93% of the
+    # ceiling, with a request below half of steady state.
     resources:
       requests:
         cpu: 50m
-        memory: 64Mi
+        memory: 128Mi
       limits:
         cpu: 100m
-        memory: 128Mi
+        memory: 256Mi
 
     extraArgs:
       - --pihole-server=http://192.168.100.2

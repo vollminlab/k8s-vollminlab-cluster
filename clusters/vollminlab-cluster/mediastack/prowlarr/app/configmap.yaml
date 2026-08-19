@@ -26,6 +26,20 @@ data:
     workload:
       main:
         podSpec:
+          containers:
+            # The exportarr sidecar comes from the chart, and its 256Mi/512Mi-1Gi
+            # defaults were never ours. Measured 2026-08-19 over 14d, every exportarr
+            # instance in the cluster peaks between 14Mi and 49Mi. Normalised to
+            # 64Mi/256Mi across all six -- the four chart sidecars and the two
+            # standalone Deployments (bazarr, sabnzbd) -- which previously spanned
+            # 32Mi-256Mi requests and 64Mi-1Gi limits for one identical binary.
+            exportarr:
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
           annotations:
             backup.velero.io/backup-volumes-excludes: "tmp,varlogs,varrun,devshm,shared"
     env:

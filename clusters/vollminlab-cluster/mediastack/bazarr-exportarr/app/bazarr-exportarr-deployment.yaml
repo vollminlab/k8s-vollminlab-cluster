@@ -39,10 +39,13 @@ spec:
             - name: metrics
               containerPort: 9707
               protocol: TCP
+          # Normalised across all six exportarr instances: 64Mi/256Mi. Measured peak for
+          # this pod is 49Mi; the 128Mi ceiling it had previously was low enough to
+          # OOMKill it once.
           resources:
             requests:
               cpu: 10m
               memory: 64Mi
             limits:
               cpu: 150m
-              memory: 128Mi
+              memory: 256Mi

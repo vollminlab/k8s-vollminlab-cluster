@@ -24,7 +24,17 @@ data:
         memory: 2Gi
       limits:
         cpu: 1000m
-        memory: 2Gi
+        # 14d measured: p50 1991Mi, p95 2042Mi, peak 2047.8Mi against a 2Gi limit --
+        # 99.7% of the ceiling for the whole window, with 0 restarts. MinIO does not
+        # OOMKill here because most of that is reclaimable page cache, so the kernel
+        # evicts instead; the cost is continuous reclaim on the object store backing
+        # Velero, Loki and every CNPG backup. Same signature as the Grafana 503
+        # cgroup-ceiling incident: oom_kill 0, memory.current ~= memory.max.
+        # Request deliberately stays at 2Gi. Raising it to match would keep Guaranteed
+        # QoS, but k8sworker04 is already at 87% of memory requests, and this pod runs
+        # there. Actual node usage is 66%, so the extra ceiling is physically
+        # available; reserving it is not. Net effect is Guaranteed -> Burstable.
+        memory: 3Gi
 
     persistence:
       enabled: true
