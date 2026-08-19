@@ -1058,7 +1058,6 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 | Workflow | Trigger | Jobs |
 |---|---|---|
 | `ci.yaml` | PR + push to main | kustomize build validation, Kyverno policy checks, Trivy security scan |
-| `codeql.yml` | Schedule + push | CodeQL security analysis |
 
 ### Branch Protection
 
