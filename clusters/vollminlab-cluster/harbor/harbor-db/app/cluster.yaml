@@ -9,6 +9,19 @@ metadata:
     category: storage
 spec:
   instances: 2
+  # Sized from 14d measured usage (p95 152Mi, peak 239Mi, cpu p95 12m).
+  # Without this block the instance pods are BestEffort -- the first QoS class the
+  # kubelet evicts under node memory pressure, and the highest oom_score_adj for the
+  # node OOM killer. Kyverno's require-resources never flagged it because that policy
+  # matches Deployment/StatefulSet/DaemonSet and CNPG creates bare Pods.
+  # Request sits above p95 so the scheduler reserves what is actually used; the limit
+  # carries the headroom. No CPU limit, per this cluster's policy.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
   inheritedMetadata:
     labels:
       app: harbor-db

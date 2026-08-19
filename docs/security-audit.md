@@ -19,8 +19,8 @@ Overall posture is **solid for a homelab**: ESO + 1Password with gitleaks CI (Se
 
 The material gaps are **architectural, not "anyone can walk in"**:
 
-1. **No intra-cluster network segmentation** outside the DMZ — 28 of 35 namespaces have zero NetworkPolicy (default-allow lateral movement). *Biggest gap.* → **RESOLVED**
-2. **No Pod Security Standards enforcement on app namespaces** — no Kyverno or PSA enforcement of non-root, dropped capabilities, seccomp, or read-only rootfs for application workloads; ~83% of containers ship no explicit securityContext. → **RESOLVED**
+1. **No intra-cluster network segmentation** outside the DMZ — 28 of 35 namespaces had zero NetworkPolicy (default-allow lateral movement). *Biggest gap.* → **PARTIAL — re-verified 2026-08-19: 23 of 38 namespaces still have zero NetworkPolicy, and only 9 have a default-deny.** See the H1 correction below.
+2. **No Pod Security Standards enforcement on app namespaces** — no Kyverno or PSA enforcement of non-root, dropped capabilities, seccomp, or read-only rootfs for application workloads; ~83% of containers ship no explicit securityContext. → **PARTIAL — re-verified 2026-08-19: 20 namespaces carry no `pod-security.kubernetes.io/enforce` label at all.** 17 of those have `warn`/`audit` set but no `enforce`, which logs violations and admits them. See the H2 correction below.
 3. **Image supply chain is unpinned** — no registry allowlist and only ~17% of images are digest-pinned. → **RESOLVED**
 
 > **Major correction (2026-05-29) — the authentication findings were withdrawn.** The parallel agents (and my first synthesis) flagged Grafana/Headlamp/Portainer/MinIO/Audiobookshelf/Jellyfin as missing authentication, rated up to CRITICAL. **This was wrong.** All of these have dedicated Authentik OIDC providers (verified live via `ak shell` and Grafana's SSO API), and every other app ingress carries forward-auth. The blind spot: **app-level OIDC is provisioned out-of-band via Terraform through each app's API and stored in the app's database**, so it's invisible to manifest/config inspection. As a result **H3, M1, and M2 were all withdrawn as false positives.** The remaining real findings (H1, H2, M3–M7) are infrastructure-level facts verified directly against the cluster. A "DMZ broken labels" agent finding was also a false positive. Full corrections are documented inline and at the end.
@@ -29,11 +29,35 @@ The material gaps are **architectural, not "anyone can walk in"**:
 
 ## HIGH
 
-### ~~H1~~ — RESOLVED 2026-06-04 (PR #878) · GitHub #795 closed
+### H1 — PARTIAL (was marked RESOLVED 2026-06-04, PR #878) · GitHub #795
 
-NetworkPolicy default-deny + explicit-allow rolled out to all crown-jewel and remaining namespaces (authentik, cnpg-system, harbor, monitoring, minio, portainer, tofu, flux-system, mediastack, shlink, and others). Key lesson learned: ipBlock rules must **not** be used for webhook ingress on this cluster — Calico IPIP encapsulation with `rp_filter=2` on `tunl0` causes the kernel to silently drop host→pod packets before nftables/Calico policy chains run. Open `from: []` with port restriction is used instead; TLS authentication on the webhook provides equivalent security. Container ports (not service ports) must always be used in NetworkPolicy — this class of bug hit twice (PRs #875/876/878).
+> **Correction, 2026-08-19.** This finding was marked RESOLVED and the paragraph below claimed the
+> rollout reached `flux-system`, `mediastack` and `shlink`. Verified against the live cluster, none
+> of those three has a default-deny: `mediastack` and `shlink` have **zero** NetworkPolicy objects,
+> and `flux-system` has policies but no default-deny (`gotk-components.yaml` ships `egress: - {}`,
+> i.e. allow-all).
+>
+> Live coverage on 2026-08-19: **9 of 38 namespaces have a default-deny** (authentik, cnpg-system,
+> dmz, harbor, minio, monitoring, portainer, tofu, vollmint), 15 have any NetworkPolicy at all, and
+> **23 have none** — including `kyverno`, `velero`, `cert-manager`, `renovate` and `homepage`.
+>
+> The rollout is real and the pattern is sound; it simply covers fewer namespaces than this section
+> claimed. Marking it RESOLVED is the more damaging error, because it stops anyone re-checking.
+> Treat the remaining namespaces as open work.
 
-### ~~H2~~ — RESOLVED 2026-06-03 (PRs #858, #864, #866) · GitHub #796 closed
+NetworkPolicy default-deny + explicit-allow was rolled out to the crown-jewel namespaces (authentik, cnpg-system, harbor, monitoring, minio, portainer, tofu — later also vollmint). Key lesson learned: ipBlock rules must **not** be used for webhook ingress on this cluster — Calico IPIP encapsulation with `rp_filter=2` on `tunl0` causes the kernel to silently drop host→pod packets before nftables/Calico policy chains run. Open `from: []` with port restriction is used instead; TLS authentication on the webhook provides equivalent security. Container ports (not service ports) must always be used in NetworkPolicy — this class of bug hit twice (PRs #875/876/878).
+
+### H2 — PARTIAL (was marked RESOLVED 2026-06-03, PRs #858, #864, #866) · GitHub #796
+
+> **Correction, 2026-08-19.** Kyverno's enforce baseline is real, but PSA enforcement is not
+> complete. **20 namespaces carry no `pod-security.kubernetes.io/enforce` label.** 17 of them set
+> `warn` and/or `audit` without `enforce` — which logs a violation and then admits the pod — including
+> `authentik`, `harbor`, `mediastack`, `minio`, `monitoring`, `shlink`, `vollmint` and `velero`.
+> Enforce is set on 18: `restricted` on 10, `privileged` on 7, `baseline` on dmz only.
+>
+> `vollmint` shows the mechanism: it was created later with a complete default-deny NetworkPolicy
+> suite and still shipped `warn`/`audit` with no `enforce`. The NetworkPolicy template gets copied to
+> new namespaces; the PSA one does not.
 
 - **Category:** policy_gap / missing_coverage
 - **Evidence:** Kyverno enforces `restrict-privileged`, `restrict-hostpath`, `require-resources`, `restrict-latest-tag`, `restrict-default-namespace`, `restrict-loadbalancer-services`, `dmz-restrict-external-access`. It does **not** enforce (or even audit) `runAsNonRoot`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`, `readOnlyRootFilesystem`, or `allowPrivilegeEscalation: false`. Pod Security Admission labels exist only for infra exceptions (`calico-system`, `metallb-system`, `tigera-operator` = `privileged`) and **DMZ = `enforce: baseline`** (baseline does *not* require non-root/seccomp/caps). **No application namespace enforces `restricted`.** ~383 of 464 containers (~83%) carry no explicit securityContext; ~28 explicitly set `runAsNonRoot: false`.

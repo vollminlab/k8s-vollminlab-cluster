@@ -203,11 +203,18 @@ success throughout. After any CronJob PR lands, check the job pods' exit codes.
 
 Before diagnosing any backup issue or taking any corrective action, run the storage breakdown first:
 
-```bash
-# Bucket breakdown — answers "what is actually consuming space" in one command
-kubectl exec -n minio $(kubectl get pods -n minio -l app=minio -o jsonpath='{.items[0].metadata.name}') \
-  -- mc du --depth 2 velero-access/velero/
+**The `velero-access` mc alias no longer exists** (verified 2026-08-19). `mc du` against it
+returns `0B  0 objects` — which reads as "the bucket is empty" rather than "wrong alias", so it
+will give you a confident wrong answer. The live aliases are `local` and `r`. `mc du` over this
+bucket also takes >2 min and times out, and `kubectl exec -- du -sh /export/*` does not glob
+because there is no shell; use `sh -c`. Prefer the Prometheus metric for attribution:
 
+```bash
+# Per-bucket usage, instant — this is the reliable one
+minio_bucket_usage_total_bytes
+```
+
+```bash
 # PVC free space
 kubectl exec -n minio $(kubectl get pods -n minio -l app=minio -o jsonpath='{.items[0].metadata.name}') \
   -- df -h /export
