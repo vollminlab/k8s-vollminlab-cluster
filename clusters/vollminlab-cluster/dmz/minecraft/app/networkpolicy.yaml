@@ -34,9 +34,3 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.10/32  # kube-dns ClusterIP
-      ports:
-        - protocol: UDP
-          port: 53
