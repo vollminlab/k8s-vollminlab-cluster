@@ -82,7 +82,7 @@ Skipping the steps (rather than letting the job fail or never run) is deliberate
 a required check that is *pending forever* is exactly what causes the deadlock.
 
 Everything else — manifest validation, Kyverno policy tests, Trivy, gitleaks,
-CodeQL, Terraform validate — runs normally on hosted runners and still gates the
+Terraform validate — runs normally on hosted runners and still gates the
 merge.
 
 **Therefore:** treat break-glass as a short-lived state. Any manifest merged while
