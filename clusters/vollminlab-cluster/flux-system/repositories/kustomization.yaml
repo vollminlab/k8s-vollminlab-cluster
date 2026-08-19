@@ -29,7 +29,6 @@ resources:
   - karma-ocirepository.yaml
   - kyverno-helmrepository.yaml
   - kyverno-policyreporter-helmrepository.yaml
-  - local-path-provisioner-gitrepository.yaml
   - longhorn-helmrepository.yaml
   - longhorn-rebalancing-controller-ocirepository.yaml
   - metallb-helmrepository.yaml
