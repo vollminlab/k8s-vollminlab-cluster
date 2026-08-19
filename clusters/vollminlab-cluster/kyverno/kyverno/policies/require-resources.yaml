@@ -6,7 +6,11 @@ metadata:
     policies.kyverno.io/title: Require Resource Requests & a Memory Limit
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
-    policies.kyverno.io/description: "Ensures every container declares CPU and memory requests and a memory limit. A CPU limit is deliberately not required — CFS throttling degrades latency-sensitive workloads without protecting the node, which is why coredns and kyverno omit theirs upstream."
+    policies.kyverno.io/description: "Ensures every container declares CPU and memory requests and a memory limit."
+    # A CPU limit is deliberately NOT required. Throttling degrades
+    # latency-sensitive workloads and cannot protect the node from
+    # exhaustion the way a memory limit does, which is why coredns and
+    # kyverno-admission-controller both omit theirs upstream.
     kyverno.io/enable-background: "true"
   labels:
     app: kyverno
