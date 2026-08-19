@@ -4,7 +4,6 @@
 
 [![CI Pipeline](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/ci.yaml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/ci.yaml)
 [![Secret Scanning](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/secret-scanning.yaml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/secret-scanning.yaml)
-[![CodeQL](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/codeql.yml/badge.svg)](https://github.com/vollminlab/k8s-vollminlab-cluster/actions/workflows/codeql.yml)
 ![Flux CD](https://img.shields.io/badge/GitOps-Flux%20CD-5468FF?logo=flux&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-kubeadm-326CE5?logo=kubernetes&logoColor=white)
 
@@ -375,7 +374,7 @@ merge.
 
 CI (`.github/workflows/ci.yaml`) runs: manifest validation, integration test (deploys into
 a throwaway `ci-test-*` namespace on the live cluster), Trivy security scan, Kyverno policy
-validation, and OpenTofu validation. Secret scanning (gitleaks) and CodeQL run as separate
+validation, and OpenTofu validation. Secret scanning (gitleaks) runs as a separate
 workflows.
 
 Jobs run on the self-hosted ARC runners in this cluster. If those runners are down,

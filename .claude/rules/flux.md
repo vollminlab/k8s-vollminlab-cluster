@@ -24,17 +24,17 @@ clusters/vollminlab-cluster/
 helmrelease.yaml       # Required *for Helm apps* — HelmRelease CR
 configmap.yaml         # Required *for Helm apps* — Helm values via valuesFrom ConfigMap
 kustomization.yaml     # Required — lists all resources in this dir
-
-There are two archetypes, and only the first uses the two files above.
-Measured 2026-08-19: **53 of 89 `app/` dirs are Helm-based; 36 are raw-manifest**
-(Deployment/CronJob/CNPG `Cluster`/Terraform CR + `kustomization.yaml`) — e.g. every
-`tofu/*-config/app/`, every CNPG `*-db/app/`, `kube-system/etcd-defrag/app/`. A raw-manifest
-app dir having no `helmrelease.yaml` is correct, not drift.
 ingress.yaml           # Optional
 pvc-*.yaml             # Optional
 *-externalsecret.yaml  # Optional (ESO + 1Password — never plain Secret)
 networkpolicy.yaml     # Optional (required in dmz/)
 ```
+
+There are two archetypes, and only the first uses `helmrelease.yaml` + `configmap.yaml`.
+Measured 2026-08-19: **53 of 89 `app/` dirs are Helm-based; 36 are raw-manifest**
+(Deployment/CronJob/CNPG `Cluster`/Terraform CR + `kustomization.yaml`) — e.g. every
+`tofu/*-config/app/`, every CNPG `*-db/app/`, `kube-system/etcd-defrag/app/`. A raw-manifest
+app dir having no `helmrelease.yaml` is correct, not drift.
 
 ## Adding a new app — two explicit indexes MUST be updated
 
