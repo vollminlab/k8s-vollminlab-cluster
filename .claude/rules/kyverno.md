@@ -6,19 +6,59 @@ description: Kyverno policy rules, required labels, DMZ constraints, and enforce
 
 ## Enforce-mode policies (will block pod creation)
 
-| Policy               | Rule                                                                      |
-| -------------------- | ------------------------------------------------------------------------- |
-| Resource limits      | Every pod must have CPU + memory requests and limits                      |
-| No `:latest` tags    | Image tags must be pinned — `:latest` is blocked                          |
-| No privileged        | Privileged containers are blocked                                         |
-| No `hostPath`        | `hostPath` volumes are blocked                                            |
-| No default namespace | Pods may not run in the `default` namespace                               |
-| DMZ placement        | DMZ pods must run on `k8sworker05`/`k8sworker06` (injected automatically) |
-| Required labels      | Every pod/controller/namespace must have `app`, `env`, `category` labels  |
+| Policy                           | Rule                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `require-resources`              | Every container needs CPU + memory **requests** and a **memory limit**         |
+| `restrict-latest-tag`            | Image tags must be pinned — `:latest` is blocked                              |
+| `restrict-privileged`            | Privileged containers are blocked                                             |
+| `restrict-hostpath-usage`        | `hostPath` volumes are blocked                                                |
+| `restrict-default-namespace`     | Pods may not run in the `default` namespace                                   |
+| `restrict-image-registries`      | Images must come from the approved registry list                              |
+| `restrict-loadbalancer-services` | `type: LoadBalancer` only in `ingress-nginx` and `dmz`                        |
+| `require-standard-labels`        | Every pod/controller/namespace must have `app`, `env`, `category` labels      |
+| `dmz-restrict-external-access`   | `external-access` / `internet-egress` labels only inside `dmz`                |
+
+**A CPU limit is deliberately NOT required.** Throttling degrades latency-sensitive
+workloads and cannot protect a node from exhaustion the way a memory limit does —
+`coredns` and `kyverno-admission-controller` both omit theirs upstream. Set requests
+plus a memory limit; add a CPU limit only when you have a specific reason.
 
 ## Audit-mode policies (violations logged, not blocked)
 
-- None currently — all policies are in Enforce mode
+Every mutate policy runs in Audit mode — a mutation either applies or it doesn't,
+there is nothing to block.
+
+| Policy                            | What it does                                                    |
+| --------------------------------- | --------------------------------------------------------------- |
+| `dmz-enforce-node-placement`      | Injects `nodeSelector` + toleration on `dmz` pods                |
+| `inject-namespace-labels`         | Copies `app`/`env`/`category` from namespace to workload         |
+| `inject-pod-labels`               | Copies the same labels onto pods                                 |
+| `inject-resource-requirements`    | Injects resources for Longhorn workloads the chart can't set     |
+| `mutate-default-sa-automount`     | Disables token automount on the `default` ServiceAccount         |
+| `mutate-default-sa-pod-automount` | Same, for pods using the `default` ServiceAccount                |
+
+## A policy with zero pass results is not enforcing
+
+`foreach.list` is a JMESPath against the rule context, so it **must** be rooted at
+`request.object` — a bare `spec.template.spec.containers` resolves to null, the loop
+iterates nothing, and the rule emits **no result at all**. Policy Reporter then shows
+0 fail because it also shows 0 pass, and admission lets everything through. Three
+policies here were silently inert this way until 2026-08-19 (#1104, #1109).
+
+```bash
+# Any deployed policy absent from this list is evaluating nothing.
+kubectl get polr -A -o json | python3 -c "
+import json,sys,collections
+c=collections.Counter()
+for r in json.load(sys.stdin)['items']:
+    for res in r.get('results',[]): c[(res['policy'],res['result'])]+=1
+[print(k,v) for k,v in sorted(c.items())]"
+```
+
+Before enabling a dormant **mutate**, diff every value it will write against measured
+usage — its numbers have never been tested. Fixing one here would have OOMKilled
+`longhorn-manager` (512Mi limit vs a 563Mi p95), and re-nesting `trivy-operator`'s
+misplaced block would have capped it at 768Mi against a 1117Mi peak.
 
 ## Valid `category` label values
 
