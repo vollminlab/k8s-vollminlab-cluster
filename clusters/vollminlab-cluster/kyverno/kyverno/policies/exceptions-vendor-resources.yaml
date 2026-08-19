@@ -13,6 +13,13 @@ spec:
   # buys nothing and only adds an OOMKill mode. Peaks below are 30d maxima from
   # VictoriaMetrics, measured 2026-08-19.
   #
+  # Every namespace list also carries "ci-test-*": the Integration Test job
+  # renders each changed chart and server-side dry-runs it into an ephemeral
+  # ci-test-<run-id> namespace. Without this, any chart containing one of these
+  # workloads is rejected in CI even though it is exempt in production. Scoping
+  # by workload NAME rather than blanket-exempting the CI namespace keeps CI
+  # honest: a new in-repo app with no limits still fails.
+  #
   # This exception deliberately does NOT cover trivy-system/trivy-operator
   # (1117Mi peak) or harbor/harbor-registry (532Mi peak) — those are the two
   # genuinely large unbounded consumers and are chart-settable, so they get
@@ -28,6 +35,7 @@ spec:
             - DaemonSet
           namespaces:
             - longhorn-system
+            - "ci-test-*"
           names:
             - "longhorn-csi-plugin"
             - "engine-image-ei-*"
@@ -36,6 +44,7 @@ spec:
             - Deployment
           namespaces:
             - longhorn-system
+            - "ci-test-*"
           names:
             - "longhorn-driver-deployer"
 
@@ -45,6 +54,7 @@ spec:
             - DaemonSet
           namespaces:
             - kube-system
+            - "ci-test-*"
           names:
             - "kube-proxy"
 
@@ -54,6 +64,7 @@ spec:
             - Deployment
           namespaces:
             - authentik
+            - "ci-test-*"
           names:
             - "ak-outpost-*"
 
@@ -69,6 +80,7 @@ spec:
             - DaemonSet
           namespaces:
             - monitoring
+            - "ci-test-*"
           names:
             - "kube-prometheus-stack-grafana"
             - "kube-prometheus-stack-operator"
@@ -84,6 +96,7 @@ spec:
             - Deployment
           namespaces:
             - metallb-system
+            - "ci-test-*"
           names:
             - "metallb-frr-k8s"
             - "metallb-frr-k8s-statuscleaner"
@@ -94,6 +107,7 @@ spec:
             - Deployment
           namespaces:
             - tailscale
+            - "ci-test-*"
           names:
             - "operator"
 
@@ -105,6 +119,7 @@ spec:
             - StatefulSet
           namespaces:
             - harbor
+            - "ci-test-*"
           names:
             - "harbor-nginx"
             - "harbor-portal"
