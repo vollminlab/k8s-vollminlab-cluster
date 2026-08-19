@@ -19,6 +19,8 @@ spec:
         env: production
         category: core
     spec:
+      # Twice yearly, renews control-plane certs via nsenter.
+      activeDeadlineSeconds: 1800
       ttlSecondsAfterFinished: 3600
       backoffLimit: 0
       template:

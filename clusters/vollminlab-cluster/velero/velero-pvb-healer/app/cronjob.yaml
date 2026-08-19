@@ -17,6 +17,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # */10 schedule: 540s < the 600s interval, so a hung run self-terminates before it blocks the next tick. Observed runtime 6-7s.
+      activeDeadlineSeconds: 540
       ttlSecondsAfterFinished: 3600
       # backoffLimit 2 (not 0): the script never self-fails — every path returns
       # 0 — so a Failed job means the pod died externally, usually the

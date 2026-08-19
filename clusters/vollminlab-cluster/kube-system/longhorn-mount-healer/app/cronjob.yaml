@@ -14,6 +14,8 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # */10 schedule: 540s < the 600s interval. Observed runtime 46-50s.
+      activeDeadlineSeconds: 540
       ttlSecondsAfterFinished: 3600
       # backoffLimit 2 (not 0): the heal script never self-fails (set -u, every
       # path returns 0 — even a detach timeout only logs + emits an event), so a
