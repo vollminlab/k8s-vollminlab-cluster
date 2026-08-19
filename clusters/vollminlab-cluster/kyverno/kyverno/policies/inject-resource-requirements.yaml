@@ -35,7 +35,7 @@ spec:
                       - engine-image-ei-db6c2b6f
       mutate:
         foreach:
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -54,7 +54,7 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "128Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -73,7 +73,7 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "128Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -92,7 +92,7 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "128Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -111,7 +111,7 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "128Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -130,7 +130,7 @@ spec:
                           limits:
                             cpu: "50m"
                             memory: "64Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -149,7 +149,7 @@ spec:
                           limits:
                             cpu: "20m"
                             memory: "32Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -168,7 +168,7 @@ spec:
                           limits:
                             cpu: "300m"
                             memory: "512Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
@@ -187,7 +187,7 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "128Mi"
-          - list: "spec.template.spec.containers || `[]`"
+          - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
                 - key: "{{element.name}}"
