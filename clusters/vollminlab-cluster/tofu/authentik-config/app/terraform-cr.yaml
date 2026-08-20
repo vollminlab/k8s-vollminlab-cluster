@@ -24,7 +24,26 @@ spec:
   # pending plan id from .status.plan.pending, review the plan, then approve by setting
   # this to that id. Restore "auto" afterwards only if that is the considered choice --
   # the same argument applies to every future provider bump.
-  approvePlan: ""
+  # Approving the plan generated at main@998e4779 (#1136, authentik provider
+  # 2026.2.1 -> 2026.5.1). Read before approving: 0 to add, 8 to change, 0 to
+  # destroy -- all authentik_provider_oauth2, all in-place.
+  #
+  # The entire diff is the removal of the `redirect_uri_type` key from each of
+  # the 12 entries in allowed_redirect_uris. Every url is byte-identical and
+  # every matching_mode stays "strict"; verified by diffing the removed and
+  # added url sets out of `tofu show`.
+  #
+  # It is safe because the key was never ours. Our config sets only
+  # matching_mode + url; 2026.2.1 read redirect_uri_type back from the API into
+  # state, and 2026.5.1 types the attribute as list(map(string)), so the extra
+  # state-only key now compares as a diff. Authentik defaults the field to
+  # AUTHORIZATION when omitted, and all 14 live redirect URIs are already
+  # `authorization` (0 `logout`) -- so the apply writes back what is there.
+  #
+  # This id is bound to the revision. If another commit lands on main before
+  # this merges, the controller generates a new plan id and this value stops
+  # matching -- which holds the apply rather than misapplying it.
+  approvePlan: "plan-main-998e47794b"
   path: ./terraform/authentik
   sourceRef:
     kind: GitRepository
