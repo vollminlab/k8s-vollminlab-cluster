@@ -82,27 +82,6 @@ jobs:
       - name: Check README structure block
         run: ./scripts/check-readme-structure.sh
 
-      # Validates each changed app's REAL values (resolved through valuesFrom) against
-      # its chart's values.schema.json. Lives inside validate-changes rather than as its
-      # own job for the same reason as the README check above: it blocks merges through
-      # an existing required check instead of needing a new one added to branch
-      # protection.
-      #
-      # This is the enforcement half of the pre-commit hook. The hook it replaces ran
-      # nowhere in CI -- only for someone who had run `pre-commit install` -- so a values
-      # error reached the merge path unless integration-test happened to catch it later.
-      - name: Validate HelmRelease values against chart schemas
-        if: env.LINT_FILES != ''
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check pyyaml
-          CHANGED_HR=$(printf '%s\n' "$LINT_FILES" \
-            | grep -E '^clusters/vollminlab-cluster/.*/(helmrelease|configmap)\.yaml$' || true)
-          if [[ -z "$CHANGED_HR" ]]; then
-            echo "No HelmRelease or values ConfigMap changed — nothing to validate"
-            exit 0
-          fi
-          echo "$CHANGED_HR" | xargs ./scripts/check-helm-values.py
 
       # Single source of truth. .kubernetes-version is the file Renovate bumps, so
       # reading it here means CI's kubectl follows the version the upgrade PR proposes
@@ -262,6 +241,32 @@ jobs:
               echo "EOF"
             } >> $GITHUB_ENV
           fi
+
+      # MUST stay after get-changed-files: LINT_FILES is exported to $GITHUB_ENV by
+      # that step, so an `if: env.LINT_FILES != ''` step placed above it evaluates
+      # against an empty value and is silently skipped on every PR. That is exactly
+      # what happened to this step between #1140 and this commit -- it never ran once.
+      # Validates each changed app's REAL values (resolved through valuesFrom) against
+      # its chart's values.schema.json. Lives inside validate-changes rather than as its
+      # own job for the same reason as the README check above: it blocks merges through
+      # an existing required check instead of needing a new one added to branch
+      # protection.
+      #
+      # This is the enforcement half of the pre-commit hook. The hook it replaces ran
+      # nowhere in CI -- only for someone who had run `pre-commit install` -- so a values
+      # error reached the merge path unless integration-test happened to catch it later.
+      - name: Validate HelmRelease values against chart schemas
+        if: env.LINT_FILES != ''
+        run: |
+          set -euo pipefail
+          ./scripts/ci-ensure-pyyaml.sh
+          CHANGED_HR=$(printf '%s\n' "$LINT_FILES" \
+            | grep -E '^clusters/vollminlab-cluster/.*/(helmrelease|configmap)\.yaml$' || true)
+          if [[ -z "$CHANGED_HR" ]]; then
+            echo "No HelmRelease or values ConfigMap changed — nothing to validate"
+            exit 0
+          fi
+          echo "$CHANGED_HR" | xargs ./scripts/check-helm-values.py
 
       - name: Validate YAML syntax
         if: env.LINT_FILES != ''
@@ -1242,7 +1247,7 @@ jobs:
         if: steps.tf-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          ./scripts/ci-ensure-pyyaml.sh
           printf '%s\n' "${{ steps.tf-changes.outputs.files }}" \
             | grep -v '^$' \
             | xargs -r ./scripts/check-tofu-provider-approval.py
