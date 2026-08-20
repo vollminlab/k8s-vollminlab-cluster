@@ -266,6 +266,16 @@ jobs:
             echo "No HelmRelease or values ConfigMap changed — nothing to validate"
             exit 0
           fi
+
+          # check-helm-values.py shells out to `helm pull` and `helm lint`, and this job
+          # never installed helm -- it only has kubectl and yq. Installed here rather than
+          # as its own step so it costs nothing on the PRs that reach the early exit above.
+          if ! command -v helm >/dev/null 2>&1; then
+            echo "📦 Installing Helm..."
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+          helm version --short
+
           echo "$CHANGED_HR" | xargs ./scripts/check-helm-values.py
 
       - name: Validate YAML syntax

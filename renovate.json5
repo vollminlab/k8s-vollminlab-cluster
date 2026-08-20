@@ -14,7 +14,22 @@
   // approvePlan: auto on a 10m interval, a new provider release auto-applied itself to
   // production within minutes of publication. Lockfiles (committed in the same change)
   // stop the silent upgrade; this makes the upgrade visible and reviewable.
-  "enabledManagers": ["flux", "github-actions", "custom.regex", "terraform"],
+  // "dockerfile" and "pip_requirements" added 2026-08-20. build/b2-exporter is the source
+  // for the b2-exporter:1.0.2 image running in `monitoring`, and no manager had ever read it:
+  // its only commit is the one that created it in May, so b2sdk, prometheus_client and the
+  // python:3.12-slim base have never been updated. The flux and custom.regex managers only
+  // look under clusters/, so the gap was invisible rather than accepted.
+  //
+  // Scoped by managerFilePatterns to build/ below. The container images this repo actually
+  // deploys are pinned in HelmReleases and values ConfigMaps, already covered by flux and
+  // custom.regex -- letting the dockerfile manager loose repo-wide would duplicate them.
+  "enabledManagers": ["flux", "github-actions", "custom.regex", "terraform", "dockerfile", "pip_requirements"],
+  "dockerfile": {
+    "managerFilePatterns": ["/^build/.+/Dockerfile$/"]
+  },
+  "pip_requirements": {
+    "managerFilePatterns": ["/^build/.+/requirements\.txt$/"]
+  },
   "ignorePaths": [
     "clusters/vollminlab-cluster/flux-system/gotk-components.yaml"
   ],
