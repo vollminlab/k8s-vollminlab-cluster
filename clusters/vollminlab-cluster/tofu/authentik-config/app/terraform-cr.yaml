@@ -10,7 +10,55 @@ metadata:
     category: core
 spec:
   interval: 10m
-  approvePlan: auto
+  # Manual plan approval, set 2026-08-20 ahead of the provider bump in #1136
+  # (goauthentik/authentik 2026.2.1 -> 2026.5.1, three minor releases).
+  #
+  # `approvePlan` names a plan to approve; "auto" approves every plan, so with it set
+  # the controller applies within the 10m interval and there is never anything to
+  # review. This module manages 83 resources and is the SSO for the whole cluster --
+  # if a provider upgrade rewrites or destroys any of them, the failure takes out the
+  # means of logging in to diagnose it. CI cannot cover this: it runs `tofu validate`
+  # but never `tofu plan`, so a green PR says the config parses, not what it will do.
+  #
+  # Empty string means no plan is approved, so the controller plans and waits. Read the
+  # pending plan id from .status.plan.pending, review the plan, then approve by setting
+  # this to that id. Restore "auto" afterwards only if that is the considered choice --
+  # the same argument applies to every future provider bump.
+  # HOW APPROVAL ACTUALLY WORKS -- do not put a plan id in this file.
+  #
+  # The pending plan is named plan-<branch>-<source sha>, so it is regenerated on
+  # EVERY commit to this repo, not just commits touching this module. An approval
+  # delivered through git therefore names a plan that the merge commit itself has
+  # already invalidated -- it can never match. #1145 proved this: it merged
+  # approvePlan: "plan-main-998e47794b", the merge moved main to 60b4f111, the
+  # controller re-planned as plan-main-60b4f1118b, and the apply was held.
+  #
+  # So git carries the POSTURE ("" = hold every plan) and approval is a transient
+  # out-of-band step:
+  #
+  #   P=$(kubectl get terraform -n tofu <name> -o jsonpath='{.status.plan.pending}')
+  #   # read the plan first -- extract the tfplan Secret and render it with a
+  #   # version-matched tofu; plan files are not portable across tofu versions:
+  #   kubectl get secret -n tofu tfplan-default-<name> -o jsonpath='{.data.tfplan}' \
+  #     | base64 -d | gunzip -c > tfplan && tofu show tfplan
+  #   kubectl patch terraform -n tofu <name> --type=merge \
+  #     -p "{\"spec\":{\"approvePlan\":\"$P\"}}"
+  #
+  # The controller applies within seconds; Flux then restores "" from this file,
+  # which re-arms the hold. That revert is the point, not a race to worry about.
+  # The 2026.5.1 plan was applied 2026-08-20: 0 add, 8 change, 0 destroy -- the
+  # redirect_uri_type key dropped from 12 allowed_redirect_uris, every url and
+  # matching_mode unchanged. Verified live afterwards: 14 redirect URIs, all still
+  # `authorization`, no provider left with zero URIs.
+  #
+  # It went in via the out-of-band step described above, NOT via this field. #1145
+  # tried to approve through git and could not: the merge commit changed the source
+  # sha, the controller re-planned under a new id, and the apply was held.
+  #
+  # Back to "" so this file states the posture and nothing more. The stale id #1145
+  # left here did keep holding plans, but it read as an approval that had taken
+  # effect when it had not.
+  approvePlan: ""
   path: ./terraform/authentik
   sourceRef:
     kind: GitRepository
