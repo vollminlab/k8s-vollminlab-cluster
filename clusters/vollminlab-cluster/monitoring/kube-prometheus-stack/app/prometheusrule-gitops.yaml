@@ -57,9 +57,26 @@ spec:
         # died silently for weeks. last_successful_time is the only signal that survives
         # admission rejection. The 26h threshold assumes a cronjob runs at least daily
         # (26h > daily period + grace), so it fires only on genuine missed runs. Jobs
-        # that legitimately run less than daily must be excluded by name, otherwise the
-        # gap between their normal runs trips the threshold — e.g. kube-system's monthly
-        # kubeadm-cert-monitor (`0 9 1 * *`) would false-fire for ~30 days between runs.
+        # that legitimately run less often trip the threshold in the gap between their
+        # normal runs — kube-system's monthly kubeadm-cert-monitor (`0 9 1 * *`) would
+        # false-fire for ~30 days at a stretch.
+        #
+        # That used to be handled with `cronjob!="kubeadm-cert-monitor"`, a hand-kept
+        # list of one. It was already wrong: vcenter-credential-age (`17 8 * * 1`) fired
+        # ~6 days in 7, and the three kubeadm-cert-renew jobs (`0 2 14 4,10 *`) were
+        # silent only because they have never succeeded, so they emit no
+        # last_successful_time at all — each would have started false-firing forever the
+        # first time it ran.
+        #
+        # Now derived from the schedule instead. kube_cronjob_info carries the cron
+        # string as a label, and a job is daily-or-more-frequent exactly when its last
+        # three fields (dom mon dow) are all `*`. Matching `.*[*] [*] [*]` selects those
+        # and nothing else — verified against all 18 CronJobs: 13 matched, 5 excluded,
+        # no overlap. A literal `*` is written `[*]` rather than `\*` because the
+        # backslash does not survive the yaml -> PromQL string -> regex layers cleanly.
+        #
+        # This is self-maintaining: a new daily job is covered the moment it exists, and
+        # a new weekly one is excluded without anyone remembering to edit a list.
         # Aggregated with `max by (namespace, cronjob)` for the same reason as
         # KubeJobFailed in prometheusrule-custom.yaml: kube_cronjob_status_* carries no
         # `pod` label of its own, so the scrape target's `pod`/`instance` labels land on
@@ -69,7 +86,10 @@ spec:
         # the correct reading of "last succeeded".
         - alert: CronJobNotSucceededRecently
           expr: |
-            (time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{cronjob!="kubeadm-cert-monitor"})) > 93600
+            (
+              time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time)
+              and on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_info{schedule=~".*[*] [*] [*]"})
+            ) > 93600
           for: 15m
           labels:
             severity: warning
@@ -80,3 +100,39 @@ spec:
               successfully {{ $value | humanizeDuration }} ago. A daily job that has
               not succeeded in 26h is failing silently — check for admission rejection
               (PSS/Kyverno) or a stuck Forbid-policy job: `kubectl get jobs -n {{ $labels.namespace }}`.
+        # Companion to the rule above. Excluding the sub-daily jobs from a 26h threshold
+        # is correct, but leaving them with no staleness check at all just moves the
+        # blind spot — vcenter-credential-age would then be unmonitored entirely.
+        #
+        # Scoped to WEEKLY specifically, not to "everything below daily". The first
+        # attempt at this used the plain complement of the rule above and immediately
+        # false-fired on kubeadm-cert-monitor at 451h stale — which is simply what a
+        # monthly job looks like 19 days in. That is the same bug this whole change
+        # exists to remove, so the cadence has to be matched exactly rather than
+        # bucketed as "infrequent".
+        #
+        # Cron fields are `m h dom mon dow`. Weekly means dom and mon are `*` while dow
+        # is specific, hence `.*[*] [*] [^*]+`. Verified against all 18 CronJobs: matches
+        # vcenter-credential-age (`17 8 * * 1`) and nothing else.
+        #
+        # Monthly and biannual are deliberately left unalerted. kubeadm-cert-monitor is
+        # monthly and the three kubeadm-cert-renew jobs run twice a year; a threshold
+        # wide enough for those cadences detects nothing useful, and the thing actually
+        # worth knowing is whether the certs are near expiry — which is what
+        # kubeadm-cert-monitor itself reports, rather than a staleness rule.
+        - alert: WeeklyCronJobNotSucceededRecently
+          expr: |
+            (
+              time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time)
+              and on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_info{schedule=~".*[*] [*] [^*]+"})
+            ) > 691200
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Weekly CronJob has not succeeded in over 8 days"
+            description: >-
+              CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} runs weekly and last
+              completed successfully {{ $value | humanizeDuration }} ago
+              (threshold 8d). Check for admission rejection or a stuck Forbid-policy job:
+              `kubectl get jobs -n {{ $labels.namespace }}`.
