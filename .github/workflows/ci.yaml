@@ -1217,10 +1217,35 @@ jobs:
             echo "📋 Terraform files changed:"
             echo "$TF_CHANGED"
             echo "changed=true" >> $GITHUB_OUTPUT
+            # Expose the list too, so the provider-bump guard below can consume it
+            # rather than re-deriving the same diff with its own BASE_SHA logic.
+            {
+              echo 'files<<TF_FILES_EOF'
+              echo "$TF_CHANGED"
+              echo 'TF_FILES_EOF'
+            } >> $GITHUB_OUTPUT
           else
             echo "No terraform changes detected; skipping validation"
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
+
+      # Blocks a provider version change on a module that still auto-applies.
+      # Deliberately needs no credentials: it does not judge the change, it enforces
+      # that a bump cannot land somewhere it would apply unreviewed. `tofu validate`
+      # below confirms the config parses; only `tofu plan` shows the effect, and CI
+      # does not run one because that needs each module's provider tokens.
+      #
+      # Runs before Install OpenTofu so a blocked bump fails fast, and lives in
+      # validate-terraform -- an existing required check -- so it gates merges without
+      # a new context being added to branch protection.
+      - name: Guard provider bumps on auto-applying modules
+        if: steps.tf-changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          printf '%s\n' "${{ steps.tf-changes.outputs.files }}" \
+            | grep -v '^$' \
+            | xargs -r ./scripts/check-tofu-provider-approval.py
 
       - name: Install OpenTofu
         if: steps.tf-changes.outputs.changed == 'true'
