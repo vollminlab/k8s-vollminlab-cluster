@@ -18,8 +18,9 @@ resource "authentik_provider_oauth2" "grafana" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://grafana.vollminlab.com/login/generic_oauth"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://grafana.vollminlab.com/login/generic_oauth"
     }
   ]
 
@@ -48,8 +49,9 @@ resource "authentik_provider_oauth2" "headlamp" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://headlamp.vollminlab.com/oidc-callback"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://headlamp.vollminlab.com/oidc-callback"
     }
   ]
 
@@ -71,8 +73,9 @@ resource "authentik_provider_oauth2" "minio" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://minio.vollminlab.com/oauth_callback"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://minio.vollminlab.com/oauth_callback"
     }
   ]
 
@@ -93,8 +96,9 @@ resource "authentik_provider_oauth2" "jellyfin" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://jellyfin.vollminlab.com/sso/OID/redirect/authentik"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://jellyfin.vollminlab.com/sso/OID/redirect/authentik"
     }
   ]
 
@@ -115,8 +119,9 @@ resource "authentik_provider_oauth2" "harbor" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://harbor.vollminlab.com/c/oidc/callback"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://harbor.vollminlab.com/c/oidc/callback"
     }
   ]
 
@@ -137,8 +142,9 @@ resource "authentik_provider_oauth2" "portainer" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://portainer.vollminlab.com"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://portainer.vollminlab.com"
     }
   ]
 
@@ -158,12 +164,14 @@ resource "authentik_provider_oauth2" "seerr" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://seerr.vollminlab.com/login"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://seerr.vollminlab.com/login"
     },
     {
-      matching_mode = "strict"
-      url           = "https://seerr.vollminlab.com/profile/settings/linked-accounts"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://seerr.vollminlab.com/profile/settings/linked-accounts"
     },
   ]
 
@@ -182,20 +190,24 @@ resource "authentik_provider_oauth2" "audiobookshelf" {
 
   allowed_redirect_uris = [
     {
-      matching_mode = "strict"
-      url           = "https://audiobookshelf.vollminlab.com/auth/openid/callback"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://audiobookshelf.vollminlab.com/auth/openid/callback"
     },
     {
-      matching_mode = "strict"
-      url           = "https://audiobookshelf.vollminlab.com/auth/openid/mobile-redirect"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://audiobookshelf.vollminlab.com/auth/openid/mobile-redirect"
     },
     {
-      matching_mode = "strict"
-      url           = "https://audiobookshelf.vollminlab.com/audiobookshelf/auth/openid/callback"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://audiobookshelf.vollminlab.com/audiobookshelf/auth/openid/callback"
     },
     {
-      matching_mode = "strict"
-      url           = "https://audiobookshelf.vollminlab.com/audiobookshelf/auth/openid/mobile-redirect"
+      matching_mode     = "strict"
+      redirect_uri_type = "authorization"
+      url               = "https://audiobookshelf.vollminlab.com/audiobookshelf/auth/openid/mobile-redirect"
     },
   ]
 
