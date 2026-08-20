@@ -1,5 +1,22 @@
 repos:
-  - repo: https://github.com/tarioch/flux-check-hook
-    rev: v0.8.0
+  # Replaced tarioch/flux-check-hook (check-flux-helm-values) on 2026-08-20.
+  #
+  # That hook built its values file from `spec.values` -- inline values only. This repo
+  # forbids inline values (.claude/rules/flux.md); all 52 HelmReleases use `valuesFrom`
+  # pointing at a ConfigMap. So it wrote an EMPTY values file, linted each chart against
+  # its own defaults, and printed "Passed" for every change. It never validated a single
+  # value here, and it gave a false green on a values-schema error that CI caught instead.
+  # It also only examined files containing `kind: HelmRelease`, so a change to
+  # configmap.yaml -- where the values actually live -- was never looked at at all.
+  #
+  # scripts/check-helm-values.py resolves valuesFrom properly and hands helm lint the
+  # real values. Same mechanism, correct input.
+  - repo: local
     hooks:
-      - id: check-flux-helm-values
+      - id: check-helm-values
+        name: Validate HelmRelease values against chart schemas
+        entry: scripts/check-helm-values.py
+        language: python
+        additional_dependencies: ["pyyaml"]
+        files: '^clusters/vollminlab-cluster/.*/(helmrelease|configmap)\.yaml$'
+        pass_filenames: true

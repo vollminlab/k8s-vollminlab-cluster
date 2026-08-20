@@ -82,6 +82,7 @@ jobs:
       - name: Check README structure block
         run: ./scripts/check-readme-structure.sh
 
+
       # Single source of truth. .kubernetes-version is the file Renovate bumps, so
       # reading it here means CI's kubectl follows the version the upgrade PR proposes
       # instead of a separately-maintained constant that silently drifts.
@@ -240,6 +241,32 @@ jobs:
               echo "EOF"
             } >> $GITHUB_ENV
           fi
+
+      # MUST stay after get-changed-files: LINT_FILES is exported to $GITHUB_ENV by
+      # that step, so an `if: env.LINT_FILES != ''` step placed above it evaluates
+      # against an empty value and is silently skipped on every PR. That is exactly
+      # what happened to this step between #1140 and this commit -- it never ran once.
+      # Validates each changed app's REAL values (resolved through valuesFrom) against
+      # its chart's values.schema.json. Lives inside validate-changes rather than as its
+      # own job for the same reason as the README check above: it blocks merges through
+      # an existing required check instead of needing a new one added to branch
+      # protection.
+      #
+      # This is the enforcement half of the pre-commit hook. The hook it replaces ran
+      # nowhere in CI -- only for someone who had run `pre-commit install` -- so a values
+      # error reached the merge path unless integration-test happened to catch it later.
+      - name: Validate HelmRelease values against chart schemas
+        if: env.LINT_FILES != ''
+        run: |
+          set -euo pipefail
+          ./scripts/ci-ensure-pyyaml.sh
+          CHANGED_HR=$(printf '%s\n' "$LINT_FILES" \
+            | grep -E '^clusters/vollminlab-cluster/.*/(helmrelease|configmap)\.yaml$' || true)
+          if [[ -z "$CHANGED_HR" ]]; then
+            echo "No HelmRelease or values ConfigMap changed — nothing to validate"
+            exit 0
+          fi
+          echo "$CHANGED_HR" | xargs ./scripts/check-helm-values.py
 
       - name: Validate YAML syntax
         if: env.LINT_FILES != ''
@@ -1195,10 +1222,35 @@ jobs:
             echo "📋 Terraform files changed:"
             echo "$TF_CHANGED"
             echo "changed=true" >> $GITHUB_OUTPUT
+            # Expose the list too, so the provider-bump guard below can consume it
+            # rather than re-deriving the same diff with its own BASE_SHA logic.
+            {
+              echo 'files<<TF_FILES_EOF'
+              echo "$TF_CHANGED"
+              echo 'TF_FILES_EOF'
+            } >> $GITHUB_OUTPUT
           else
             echo "No terraform changes detected; skipping validation"
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
+
+      # Blocks a provider version change on a module that still auto-applies.
+      # Deliberately needs no credentials: it does not judge the change, it enforces
+      # that a bump cannot land somewhere it would apply unreviewed. `tofu validate`
+      # below confirms the config parses; only `tofu plan` shows the effect, and CI
+      # does not run one because that needs each module's provider tokens.
+      #
+      # Runs before Install OpenTofu so a blocked bump fails fast, and lives in
+      # validate-terraform -- an existing required check -- so it gates merges without
+      # a new context being added to branch protection.
+      - name: Guard provider bumps on auto-applying modules
+        if: steps.tf-changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          ./scripts/ci-ensure-pyyaml.sh
+          printf '%s\n' "${{ steps.tf-changes.outputs.files }}" \
+            | grep -v '^$' \
+            | xargs -r ./scripts/check-tofu-provider-approval.py
 
       - name: Install OpenTofu
         if: steps.tf-changes.outputs.changed == 'true'
