@@ -24,26 +24,41 @@ spec:
   # pending plan id from .status.plan.pending, review the plan, then approve by setting
   # this to that id. Restore "auto" afterwards only if that is the considered choice --
   # the same argument applies to every future provider bump.
-  # Approving the plan generated at main@998e4779 (#1136, authentik provider
-  # 2026.2.1 -> 2026.5.1). Read before approving: 0 to add, 8 to change, 0 to
-  # destroy -- all authentik_provider_oauth2, all in-place.
+  # HOW APPROVAL ACTUALLY WORKS -- do not put a plan id in this file.
   #
-  # The entire diff is the removal of the `redirect_uri_type` key from each of
-  # the 12 entries in allowed_redirect_uris. Every url is byte-identical and
-  # every matching_mode stays "strict"; verified by diffing the removed and
-  # added url sets out of `tofu show`.
+  # The pending plan is named plan-<branch>-<source sha>, so it is regenerated on
+  # EVERY commit to this repo, not just commits touching this module. An approval
+  # delivered through git therefore names a plan that the merge commit itself has
+  # already invalidated -- it can never match. #1145 proved this: it merged
+  # approvePlan: "plan-main-998e47794b", the merge moved main to 60b4f111, the
+  # controller re-planned as plan-main-60b4f1118b, and the apply was held.
   #
-  # It is safe because the key was never ours. Our config sets only
-  # matching_mode + url; 2026.2.1 read redirect_uri_type back from the API into
-  # state, and 2026.5.1 types the attribute as list(map(string)), so the extra
-  # state-only key now compares as a diff. Authentik defaults the field to
-  # AUTHORIZATION when omitted, and all 14 live redirect URIs are already
-  # `authorization` (0 `logout`) -- so the apply writes back what is there.
+  # So git carries the POSTURE ("" = hold every plan) and approval is a transient
+  # out-of-band step:
   #
-  # This id is bound to the revision. If another commit lands on main before
-  # this merges, the controller generates a new plan id and this value stops
-  # matching -- which holds the apply rather than misapplying it.
-  approvePlan: "plan-main-998e47794b"
+  #   P=$(kubectl get terraform -n tofu <name> -o jsonpath='{.status.plan.pending}')
+  #   # read the plan first -- extract the tfplan Secret and render it with a
+  #   # version-matched tofu; plan files are not portable across tofu versions:
+  #   kubectl get secret -n tofu tfplan-default-<name> -o jsonpath='{.data.tfplan}' \
+  #     | base64 -d | gunzip -c > tfplan && tofu show tfplan
+  #   kubectl patch terraform -n tofu <name> --type=merge \
+  #     -p "{\"spec\":{\"approvePlan\":\"$P\"}}"
+  #
+  # The controller applies within seconds; Flux then restores "" from this file,
+  # which re-arms the hold. That revert is the point, not a race to worry about.
+  # The 2026.5.1 plan was applied 2026-08-20: 0 add, 8 change, 0 destroy -- the
+  # redirect_uri_type key dropped from 12 allowed_redirect_uris, every url and
+  # matching_mode unchanged. Verified live afterwards: 14 redirect URIs, all still
+  # `authorization`, no provider left with zero URIs.
+  #
+  # It went in via the out-of-band step described above, NOT via this field. #1145
+  # tried to approve through git and could not: the merge commit changed the source
+  # sha, the controller re-planned under a new id, and the apply was held.
+  #
+  # Back to "" so this file states the posture and nothing more. The stale id #1145
+  # left here did keep holding plans, but it read as an approval that had taken
+  # effect when it had not.
+  approvePlan: ""
   path: ./terraform/authentik
   sourceRef:
     kind: GitRepository
