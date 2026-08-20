@@ -16,7 +16,7 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 - `.claude/rules/networkpolicy.md` — container port verification, per-namespace port table, pre-PR checklist
 
 **Operational runbooks** (reference when needed, not loaded every session):
-`docs/runbooks/` — flux-templates, kyverno-recovery, homepage, external-dns, incidents
+`docs/runbooks/` — flux-templates, kyverno-recovery, homepage, external-dns, incidents, tofu-provider-bumps
 
 ## Hard constraints
 
@@ -25,6 +25,10 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 - Never touch `bootstrap/calico/` with Flux. CNI changes are manual + verified.
 - Never use `:latest` image or chart version tags. Kyverno blocks them.
 - All pods require `app`, `env`, and `category` labels. Kyverno enforces in enforce mode.
+- A Renovate **provider** bump PR is blocked by CI on purpose — every Terraform CR is
+  `approvePlan: auto`, so merging one would apply an unreviewed plan within 10 minutes.
+  Follow `docs/runbooks/tofu-provider-bumps.md`; the approval is a `kubectl patch`, not a
+  commit, because the plan id embeds the source sha and an approval commit invalidates it.
 - Never set `policy: sync` in external-dns — shared Pi-hole backend, `upsert-only` only. `policy: sync` wiped all infrastructure DNS records on 2026-04-05.
 - Every new **host-level** Ingress must include `shlink.vollminlab.com/slug: <service-name>` — the shlink-ingress-controller uses this to auto-create a `vollm.in/<slug>` short URL. Use the service name from the hostname (e.g. `radarr.vollminlab.com` → slug `radarr`). See `clusters/vollminlab-cluster/homepage/homepage/app/ingress.yaml` as the canonical example. **Path-split secondary Ingresses are exempt** — the `-signalr`, `-tus` and `-s3` objects that carve one path out of an existing host (usually to bypass Authentik) must NOT carry a slug; their host already has one on the primary Ingress. Measured 2026-08-19: 28 of 34 Ingresses carry a slug and all 6 without are path-split secondaries whose primary sibling has one.
 
