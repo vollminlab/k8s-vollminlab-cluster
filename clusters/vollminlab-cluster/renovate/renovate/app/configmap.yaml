@@ -53,7 +53,13 @@ data:
       config: |
         {
           "platform": "github",
-          "repositories": ["vollminlab/k8s-vollminlab-cluster"],
+          "repositories": [
+            "vollminlab/k8s-vollminlab-cluster",
+            "vollminlab/masters-league",
+            "vollminlab/vollmint",
+            "vollminlab/shlink-ingress-controller",
+            "vollminlab/longhorn-rebalancing-controller"
+          ],
           "gitAuthor": "Renovate Bot <bot@renovateapp.com>",
           "onboarding": false,
           "requireConfig": "optional",
