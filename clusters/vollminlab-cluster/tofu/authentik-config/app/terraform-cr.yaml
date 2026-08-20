@@ -10,7 +10,21 @@ metadata:
     category: core
 spec:
   interval: 10m
-  approvePlan: auto
+  # Manual plan approval, set 2026-08-20 ahead of the provider bump in #1136
+  # (goauthentik/authentik 2026.2.1 -> 2026.5.1, three minor releases).
+  #
+  # `approvePlan` names a plan to approve; "auto" approves every plan, so with it set
+  # the controller applies within the 10m interval and there is never anything to
+  # review. This module manages 83 resources and is the SSO for the whole cluster --
+  # if a provider upgrade rewrites or destroys any of them, the failure takes out the
+  # means of logging in to diagnose it. CI cannot cover this: it runs `tofu validate`
+  # but never `tofu plan`, so a green PR says the config parses, not what it will do.
+  #
+  # Empty string means no plan is approved, so the controller plans and waits. Read the
+  # pending plan id from .status.plan.pending, review the plan, then approve by setting
+  # this to that id. Restore "auto" afterwards only if that is the considered choice --
+  # the same argument applies to every future provider bump.
+  approvePlan: ""
   path: ./terraform/authentik
   sourceRef:
     kind: GitRepository
