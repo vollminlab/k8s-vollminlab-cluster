@@ -35,6 +35,27 @@ spec:
                       - csi-resizer
                       - csi-snapshotter
                       - longhorn-manager
+      # Memory values measured over 30d (2026-08-21), working-set p95 / max:
+      #   csi-attacher      55.0Mi / 55.1Mi   -> request  64Mi, limit 128Mi
+      #   csi-provisioner   52.7Mi / 53.9Mi   -> request  64Mi, limit 128Mi
+      #   csi-resizer       67.9Mi / 68.6Mi   -> request  80Mi, limit 160Mi
+      #   csi-snapshotter   61.7Mi / 63.6Mi   -> request  80Mi, limit 160Mi
+      #   longhorn-ui        4.8Mi /  6.0Mi   -> request  16Mi, limit  32Mi
+      #   longhorn-manager 564.1Mi / 607.1Mi  -> request 384Mi (SEE BELOW), limit 1Gi
+      #
+      # resizer and snapshotter were previously requesting 64Mi, below their own p95 --
+      # a request under real usage under-declares the workload to the scheduler, which
+      # is what put the CNPG pods in BestEffort until #1120. Limits are ~2.3x measured
+      # max in every case.
+      #
+      # longhorn-manager's 384Mi request is ALSO below its 564Mi p95, but it is a
+      # DaemonSet on 9 nodes, so correcting it reserves ~5.8Gi cluster-wide and
+      # k8sworker02 has only 2.2Gi of request headroom. Deliberately left for a
+      # separate capacity decision -- it is exempted from require-resources by
+      # ignore-longhorn-dynamic-pods, so it is not a blocking risk. Tracked in #1155.
+      #
+      # CPU is unchanged: measured p95 is under 1.5m and max under 3m for all four
+      # sidecars, so the 20m request and 100m limit are far from binding.
       mutate:
         foreach:
           - list: "request.object.spec.template.spec.containers || `[]`"
@@ -90,10 +111,10 @@ spec:
                         resources:
                           requests:
                             cpu: "20m"
-                            memory: "64Mi"
+                            memory: "80Mi"
                           limits:
                             cpu: "100m"
-                            memory: "128Mi"
+                            memory: "160Mi"
           - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
@@ -109,10 +130,10 @@ spec:
                         resources:
                           requests:
                             cpu: "20m"
-                            memory: "64Mi"
+                            memory: "80Mi"
                           limits:
                             cpu: "100m"
-                            memory: "128Mi"
+                            memory: "160Mi"
           - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
