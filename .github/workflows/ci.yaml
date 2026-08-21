@@ -7,6 +7,12 @@ on:
       - 'clusters/**'
       - 'bootstrap/**'
       - 'terraform/**'
+      # Images this repo builds itself. Without this, a PR touching only build/**
+      # triggers NO workflow at all -- so every required check stays "expected",
+      # never reports, and the PR is permanently unmergeable. That is the live
+      # state of #1171 and #1168, and it is the same bug the .kubernetes-version
+      # note below records.
+      - 'build/**'
       - '.github/workflows/**'
       - '.vscode/**'
       - 'scripts/**'
@@ -25,6 +31,12 @@ on:
       - 'clusters/**'
       - 'bootstrap/**'
       - 'terraform/**'
+      # Images this repo builds itself. Without this, a PR touching only build/**
+      # triggers NO workflow at all -- so every required check stays "expected",
+      # never reports, and the PR is permanently unmergeable. That is the live
+      # state of #1171 and #1168, and it is the same bug the .kubernetes-version
+      # note below records.
+      - 'build/**'
       - '.github/workflows/**'
       - '.vscode/**'
       - 'scripts/**'
