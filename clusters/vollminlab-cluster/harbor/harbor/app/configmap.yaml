@@ -143,6 +143,21 @@ data:
     # rather than the real requirement. Limit now matches the chart default (1Gi).
     # container_oom_events_total read 0 throughout — the kubelet lastState is the truth.
     trivy:
+      # Skip the trivy cache in Velero file-system backups. The `data` volume is
+      # 2.6 GiB of /home/scanner/.cache, of which trivy.db is a 1.3 GB vulnerability
+      # database downloaded from upstream and rewritten whole on each refresh. It is
+      # fully reproducible -- a restored pod re-downloads it -- and because the file is
+      # replaced rather than appended it dedupes to nearly nothing in kopia, so each
+      # nightly full lands ~2.6 GiB of new blocks in a repo with 96h retention.
+      #
+      # Same reasoning .claude/rules/velero.md applies to loki: do not back up a
+      # rebuildable cache. This is NOT the emptyDir whack-a-mole that rule warns
+      # against -- `data` is a real PVC, and velero-skip-smb-policy cannot target one
+      # by name (resource policies match capacity, storageClass, csi driver, nfs and
+      # volumeType, not PVC identity), so the pod annotation is the only mechanism.
+      # The PVC object is still backed up; only its contents are skipped.
+      podAnnotations:
+        backup.velero.io/backup-volumes-excludes: data
       resources:
         requests:
           cpu: 100m
