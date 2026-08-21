@@ -22,6 +22,26 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # The chart ships serviceMonitor.enabled: true, so a ServiceMonitor has declared
+    # this pod a scrape target since 2026-05-31 -- but no ingress rule admitted
+    # `monitoring`, so Prometheus has never reached it. 82 days of a target that
+    # could not report, and nothing alerts on that: a target which never came up is
+    # easy to miss among healthy ones.
+    #
+    # 8080 is the CONTAINER port, not merely the service port. The Service uses a
+    # numeric targetPort 8080 on `connect-api` and the containers declare no ports
+    # at all, so the numeric targetPort is what the process listens on. /metrics is
+    # served on the API port, per the ServiceMonitor's own endpoint definition.
+    #
+    # 1Password Connect is the root of the entire secret chain -- ESO cannot
+    # materialise a single Secret without it -- so it is worth having metrics for.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
   egress:
     - ports:
         - protocol: TCP

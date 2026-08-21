@@ -77,6 +77,7 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `monitoring` | `grafana` | 3000 | Grafana HTTP (homepage widget) | allow-homepage-grafana ingress (from homepage) |
 | `monitoring` | `prometheus` | 9090 | Prometheus HTTP (homepage widget) | allow-homepage-prometheus ingress (from homepage) |
 | `monitoring` | `karma` | 8080 | karma Alertmanager dashboard UI (svc 80→8080) | allow-ingress-nginx ingress (from ingress-nginx) |
+| `1password` | `connect-api` | 8080 | 1Password Connect API + `/metrics`; svc targetPort is numeric 8080 and the container declares **no** ports, so 8080 is the container port | onepassword-connect ingress (from monitoring; also from external-secrets) |
 | `authentik` | `server` | 9000 | authentik-server HTTP (homepage widget) | allow-homepage ingress (from homepage) |
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
