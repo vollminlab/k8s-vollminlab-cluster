@@ -1364,14 +1364,28 @@ jobs:
 
             docker build -t "ci-build-$name:${{ github.sha }}" "$dir"
 
-            # Unit tests run INSIDE a container built from the same base and the same
+            # Unit tests run INSIDE an image built from the same base and the same
             # requirements.txt, so a dependency bump that breaks the code fails here
             # rather than in production. Skipped cleanly when an image has no tests.
+            #
+            # Built as an image rather than `docker run -v $PWD/...`: the runner talks
+            # to a separate dockerd (dind), so a bind mount of the workspace resolves
+            # against THAT daemon's filesystem and silently yields an empty directory.
+            # A build context is uploaded over the API and therefore works.
             if compgen -G "$dir/*_test.py" > /dev/null; then
               base=$(grep -m1 '^FROM' "$df" | awk '{print $2}')
               echo "running $name tests against $base"
-              docker run --rm -v "$PWD/$dir:/src:ro" -w /src "$base" \
-                sh -c 'pip install --quiet --no-cache-dir -r requirements.txt pytest && pytest -q'
+              tf=$(mktemp)
+              {
+                echo "FROM $base"
+                echo "WORKDIR /src"
+                echo "COPY requirements.txt ."
+                echo "RUN pip install --quiet --no-cache-dir -r requirements.txt pytest"
+                echo "COPY . ."
+                echo "RUN pytest -q"
+              } > "$tf"
+              docker build --no-cache -f "$tf" -t "ci-test-$name:${{ github.sha }}" "$dir"
+              rm -f "$tf"
             else
               echo "no *_test.py in $dir — build-only"
             fi
