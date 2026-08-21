@@ -14,6 +14,26 @@ data:
   policy.yaml: |
     version: v1
     volumePolicies:
+      # Volumes already protected by VolSync, which is offsite-first (restic to B2)
+      # and has a shorter RPO than the nightly Velero pass. Without this they were
+      # copied 3-4x every night — once by VolSync, then again by Velero FSB into
+      # BOTH the MinIO 96h tier and the B2 2160h tier — while pvc-minecraft-datadir
+      # (the 20Gi world save) and harbor-db pgdata were copied by neither. The
+      # overlap was accidental, not a division of labour.
+      #
+      # pvcLabels was verified on this cluster before being relied on: velero
+      # v1.18.1, a probe backup of `portainer` produced 1 PodVolumeBackup without the
+      # label and 0 with it. An unsupported condition would have been silently
+      # ignored and the backup would still have reported Completed.
+      #
+      # The label lives on the PVC manifests in git, so wiring a new VolSync source
+      # is one edit next to the PVC rather than a pod annotation somewhere else.
+      - conditions:
+          pvcLabels:
+            backup.vollminlab.com/volsync: "true"
+        action:
+          type: skip
+
       # NAS shares — backed up by TrueNAS itself, not by Velero.
       - conditions:
           storageClass:
