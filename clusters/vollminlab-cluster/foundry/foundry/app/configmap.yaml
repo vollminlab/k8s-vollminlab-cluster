@@ -110,13 +110,49 @@ data:
       # the pod annotation achieves the same skip, is mutable, and stays in git.
       backup.velero.io/backup-volumes-excludes: data
 
-    # The chart default is 18 x 10s = 3 minutes, which is not enough for the
-    # first-boot distribution download. 60 x 10s = 10 minutes.
-    startupProbe:
-      httpGet:
-        path: /
+    # ALL THREE PROBES ARE tcpSocket, NOT httpGet. Foundry mints a new client
+    # session for EVERY HTTP request and never expires them, so the chart's
+    # default `httpGet: /` probes leak sessions forever. Measured 2026-08-22:
+    # 2,969 sessions in 4h06m -- ~17,000/day -- every one from kubelet, none
+    # from a human. Foundry walks that table per request, so it degrades
+    # continuously, and the log becomes unreadable (199 of 200 lines were probe
+    # sessions, burying the one real event).
+    #
+    # `/api/status` does NOT help: measured, 3 requests produced 3 sessions.
+    # ANY HTTP request mints one. A raw TCP connect produces ZERO (5 connects,
+    # delta 0), because it never reaches the HTTP layer.
+    #
+    # Trade-off, accepted deliberately: a TCP probe cannot detect a hung Node
+    # process that still accepts connections. For a single-replica app whose
+    # process either runs or does not, that is a far better bargain than a
+    # self-inflicted session leak -- the HTTP probes were themselves the
+    # degradation they were supposed to detect.
+    livenessProbe:
+      initialDelaySeconds: 600
+      failureThreshold: 10
+      periodSeconds: 300
+      # Helm DEEP-MERGES values maps, so the chart's default httpGet survives
+      # unless explicitly nulled -- leaving a probe with two handlers, which the
+      # API server rejects. Verified in the render before and after.
+      httpGet: null
+      tcpSocket:
         port: http
-        scheme: HTTP
+    readinessProbe:
+      initialDelaySeconds: 30
+      failureThreshold: 18
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 5
+      httpGet: null
+      tcpSocket:
+        port: http
+    # failureThreshold 60 x 10s = 10 minutes, because first boot downloads the
+    # ~1GB Foundry distribution before the port opens. The chart default of 18
+    # (3 minutes) is not enough.
+    startupProbe:
       failureThreshold: 60
       periodSeconds: 10
       timeoutSeconds: 5
+      httpGet: null
+      tcpSocket:
+        port: http
