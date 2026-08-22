@@ -134,7 +134,7 @@ kubectl create secret generic onepassword-connect -n 1password \
 1. Install Kubernetes control plane (kubeadm)
 2. Install Calico CNI              → bootstrap/calico/README.md
 3. Apply CoreDNS custom config     → bootstrap/coredns/coredns-configmap.yaml
-4. Restore sealed-secrets key      → bootstrap/sealed-secrets/README.md
+4. Apply the onepassword-connect Secret → .claude/rules/secrets.md (must precede Flux bootstrap)
 5. Bootstrap Flux CD               → flux bootstrap github ...
 6. All apps                        → Flux reconciles automatically
 ```
@@ -348,7 +348,6 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | `policy-reporter-patch` | patch only | |
 | `portainer` | `./clusters/vollminlab-cluster/portainer` | |
 | `renovate` | `./clusters/vollminlab-cluster/renovate` | |
-| `sealed-secrets` | `./clusters/vollminlab-cluster/sealed-secrets` | |
 | `shlink` | `./clusters/vollminlab-cluster/shlink` | |
 | `velero` | `./clusters/vollminlab-cluster/velero` | |
 | `vollmint` | `./clusters/vollminlab-cluster/vollmint` | |
@@ -388,19 +387,15 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | metrics-server-repo | HelmRepository | https://kubernetes-sigs.github.io/metrics-server/ |
 | minecraft-repo | HelmRepository | https://itzg.github.io/minecraft-server-charts/ |
 | minio-repo | HelmRepository | https://charts.min.io/ |
-| overseerr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/overseerr |
-| plex-repo | OCIRepository | oci://oci.trueforge.org/truecharts/plex |
 | portainer-repo | HelmRepository | https://portainer.github.io/k8s |
 | prometheus-community-repo | HelmRepository | https://prometheus-community.github.io/helm-charts |
 | prowlarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/prowlarr |
 | radarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/radarr |
 | renovate-repo | OCIRepository | oci://ghcr.io/renovatebot/charts/renovate |
 | sabnzbd-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sabnzbd |
-| sealed-secrets-repo | HelmRepository | https://bitnami-labs.github.io/sealed-secrets |
 | shlink-repo | HelmRepository | https://charts.christianhuth.de |
 | smb-csi-driver-repo | HelmRepository | https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts |
 | sonarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sonarr |
-| tautulli-repo | HelmRepository | https://k8s-at-home.com/charts/ |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
 | vollminlab-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/shlink-ingress-controller |
 | vollmint-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/vollmint (tag: 0.1.0) |
@@ -454,10 +449,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `sabnzbd.vollminlab.com` | sabnzbd | 10097 | mediastack | wildcard-tls |
 | `prowlarr.vollminlab.com` | prowlarr | 9696 | mediastack | wildcard-tls |
 | `bazarr.vollminlab.com` | bazarr | 6767 | mediastack | wildcard-tls |
-| `overseerr.vollminlab.com` | overseerr | 5055 | mediastack | wildcard-tls |
 | `jellyfin.vollminlab.com` | jellyfin | 8096 | mediastack | wildcard-tls |
-| `plex.vollminlab.com` | plex | 32400 | mediastack | wildcard-tls |
-| `tautulli.vollminlab.com` | tautulli | 8181 | mediastack | wildcard-tls |
 | `go.vollminlab.com` | shlink-shlink-backend | 8080 | shlink | wildcard-tls |
 | `vl.vollminlab.com` | shlink-shlink-backend | 8080 | shlink | wildcard-tls |
 | `vollm.in` | shlink-shlink-backend | 8080 | shlink | vollm-in-tls (Let's Encrypt) |
@@ -503,10 +495,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-sabnzbd-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-prowlarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-bazarr-config` | mediastack | 5Gi | longhorn | RWO |
-| `pvc-overseerr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-jellyfin-config` | mediastack | 20Gi | longhorn | RWO |
-| `pvc-plex-config` | mediastack | 20Gi | longhorn | RWO |
-| `pvc-tautulli-config` | mediastack | 1Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
 | `minio` | minio | 75Gi | longhorn | RWO |
@@ -644,18 +633,18 @@ velero restore create --from-backup <backup-name>
 | CPU | req: 50m, limits: 200m |
 | Memory | req: 64Mi, limits: 128Mi |
 
-Two separate tunnels are deployed — one per externally-accessible media service, for independent blast-radius and revocability.
+**Four independent tunnels are deployed** — one per externally-accessible service, for independent
+blast-radius and revocability: `cloudflared-jellyfin` and `cloudflared-audiobookshelf` in
+`mediastack`, `cloudflared-nginx` in `ingress-nginx`, and `cloudflared-authentik` in `authentik`.
 
-#### cloudflared (Plex tunnel)
+A fifth, the original bare `cloudflared` Deployment, served the Plex tunnel and was removed with
+Plex on 2026-05-09.
 
-| Parameter | Value |
-|---|---|
-| Deployment | `cloudflared` in `mediastack` |
-| Tunnel token | ExternalSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
-
-| Hostname | Internal target |
-|---|---|
-| `plex.vollminlab.com` | `http://plex.mediastack.svc.cluster.local:32400` |
+> **A cloudflared tunnel needs two egress rules, not one.** Reaching the Cloudflare edge (7844) and
+> reaching the tunnel's *origin* are separate hops, and only the first fails loudly — the Cloudflare
+> dashboard shows the tunnel healthy while every request 502s. LAN clients mask this completely,
+> because Pi-hole's A-record override sends them straight to the ingress VIP and never through the
+> tunnel, so the breakage is visible only from outside. This went unnoticed for ~68 days.
 
 #### cloudflared-jellyfin (Jellyfin tunnel)
 
@@ -749,8 +738,6 @@ per-namespace port table.
 | sabnzbd | https://sabnzbd.vollminlab.com |
 | prowlarr | https://prowlarr.vollminlab.com |
 | bazarr | https://bazarr.vollminlab.com |
-| overseerr | https://overseerr.vollminlab.com |
-| tautulli | https://tautulli.vollminlab.com |
 | portainer | https://portainer.vollminlab.com |
 | shlink | https://shlink.vollminlab.com |
 
@@ -760,7 +747,6 @@ per-namespace port table.
 |---|---|
 | pihole | https://pihole.vollminlab.com |
 | npm | https://npm.vollminlab.com |
-| plex | https://plex.vollminlab.com |
 | truenas | https://truenas.vollminlab.com |
 | udm | https://udm.vollminlab.com |
 | vcenter | https://vcenter.vollminlab.com |
@@ -830,7 +816,7 @@ Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespa
 
 ## Media Stack
 
-All apps in the `mediastack` namespace. Shared SMB storage mounted at the namespace level. App configs stored on Longhorn (5Gi RWO each, except Tautulli at 1Gi).
+All apps in the `mediastack` namespace. Shared SMB storage mounted at the namespace level. App configs stored on Longhorn.
 
 ### Sonarr (TV automation)
 
@@ -881,15 +867,6 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Config PVC | 5Gi Longhorn RWO |
 | Volumes | pvc-movies (RWX), pvc-tv (RWX) |
 
-### Overseerr (Media requests)
-
-| Parameter | Value |
-|---|---|
-| Source | OCIRepository |
-| Ingress | `overseerr.vollminlab.com` |
-| Port | 5055 |
-| Config PVC | 5Gi Longhorn RWO |
-
 ### Jellyfin (Media server)
 
 | Parameter | Value |
@@ -901,32 +878,10 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Config PVC | `pvc-jellyfin-config` 20Gi Longhorn RWO |
 | Volumes | `pvc-movies` at `/movies` (RWX), `pvc-tv` at `/tv` (RWX) |
 | UID/GID | 568 |
-| External access | Cloudflare Tunnel via `cloudflared-jellyfin` Deployment (separate from Plex tunnel) |
+| External access | Cloudflare Tunnel via `cloudflared-jellyfin` Deployment (one of four independent tunnels) |
 | Security gate | Jellyfin built-in auth only — no Cloudflare Access (native apps require no browser challenge) |
 | Public signup | Disabled — accounts created manually by admin |
 | Hardware transcoding | Deferred — CPU only for initial deployment |
-
-### Plex (Media server)
-
-| Parameter | Value |
-|---|---|
-| Chart | TrueCharts plex 22.1.2 (OCIRepository) |
-| Ingress | `plex.vollminlab.com` |
-| Port | 32400 |
-| Config PVC | 20Gi Longhorn RWO |
-| Volumes | pvc-movies (RWX), pvc-tv (RWX) |
-| Allowed networks | `172.16.0.0/12, 10.0.0.0/8, 192.168.0.0/16` |
-| External access | Cloudflare Tunnel via cloudflared (see Infrastructure Services) |
-| Notes | Claim server via web UI on first launch from same-LAN browser |
-
-### Tautulli (Plex monitoring)
-
-| Parameter | Value |
-|---|---|
-| Chart version | v11.3.1 |
-| Ingress | `tautulli.vollminlab.com` |
-| Port | 8181 |
-| Config PVC | 1Gi Longhorn RWO |
 
 ### Shared Secrets
 
@@ -956,7 +911,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 | Group | Services |
 |---|---|
-| Media Stack | Plex, Overseerr, Tautulli, Sonarr, Radarr, Prowlarr, SABnzbd |
+| Media Stack | Jellyfin, Jellystat, Seerr, Sonarr, Radarr, Readarr, Bazarr, Prowlarr, SABnzbd, qBittorrent, Audiobookshelf |
 | Infrastructure | Pi-hole, TrueNAS, vCenter, Portainer, Nginx Proxy Manager, UDM, HAProxy stats |
 | Monitoring | Grafana, Prometheus |
 | Documentation | BookStack, Homepage, GitHub repo, ChatGPT, Reddit, Chocolatey |
