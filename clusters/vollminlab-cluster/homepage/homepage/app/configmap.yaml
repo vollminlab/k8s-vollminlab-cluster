@@ -391,7 +391,7 @@ data:
             - Foundry VTT:
                 description: Virtual tabletop for tabletop RPG sessions
                 href: https://foundry.vollminlab.com
-                icon: mdi-dice-d20
+                icon: foundry-vtt.png
                 namespace: foundry
                 app: foundry
             - Vollminlab Org:
