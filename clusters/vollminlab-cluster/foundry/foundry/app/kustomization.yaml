@@ -6,3 +6,4 @@ resources:
   - foundry-credentials-externalsecret.yaml
   - configmap.yaml
   - helmrelease.yaml
+  - ingress.yaml
