@@ -110,7 +110,7 @@ Every HelmRelease and pod must use one of:
 | `observability` | metrics-server, kube-prometheus-stack, Grafana, Loki           |
 | `apps`          | homepage, portainer, shlink, renovate                          |
 | `media`         | Radarr, Sonarr, Bazarr, Overseerr, Prowlarr, SABnzbd, Tautulli |
-| `gaming`        | Minecraft (dmz namespace only)                                 |
+| `gaming`        | Minecraft (dmz), Foundry VTT (foundry)                         |
 | `ci`            | actions-runner-system (GitHub ARC runners)                     |
 
 ## DMZ namespace rules

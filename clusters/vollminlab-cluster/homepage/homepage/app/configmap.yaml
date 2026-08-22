@@ -388,6 +388,12 @@ data:
                 icon: mdi-cash-multiple
                 namespace: vollmint
                 app: vollmint
+            - Foundry VTT:
+                description: Virtual tabletop for tabletop RPG sessions
+                href: https://foundry.vollminlab.com
+                icon: mdi-dice-d20
+                namespace: foundry
+                app: foundry
             - Vollminlab Org:
                 description: All Vollminlab repositories
                 href: https://github.com/vollminlab

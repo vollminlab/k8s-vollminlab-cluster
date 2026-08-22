@@ -1,0 +1,99 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: foundry
+  labels:
+    app: foundry
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: foundry
+  labels:
+    app: foundry
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow ingress-nginx to reach Foundry. NetworkPolicy is evaluated post-DNAT at
+# the pod, so the CONTAINER port applies: the Service is 80, the container
+# listens on 30000. Using 80 here would silently allow nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx
+  namespace: foundry
+  labels:
+    app: foundry
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 30000
+---
+# Required for the pod to START, not just for convenience: the felddy image
+# downloads the Foundry distribution from foundryvtt.com on first boot and on
+# every version change, and Foundry validates the license key against
+# foundryvtt.com. Also carries the VolSync restic mover's traffic to Backblaze B2.
+#
+# RFC1918 is excluded so a compromised third-party Foundry module cannot reach
+# anything on the internal network. Modelled on dmz/masters-league.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: foundry
+  labels:
+    app: foundry
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: foundry
+  labels:
+    app: foundry
+    env: production
+    category: gaming
+    goldilocks.fairwinds.com/enabled: "true"
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

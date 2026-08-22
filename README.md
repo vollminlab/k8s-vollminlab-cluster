@@ -106,6 +106,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   dmz/                                  # Internet-exposed workloads (Minecraft, masters-league)
   external-dns/                         # Automated DNS record management (Pi-hole)
   external-secrets/                     # External Secrets Operator
+  foundry/                              # Foundry VTT virtual tabletop
   goldilocks/                           # Resource request/limit recommendations
   harbor/                               # Container registry + Docker Hub proxy cache
   homepage/                             # Homepage dashboard
@@ -229,6 +230,7 @@ StorageClasses: `longhorn` (default), `longhorn-r1`, `longhorn-r2`, `longhorn-dm
 | Filebrowser | mediastack | Web file manager for media shares |
 | Minecraft | dmz | Game server (internet-exposed, DMZ isolated) |
 | masters-league | dmz | Fantasy league app (internet-exposed, DMZ isolated) |
+| Foundry VTT | foundry | Virtual tabletop (Authentik-gated, tunnel-exposed) |
 
 ### CI/CD
 

@@ -18,6 +18,7 @@ resources:
   - descheduler-helmrepository.yaml
   - external-dns-helmrepository.yaml
   - external-secrets-helmrepository.yaml
+  - foundry-helmrepository.yaml
   - goldilocks-helmrepository.yaml
   - grafana-helmrepository.yaml
   - harbor-helmrepository.yaml

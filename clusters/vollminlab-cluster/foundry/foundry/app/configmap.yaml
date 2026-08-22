@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foundry-values
+  namespace: foundry
+  labels:
+    app: foundry
+    env: production
+    category: gaming
+data:
+  values.yaml: |
+    # nameOverride makes the chart's fullname helper resolve to a bare "foundry"
+    # instead of "foundry-foundryvtt", and sets app.kubernetes.io/name=foundry
+    # which the Homepage Kubernetes badge matches on.
+    nameOverride: foundry
+
+    image:
+      registry: ghcr.io
+      repository: felddy/foundryvtt
+      pullPolicy: IfNotPresent
+
+    config:
+      # All three point at the single Secret materialized by the ExternalSecret.
+      foundryAuthSecret:
+        name: foundry-credentials
+        usernameKey: username
+        passwordKey: password
+      adminKeySecret:
+        name: foundry-credentials
+        key: admin-key
+      licenseKeySecret:
+        name: foundry-credentials
+        key: license-key
+      # false = the container rewrites options.json from env on every start, so
+      # the manifest stays the source of truth. Changing settings in Foundry's
+      # admin UI will not survive a restart, which is intended.
+      preserveConfig: false
+      enableTelemetry: false
+      minifyStaticFiles: true
+      cssTheme: dark
+      downloadRetries: 5
+
+    # 10Gi is the chart default and deliberate: x3 Longhorn replicas = 30Gi
+    # cluster-wide. 20Gi would drop worker03's schedulable headroom from
+    # 27.3GiB to ~7.3GiB and constrain the next PVC anyone provisions. Foundry
+    # itself needs ~1Gi; the rest is uploaded maps and audio. storage.md:
+    # "Start conservative. Expand later." Longhorn resizes online, no downtime.
+    storage:
+      size: 10Gi
+      className: longhorn
+
+    service:
+      type: ClusterIP
+      port: 80
+
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/ssl-redirect: "false"
+        # 0 = unlimited, so large map/audio uploads work from the LAN. Cloudflare
+        # still caps uploads THROUGH THE TUNNEL at 100 MB and a tunnel hostname
+        # cannot be un-proxied, so upload big assets on the LAN (Pi-hole points
+        # LAN clients at the ingress VIP, bypassing the tunnel).
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-buffering: "off"
+        nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+        nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+        nginx.ingress.kubernetes.io/auth-url: "http://authentik-proxy.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx"
+        nginx.ingress.kubernetes.io/auth-signin: "https://authentik.vollminlab.com/outpost.goauthentik.io/start?rd=https://$http_host$escaped_request_uri"
+        nginx.ingress.kubernetes.io/auth-response-headers: "Set-Cookie,X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid"
+        nginx.ingress.kubernetes.io/auth-snippet: |
+          proxy_set_header X-Forwarded-Host $http_host;
+        shlink.vollminlab.com/slug: foundry
+      hosts:
+        - host: foundry.vollminlab.com
+          paths:
+            - path: /
+              pathType: Prefix
+      # A NON-EMPTY tls list is what makes the chart emit FOUNDRY_PROXY_SSL=true
+      # and FOUNDRY_PROXY_PORT=443. Without it Foundry hands out broken
+      # http://...:30000 invite links. The wildcard-tls Secret does not exist in
+      # this namespace and does not need to: ingress-nginx runs with
+      # --default-ssl-certificate=cert-manager/wildcard-tls.
+      tls:
+        - hosts:
+            - foundry.vollminlab.com
+          secretName: wildcard-tls
+
+    # Kyverno require-resources: requests for cpu+memory and a memory limit are
+    # mandatory. A CPU limit is deliberately omitted per .claude/rules/kyverno.md.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        memory: 4Gi
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+    podLabels:
+      app: foundry
+      env: production
+      category: gaming
+
+    # The chart default is 18 x 10s = 3 minutes, which is not enough for the
+    # first-boot distribution download. 60 x 10s = 10 minutes.
+    startupProbe:
+      httpGet:
+        path: /
+        port: http
+        scheme: HTTP
+      failureThreshold: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
