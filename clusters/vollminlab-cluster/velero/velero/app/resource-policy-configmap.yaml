@@ -69,7 +69,17 @@ data:
       # them here would be dead configuration.
       #
       # PVC-backed volumes are deliberately NOT skipped — pgdata, registry-data,
-      # config, metadata, media, backupdir and datadir hold real state.
+      # config, metadata, media and datadir hold real state.
+      #
+      # `backupdir` was listed here as PVC-backed. It is not: it is an emptyDir on
+      # the minecraft Deployment, so this rule skips it. That is correct, and it
+      # costs nothing — verified 2026-08-22 that NOTHING writes to it. The itzg
+      # chart mounts /backups by default, but the pod runs a single container with
+      # no BACKUP* env vars, so the in-server backup feature was never enabled.
+      # There are no rotated world backups being discarded, because none are taken.
+      #
+      # The live world IS protected: `datadir` is a PVC and is backed up nightly.
+      # What does not exist is in-game rollback to an earlier point — see #1159.
       - conditions:
           volumeTypes:
             - emptyDir
