@@ -13,12 +13,20 @@ spec:
   # The restrict-privileged and restrict-hostpath-usage policies are currently
   # Enforce mode — this exception ensures the renewal Jobs and Pods are not
   # blocked if kube-system is ever removed from the policy exclude list.
+  #
+  # Until #1164 this named only the Deployment/StatefulSet/DaemonSet policies,
+  # which never matched a Job or a CronJob in the first place — so the exception
+  # was inert and the workload was unvalidated rather than excepted. The
+  # -batch policies are the ones that actually reach these objects; CronJob is
+  # matched here too, because that is the object admission sees when the
+  # manifest is applied.
   match:
     any:
       - resources:
           kinds:
             - Pod
             - Job
+            - CronJob
           namespaces:
             - kube-system
           names:
@@ -30,3 +38,11 @@ spec:
     - policyName: restrict-hostpath-usage
       ruleNames:
         - disallow-hostpath-except-system
+    - policyName: restrict-privileged-batch
+      ruleNames:
+        - block-privileged-job
+        - block-privileged-cronjob
+    - policyName: restrict-hostpath-usage-batch
+      ruleNames:
+        - disallow-hostpath-except-system-job
+        - disallow-hostpath-except-system-cronjob

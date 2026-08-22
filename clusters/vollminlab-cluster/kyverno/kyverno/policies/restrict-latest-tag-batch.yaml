@@ -1,0 +1,51 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-latest-tag-batch
+  annotations:
+    kyverno.io/enable-background: "true"
+    policies.kyverno.io/title: Disallow `:latest` Image Tags (Job/CronJob)
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      The batch counterpart to restrict-latest-tag, which matched Deployment,
+      StatefulSet and DaemonSet only.
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: restrict-latest-tag-job
+      match:
+        resources:
+          kinds:
+            - Job
+      skipBackgroundRequests: false
+      validate:
+        message: "Use of ':latest' image tag is not allowed in containers."
+        pattern:
+          spec:
+            template:
+              spec:
+                containers:
+                  - image: "!*:latest"
+
+    - name: restrict-latest-tag-cronjob
+      match:
+        resources:
+          kinds:
+            - CronJob
+      skipBackgroundRequests: false
+      validate:
+        message: "Use of ':latest' image tag is not allowed in containers."
+        pattern:
+          spec:
+            jobTemplate:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - image: "!*:latest"

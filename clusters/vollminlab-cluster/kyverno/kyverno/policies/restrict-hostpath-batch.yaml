@@ -1,0 +1,79 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-hostpath-usage-batch
+  annotations:
+    policies.kyverno.io/title: Restrict hostPath Usage (Job/CronJob)
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      The batch counterpart to restrict-hostpath-usage. Same namespace
+      exclusions, applied to Job and CronJob.
+    kyverno.io/enable-background: "true"
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-hostpath-except-system-job
+      match:
+        resources:
+          kinds:
+            - Job
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - calico-system
+            - longhorn-system
+            - monitoring
+            - tigera-operator
+            - velero
+      skipBackgroundRequests: false
+      validate:
+        message: "Using hostPath volumes is not allowed outside system namespaces."
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  =(volumes): []
+          - spec:
+              template:
+                spec:
+                  volumes:
+                    - =(hostPath): null
+
+    - name: disallow-hostpath-except-system-cronjob
+      match:
+        resources:
+          kinds:
+            - CronJob
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - calico-system
+            - longhorn-system
+            - monitoring
+            - tigera-operator
+            - velero
+      skipBackgroundRequests: false
+      validate:
+        message: "Using hostPath volumes is not allowed outside system namespaces."
+        anyPattern:
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      =(volumes): []
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      volumes:
+                        - =(hostPath): null

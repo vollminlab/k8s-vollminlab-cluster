@@ -1,0 +1,85 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-privileged-batch
+  annotations:
+    policies.kyverno.io/title: Block Privileged Pods (Job/CronJob)
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      The batch counterpart to restrict-privileged. Same namespace exclusions,
+      applied to Job and CronJob, which no Enforce policy matched.
+    kyverno.io/enable-background: "true"
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: block-privileged-job
+      match:
+        resources:
+          kinds:
+            - Job
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - calico-system
+            - longhorn-system
+            - metallb-system
+            - csi-driver
+            - tigera-operator
+            - ingress-nginx
+      skipBackgroundRequests: false
+      validate:
+        message: "Privileged mode is not allowed."
+        anyPattern:
+          - spec:
+              template:
+                spec:
+                  containers:
+                    - =(securityContext):
+                        =(privileged): false
+          - spec:
+              template:
+                spec:
+                  containers:
+                    - X(securityContext): null
+
+    - name: block-privileged-cronjob
+      match:
+        resources:
+          kinds:
+            - CronJob
+      exclude:
+        resources:
+          namespaces:
+            - kube-system
+            - calico-system
+            - longhorn-system
+            - metallb-system
+            - csi-driver
+            - tigera-operator
+            - ingress-nginx
+      skipBackgroundRequests: false
+      validate:
+        message: "Privileged mode is not allowed."
+        anyPattern:
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      containers:
+                        - =(securityContext):
+                            =(privileged): false
+          - spec:
+              jobTemplate:
+                spec:
+                  template:
+                    spec:
+                      containers:
+                        - X(securityContext): null
