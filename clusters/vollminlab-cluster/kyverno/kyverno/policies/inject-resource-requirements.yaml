@@ -41,7 +41,8 @@ spec:
       #   csi-resizer       67.9Mi / 68.6Mi   -> request  80Mi, limit 160Mi
       #   csi-snapshotter   61.7Mi / 63.6Mi   -> request  80Mi, limit 160Mi
       #   longhorn-ui        4.8Mi /  6.0Mi   -> request  16Mi, limit  32Mi
-      #   longhorn-manager 564.1Mi / 607.1Mi  -> request 384Mi (SEE BELOW), limit 1Gi
+      #   longhorn-manager 564.9Mi / 607.1Mi  -> request 640Mi, limit 1Gi
+      #   pre-pull-share-…   0.5Mi /   4.2Mi  -> request  16Mi, limit 32Mi
       #
       # resizer and snapshotter were previously requesting 64Mi, below their own p95 --
       # a request under real usage under-declares the workload to the scheduler, which
@@ -153,6 +154,31 @@ spec:
                           limits:
                             cpu: "20m"
                             memory: "32Mi"
+          # The longhorn-manager DaemonSet has a SECOND container that had no block
+          # here at all. require-resources demands every container declare requests
+          # and a memory limit, so without this the DaemonSet could not satisfy the
+          # policy even with the mutate firing -- it passes today only because
+          # ignore-longhorn-dynamic-pods exempts it. Measured 30d: p95 0.5Mi, max
+          # 4.2Mi; it pulls an image and idles.
+          - list: "request.object.spec.template.spec.containers || `[]`"
+            preconditions:
+              all:
+                - key: "{{element.name}}"
+                  operator: Equals
+                  value: pre-pull-share-manager-image
+            patchStrategicMerge:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - (name): pre-pull-share-manager-image
+                        resources:
+                          requests:
+                            cpu: "10m"
+                            memory: "16Mi"
+                          limits:
+                            cpu: "50m"
+                            memory: "32Mi"
           - list: "request.object.spec.template.spec.containers || `[]`"
             preconditions:
               all:
@@ -168,7 +194,7 @@ spec:
                         resources:
                           requests:
                             cpu: "100m"
-                            memory: "384Mi"
+                            memory: "640Mi"
                           limits:
                             cpu: "1"
                             memory: "1Gi"
