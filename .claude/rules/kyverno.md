@@ -69,7 +69,7 @@ other four policies are clean cluster-wide.
 
 **Before flipping any of these to Enforce**, read the live PolicyReport after at least one
 full backup cycle, one VolSync cycle and one Helm reconcile — a snapshot of currently
-*running* Jobs cannot see the transient ones, and VolSync's 13 ReplicationSources all have
+*running* Jobs cannot see the transient ones, and VolSync's 14 ReplicationSources all have
 `moverResources: null`, so their mover Jobs will fail `require-resources-batch` when they
 next run.
 
