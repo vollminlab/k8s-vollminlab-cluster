@@ -28,6 +28,11 @@ data:
       #
       # The label lives on the PVC manifests in git, so wiring a new VolSync source
       # is one edit next to the PVC rather than a pod annotation somewhere else.
+      #
+      # For a PVC the app's chart templates rather than git — harbor-registry is
+      # the only one — the label is applied by a `postRenderers` kustomize patch
+      # on the HelmRelease. See harbor/harbor/app/helmrelease.yaml for why that,
+      # and not `existingClaim`.
       - conditions:
           pvcLabels:
             backup.vollminlab.com/volsync: "true"
