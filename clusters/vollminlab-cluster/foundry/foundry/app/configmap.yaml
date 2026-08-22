@@ -101,9 +101,13 @@ data:
       # server-side dry-run patch adding the label is rejected with "updates to
       # statefulset spec for fields other than 'replicas', 'ordinals', 'template',
       # 'updateStrategy', 'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy'
-      # and 'minReadySeconds' are forbidden". A postRenderer would make every future
-      # Helm upgrade of this release fail permanently. The pod annotation achieves the
-      # same skip, is mutable, and stays in git.
+      # and 'minReadySeconds' are forbidden". A postRenderer targeting that field would
+      # make every future Helm upgrade of this release fail permanently.
+      #
+      # Note this HelmRelease does carry a postRenderer — it patches the pod template's
+      # env, which IS mutable. The forbidden thing is volumeClaimTemplates specifically,
+      # not postRenderers as such. So the label cannot be reached by any means here, and
+      # the pod annotation achieves the same skip, is mutable, and stays in git.
       backup.velero.io/backup-volumes-excludes: data
 
     # The chart default is 18 x 10s = 3 minutes, which is not enough for the
