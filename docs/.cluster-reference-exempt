@@ -1,0 +1,7 @@
+# Baseline of app directories not yet documented in docs/cluster-reference.md.
+#
+# EMPTY as of 2026-08-22 — the original 41 entries were all documented and the
+# ratchet is fully closed. check-doc-currency.sh now enforces with no exemptions.
+#
+# Do NOT add an entry here to silence a CI failure. Document the app instead.
+# See .claude/rules/docs.md.
