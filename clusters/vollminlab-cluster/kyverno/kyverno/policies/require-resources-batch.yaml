@@ -1,0 +1,64 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resources-batch
+  annotations:
+    policies.kyverno.io/title: Require Resource Requests & a Memory Limit (Job/CronJob)
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      The batch counterpart to require-resources. That policy matches Deployment,
+      StatefulSet and DaemonSet only, and because it matches controller kinds
+      rather than Pod, autogen does not extend it — autogen derives controller
+      rules from Pod-matching policies, not the reverse. Job and CronJob were
+      therefore validated by nothing.
+    # Staged in Audit. The Enforce flip is deliberately a separate change,
+    # gated on reading this policy's report — see the note on Job below.
+    kyverno.io/enable-background: "true"
+  labels:
+    app: kyverno
+    env: production
+    category: security
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    # Job and CronJob need separate rules: the container path differs
+    # (spec.template.spec vs spec.jobTemplate.spec.template.spec), so a single
+    # rule matching both kinds would silently iterate nothing on one of them —
+    # the inert-foreach failure mode of #1104/#1109.
+    - name: require-limits-job
+      match:
+        resources:
+          kinds:
+            - Job
+      skipBackgroundRequests: false
+      validate:
+        message: "All containers must declare CPU and memory requests and a memory limit."
+        foreach:
+          - list: "request.object.spec.template.spec.containers"
+            pattern:
+              resources:
+                requests:
+                  cpu: "?*"
+                  memory: "?*"
+                limits:
+                  memory: "?*"
+
+    - name: require-limits-cronjob
+      match:
+        resources:
+          kinds:
+            - CronJob
+      skipBackgroundRequests: false
+      validate:
+        message: "All containers must declare CPU and memory requests and a memory limit."
+        foreach:
+          - list: "request.object.spec.jobTemplate.spec.template.spec.containers"
+            pattern:
+              resources:
+                requests:
+                  cpu: "?*"
+                  memory: "?*"
+                limits:
+                  memory: "?*"
