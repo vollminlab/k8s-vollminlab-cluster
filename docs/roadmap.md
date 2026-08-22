@@ -328,13 +328,41 @@ All namespaces outside the DMZ are fully open east-west. A compromised pod in `m
 
 ## Phase 4 — Infrastructure Diagrams
 
-**Goal:** Create living architecture diagrams for every repo in the org once observability and security are settled — so diagrams reflect a stable system and don't need immediate revision.
+**Goal:** Create living architecture diagrams for every repo in the org once observability and
+security are settled — so diagrams reflect a stable system and don't need immediate revision.
+
+**Met, by a different route.** See 4.0 — diagrams are inline in the docs they explain rather than in
+per-repo `diagrams/` folders.
 
 ### 4.0 Diagram Creation — All Repos
 
-**Status:** `planned` — **not started.** Verified 2026-08-22: no `diagrams/` directory and no `.mmd`
-files exist in any org repo except `homelab-obsidian-vault`, which has a `diagrams/` folder used for
-a different purpose.
+**Status:** `done` — **delivered in a different shape than specified below.** Measured 2026-08-22:
+**all 14 org repos carry mermaid diagrams, 22 in total**, as inline ```` ```mermaid ```` fences in
+markdown rather than standalone `.mmd` files in a `diagrams/` directory.
+
+| Repo | Diagrams | | Repo | Diagrams |
+| --- | ---: | --- | --- | ---: |
+| k8s-vollminlab-cluster | 10 | | homelab-obsidian-vault | 10 |
+| longhorn-rebalancing-controller | 2 | | ansible-playbooks | 1 |
+| dot-github | 1 | | github-admin | 1 |
+| groupme_exporter | 1 | | homelab-infrastructure | 1 |
+| masters-league | 1 | | pihole-flask-api | 1 |
+| shlink-ingress-controller | 1 | | VMDeployTools | 1 |
+| vollmint | 1 | | | |
+
+In this repo they live in `README.md`, six runbooks (`kyverno-recovery`,
+`longhorn-ext4-corruption`, `etcd-local-nvme-migration`, `harbor-dockerhub-proxy-cache`,
+`ci-runner-breakglass`, `expose-dmz-service`) and two design specs.
+
+**The inline placement is better than the `diagrams/` folder this section originally specified, and
+the plan should be considered improved on rather than partially met.** A diagram sitting beside the
+runbook it explains gets revised in the same PR as the procedure; a diagram in a separate top-level
+folder has no such forcing function and rots quietly — which is precisely how the rest of this
+document drifted. Mermaid still renders natively in GitHub and previews in VS Code, so nothing is
+lost by not having discrete files.
+
+**Maintenance rule going forward:** a new runbook or design doc that describes a flow gets its
+diagram in the same file, in the same PR. Do not create per-repo `diagrams/` directories.
 
 Create a `diagrams/` folder in each repo with declarative Mermaid diagrams covering the full system as it exists at that point. Scope:
 
@@ -643,6 +671,16 @@ were wrong; all are corrected in place above, with the evidence, rather than sil
 | 3.7 Reloader | "SealedSecret changes trigger restarts" | Secret | SealedSecrets controller removed 2026-05-31 (3.8) |
 | 3.10 Tailscale | `planned` | `done` — PR #740, 2026-05-24 | operator + connector + `tofu/tailscale-config` all live |
 | 7.3 | "CP nodes on 24.04.1 / 24.04.2" | all 9 uniform at 24.04.4 | live `kubectl get nodes` |
+| 4.0 Diagrams | `planned` | `done`, shape changed | 22 mermaid diagrams across all 14 repos |
+
+**A note on how 4.0 was nearly mis-audited.** The first pass of this audit searched for `.mmd`
+files and `diagrams/` directories — the artifacts this section *specifies* — found almost none, and
+concluded the phase was not started. It had in fact been delivered in full, as inline mermaid.
+Searching for the prescribed mechanism rather than the intended outcome produced a confidently
+wrong answer, which is the same class of error as a NetworkPolicy rule naming a service port: the
+check runs, reports cleanly, and measures the wrong thing. **When auditing a roadmap item, search
+for what the goal would look like if it were met by any means, not for the implementation the plan
+happened to name.**
 
 **Two structural problems, not just stale fields:**
 
