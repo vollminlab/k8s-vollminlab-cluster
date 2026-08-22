@@ -696,6 +696,54 @@ jobs:
             yq eval -i '(select(.kind == "Service") | .spec.ports[]?) |= del(.nodePort)' \
               "$RENDER_DIR/rendered.yaml"
 
+            # ── NOT a licence to let charts render Ingresses ───────────────────
+            # The convention in this repo is a STANDALONE ingress.yaml next to the
+            # HelmRelease. 35 of 35 apps follow it. A standalone Ingress is greppable
+            # in git (the "N of M Ingresses carry a slug" audits in CLAUDE.md depend
+            # on that) and never reaches this dry-run at all, because the loop above
+            # skips any file whose kind is not HelmRelease.
+            #
+            # So if a chart wants to emit its own Ingress: set `ingress.enabled: false`
+            # and write the ingress.yaml by hand. If that costs you chart behaviour
+            # wired to the Ingress — foundry's chart only emits FOUNDRY_PROXY_SSL /
+            # FOUNDRY_PROXY_PORT / FOUNDRY_HOSTNAME alongside its own Ingress — re-add
+            # it with a `postRenderers` patch, as foundry's HelmRelease does.
+            #
+            # This block exists only for a chart that gives you no such choice. It is a
+            # backstop, not an alternative to the convention.
+            # ───────────────────────────────────────────────────────────────────────
+            #
+            # Rewrite Ingress hostnames before the dry-run, for the same reason as
+            # nodePort above: the value in the rendered manifest is by definition
+            # already held by the live object, so it cannot be meaningfully checked
+            # against a cluster already running it.
+            #
+            # ingress-nginx's validating webhook rejects a host+path pair that another
+            # Ingress already owns, in ANY namespace:
+            #   admission webhook "validate.nginx.ingress.kubernetes.io" denied the
+            #   request: host "foundry.vollminlab.com" and path "/" is already defined
+            #   in ingress foundry/foundry
+            # That is not a manifest defect — it is the app's OWN live Ingress. It only
+            # bites once the app is deployed, so the PR that first adds a chart-rendered
+            # Ingress passes and every later PR touching that app's values fails, however
+            # unrelated the change. #1198 (a VolSync backup) failed exactly this way.
+            #
+            # Only Ingresses rendered BY A CHART are affected. foundry surfaced this by
+            # briefly being the one app in that shape; it has since been moved to a
+            # standalone ingress.yaml like every other app, so as of writing NO app
+            # relies on this rewrite. It is kept because the next chart that emits an
+            # Ingress would otherwise fail in a way that reads as a manifest defect.
+            #
+            # The rewrite keeps the Ingress in the dry-run so its annotations, TLS block,
+            # backend refs, schema and Kyverno admission are all still validated. Only the
+            # hostname — the one field guaranteed to collide — is swapped for a per-run
+            # unique name. The manifest on disk is untouched.
+            CI_HOST="ci-${RUN_SUFFIX}.ci.invalid"
+            yq eval -i "(select(.kind == \"Ingress\") | .spec.rules[]?.host) |= \"$CI_HOST\"" \
+              "$RENDER_DIR/rendered.yaml"
+            yq eval -i "(select(.kind == \"Ingress\") | .spec.tls[]?.hosts[]?) |= \"$CI_HOST\"" \
+              "$RENDER_DIR/rendered.yaml"
+
             # ── Server-side dry-run: real admission chain, zero side effects ────
             if kubectl apply --dry-run=server -n "$TEST_NAMESPACE" \
                  -f "$RENDER_DIR/rendered.yaml" > "$RENDER_DIR/dryrun.out" 2>&1; then
