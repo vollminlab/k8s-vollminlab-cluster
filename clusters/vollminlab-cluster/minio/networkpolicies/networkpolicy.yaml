@@ -268,3 +268,60 @@ spec:
       ports:
         - protocol: TCP
           port: 9000
+---
+# The cnpg-b2-mirror CronJob reads the cnpg-backups bucket and copies it to
+# Backblaze B2. Two hops, and only one of them needs a rule here:
+#
+#   * MinIO on 9000 — intra-namespace, needs these two policies. Verified
+#     container port: svc minio 9000 -> targetPort 9000 -> containerPort 9000
+#     (named `http`), so 9000 is correct on both sides of the DNAT.
+#   * Backblaze B2 on 443 — already granted by allow-https-egress, whose
+#     podSelector is {} and therefore covers every pod in this namespace.
+#     DNS likewise comes from allow-dns.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-b2-mirror-egress
+  namespace: minio
+  labels:
+    app: cnpg-b2-mirror
+    env: production
+    category: storage
+spec:
+  podSelector:
+    matchLabels:
+      app: cnpg-b2-mirror
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: minio
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-b2-mirror-ingress
+  namespace: minio
+  labels:
+    app: cnpg-b2-mirror
+    env: production
+    category: storage
+spec:
+  podSelector:
+    matchLabels:
+      app: minio
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: cnpg-b2-mirror
+      ports:
+        - protocol: TCP
+          port: 9000

@@ -1,0 +1,136 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cnpg-b2-mirror
+  namespace: minio
+  labels:
+    app: cnpg-b2-mirror
+    env: production
+    category: storage
+spec:
+  # 09:00 UTC. After the last CNPG ScheduledBackup (jellystat, 03:00) so the
+  # day's base backups are included, and clear of every other window: VolSync
+  # 00:00-02:00, the other four ScheduledBackups 01:00-01:45, velero daily-full
+  # 03:00, daily-b2 04:00, grafana-b2 05:00, monthly-b2 06:00, vmbackup 07:30
+  # with a 2h ceiling.
+  schedule: "0 9 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      # The first run uploads the whole bucket (8.4 GB measured 2026-08-22).
+      # Every run after that copies only objects B2 does not already have, so
+      # the steady state is one day of base backups plus that day's WAL.
+      activeDeadlineSeconds: 5400
+      # backoffLimit 0 would make a single transient B2 error a failed day.
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: cnpg-b2-mirror
+            env: production
+            category: storage
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: mirror
+              image: docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                # Source: the existing cnpg-svc principal, whose MinIO policy
+                # (cnpg-policy, in minio/app/configmap.yaml) is already scoped to
+                # the cnpg-backups bucket and nothing else. This job only ever
+                # reads through it, so a dedicated read-only principal would add
+                # a second 1Password item and a MinIO Helm post-job run against
+                # the backup store for no reduction in blast radius.
+                #
+                # The access key is not a secret: it is declared in plain text as
+                # `accessKey: cnpg-svc` in the MinIO chart values. Only the secret
+                # key comes from 1Password, via the cnpg-minio-user ExternalSecret
+                # this namespace already has for the Helm post-job.
+                - name: MINIO_ACCESS_KEY
+                  value: cnpg-svc
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cnpg-minio-user
+                      key: secretKey
+                - name: B2_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cnpg-b2-credentials
+                      key: B2_ACCESS_KEY
+                - name: B2_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cnpg-b2-credentials
+                      key: B2_SECRET_KEY
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+
+                  MC="mc --config-dir /tmp/mc"
+
+                  # >/dev/null on both: `mc alias set` echoes the alias it just
+                  # created, and a failure here must not print the credential.
+                  $MC alias set src http://minio.minio.svc.cluster.local:9000 \
+                      "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" > /dev/null
+                  $MC alias set b2 https://s3.us-west-000.backblazeb2.com \
+                      "$B2_ACCESS_KEY" "$B2_SECRET_KEY" > /dev/null
+
+                  # Prove both endpoints answer before mirroring. Without this a
+                  # credential or endpoint fault would surface as "0 objects
+                  # copied" and exit 0, which is indistinguishable from "already
+                  # up to date" and is exactly how a backup reports success while
+                  # protecting nothing.
+                  $MC ls src/cnpg-backups > /dev/null
+                  $MC ls b2/vollminlab-k8s-cnpg > /dev/null
+
+                  # No --remove. B2 therefore keeps objects after MinIO's 7d
+                  # (authentik) / 14d (the rest) retention has expired them, so
+                  # the offsite copy reaches further back than the local one.
+                  # Bound it with a B2 lifecycle rule, not with --remove.
+                  $MC mirror src/cnpg-backups b2/vollminlab-k8s-cnpg
+
+                  # Content guard. A mirror that copies nothing into an empty
+                  # destination still exits 0.
+                  n="$($MC ls --recursive b2/vollminlab-k8s-cnpg | wc -l)"
+                  echo "objects in B2 after mirror: $n"
+                  if [ "$n" -le 0 ]; then
+                    echo "ERROR: destination is empty after a successful mirror" >&2
+                    exit 1
+                  fi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+          volumes:
+            # readOnlyRootFilesystem is on. mc writes its config and session
+            # state under --config-dir, and scratch files under /tmp, so one
+            # emptyDir at /tmp covers both. Skipped by Velero FSB globally via
+            # the volumeTypes: [emptyDir] rule in velero-skip-smb-policy.
+            - name: tmp
+              emptyDir: {}
