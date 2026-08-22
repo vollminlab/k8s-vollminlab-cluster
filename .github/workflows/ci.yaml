@@ -94,6 +94,17 @@ jobs:
       - name: Check README structure block
         run: ./scripts/check-readme-structure.sh
 
+      # Same rationale as the README check above, and the same placement — a step
+      # in this job rather than a job of its own, so it blocks merges through the
+      # existing required check.
+      #
+      # Unconditional on purpose. The drift this catches comes from the *other*
+      # file changing: Plex was deleted from clusters/ on 2026-05-09 and both docs
+      # described it as running for 3.5 months afterwards. A check path-filtered
+      # to docs/** would never have fired. See .claude/rules/docs.md.
+      - name: Check documentation currency
+        run: ./scripts/check-doc-currency.sh
+
 
       # Single source of truth. .kubernetes-version is the file Renovate bumps, so
       # reading it here means CI's kubectl follows the version the upgrade PR proposes

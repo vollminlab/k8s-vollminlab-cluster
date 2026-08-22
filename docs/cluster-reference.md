@@ -16,10 +16,13 @@ Comprehensive configuration reference for the vollminlab Kubernetes cluster. Thi
 8. [Storage](#storage)
 9. [Backup](#backup)
 10. [Infrastructure Services](#infrastructure-services)
-11. [Media Stack](#media-stack)
-12. [Applications](#applications)
-13. [DMZ — Isolated Workloads](#dmz--isolated-workloads)
-14. [CI/CD](#cicd)
+11. [Infrastructure as Code — tofu-controller](#infrastructure-as-code--tofu-controller)
+12. [Monitoring & Observability](#monitoring--observability)
+13. [Maintenance CronJobs](#maintenance-cronjobs)
+14. [Media Stack](#media-stack)
+15. [Applications](#applications)
+16. [DMZ — Isolated Workloads](#dmz--isolated-workloads)
+17. [CI/CD](#cicd)
 
 ---
 
@@ -134,7 +137,7 @@ kubectl create secret generic onepassword-connect -n 1password \
 1. Install Kubernetes control plane (kubeadm)
 2. Install Calico CNI              → bootstrap/calico/README.md
 3. Apply CoreDNS custom config     → bootstrap/coredns/coredns-configmap.yaml
-4. Restore sealed-secrets key      → bootstrap/sealed-secrets/README.md
+4. Apply the onepassword-connect Secret → .claude/rules/secrets.md (must precede Flux bootstrap)
 5. Bootstrap Flux CD               → flux bootstrap github ...
 6. All apps                        → Flux reconciles automatically
 ```
@@ -348,7 +351,6 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | `policy-reporter-patch` | patch only | |
 | `portainer` | `./clusters/vollminlab-cluster/portainer` | |
 | `renovate` | `./clusters/vollminlab-cluster/renovate` | |
-| `sealed-secrets` | `./clusters/vollminlab-cluster/sealed-secrets` | |
 | `shlink` | `./clusters/vollminlab-cluster/shlink` | |
 | `velero` | `./clusters/vollminlab-cluster/velero` | |
 | `vollmint` | `./clusters/vollminlab-cluster/vollmint` | |
@@ -388,19 +390,15 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | metrics-server-repo | HelmRepository | https://kubernetes-sigs.github.io/metrics-server/ |
 | minecraft-repo | HelmRepository | https://itzg.github.io/minecraft-server-charts/ |
 | minio-repo | HelmRepository | https://charts.min.io/ |
-| overseerr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/overseerr |
-| plex-repo | OCIRepository | oci://oci.trueforge.org/truecharts/plex |
 | portainer-repo | HelmRepository | https://portainer.github.io/k8s |
 | prometheus-community-repo | HelmRepository | https://prometheus-community.github.io/helm-charts |
 | prowlarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/prowlarr |
 | radarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/radarr |
 | renovate-repo | OCIRepository | oci://ghcr.io/renovatebot/charts/renovate |
 | sabnzbd-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sabnzbd |
-| sealed-secrets-repo | HelmRepository | https://bitnami-labs.github.io/sealed-secrets |
 | shlink-repo | HelmRepository | https://charts.christianhuth.de |
 | smb-csi-driver-repo | HelmRepository | https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts |
 | sonarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sonarr |
-| tautulli-repo | HelmRepository | https://k8s-at-home.com/charts/ |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
 | vollminlab-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/shlink-ingress-controller |
 | vollmint-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/vollmint (tag: 0.1.0) |
@@ -454,10 +452,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `sabnzbd.vollminlab.com` | sabnzbd | 10097 | mediastack | wildcard-tls |
 | `prowlarr.vollminlab.com` | prowlarr | 9696 | mediastack | wildcard-tls |
 | `bazarr.vollminlab.com` | bazarr | 6767 | mediastack | wildcard-tls |
-| `overseerr.vollminlab.com` | overseerr | 5055 | mediastack | wildcard-tls |
 | `jellyfin.vollminlab.com` | jellyfin | 8096 | mediastack | wildcard-tls |
-| `plex.vollminlab.com` | plex | 32400 | mediastack | wildcard-tls |
-| `tautulli.vollminlab.com` | tautulli | 8181 | mediastack | wildcard-tls |
 | `go.vollminlab.com` | shlink-shlink-backend | 8080 | shlink | wildcard-tls |
 | `vl.vollminlab.com` | shlink-shlink-backend | 8080 | shlink | wildcard-tls |
 | `vollm.in` | shlink-shlink-backend | 8080 | shlink | vollm-in-tls (Let's Encrypt) |
@@ -503,15 +498,69 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-sabnzbd-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-prowlarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-bazarr-config` | mediastack | 5Gi | longhorn | RWO |
-| `pvc-overseerr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-jellyfin-config` | mediastack | 20Gi | longhorn | RWO |
-| `pvc-plex-config` | mediastack | 20Gi | longhorn | RWO |
-| `pvc-tautulli-config` | mediastack | 1Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
 | `minio` | minio | 75Gi | longhorn | RWO |
 
 ---
+
+### Longhorn maintenance jobs
+
+Longhorn never reclaims freed-but-untrimmed blocks on its own, and it prunes no snapshots by
+default. Both of these are native `RecurringJob` CRs rather than CronJobs — deliberately, because a
+`RecurringJob` is covered by Longhorn's own NetworkPolicy selectors by construction and therefore
+cannot be cut off by a future chart change. An external CronJob calling `longhorn-backend:9500` can
+be, and was: Longhorn 1.12.1 shipped policies that silently reduced the old trim job to trimming
+zero volumes while still exiting 0.
+
+| App dir | CR name | Task | Cron (UTC) | Notes |
+|---|---|---|---|---|
+| `longhorn-trim` | `filesystem-trim` | `filesystem-trim` | `0 6 * * *` | concurrency 2 |
+| `longhorn-snapshot-retention` | `snapshot-retention` | `snapshot-delete` | `0 12 * * *` | retain 3, concurrency 2 |
+
+### longhorn-mount-healer
+
+| Parameter | Value |
+|---|---|
+| Namespace | `kube-system` |
+| Kind | CronJob |
+| Image | `docker.io/alpine/kubectl:1.33.4` |
+| Schedule | `*/10 * * * *` |
+| Purpose | Auto-clears Longhorn stale-mount crashloops (EIO on a detached volume) |
+| RBAC | ClusterRole + ClusterRoleBinding + ServiceAccount |
+
+### longhorn-rebalancing-controller
+
+| Parameter | Value |
+|---|---|
+| Namespace | `longhorn-system` |
+| Source | OCIRepository — `oci://harbor.vollminlab.com/vollminlab/charts/longhorn-rebalancing-controller` |
+| Chart tag | `0.4.0` |
+| Purpose | In-house Go controller that evens replica distribution across nodes |
+| Verified | Convergence 2026-07-25 — peak node utilization 90.8% → 74.0% |
+
+### VolSync — PVC replication to B2
+
+| Parameter | Value |
+|---|---|
+| Namespace | `volsync-system` |
+| Chart | volsync 0.16.0 (HelmRepository) |
+| Sources | 13 `ReplicationSource` CRs, restic to Backblaze B2 |
+| copyMethod | `Clone` — this cluster has no VolumeSnapshotClass |
+| Clone StorageClass | `longhorn-r1` — creates and deletes ~70 GiB of clone PVCs nightly |
+| Contract | A PVC labelled `backup.vollminlab.com/volsync: "true"` is skipped by Velero |
+
+`longhorn-r1` **must** stay `reclaimPolicy: Delete`. It is not a user-facing class; blanket `Retain`
+would orphan 13 Released PVs and ~70 GiB of Longhorn scheduling claims every night.
+
+### csi-snapshot-crds
+
+| Parameter | Value |
+|---|---|
+| Namespace | `volsync-system` |
+| Kind | CustomResourceDefinition set only |
+| Purpose | External-snapshotter CRDs required by VolSync; deployed separately from the chart |
 
 ## Backup
 
@@ -632,6 +681,36 @@ velero restore create --from-backup <backup-name>
 
 ---
 
+### velero-pvb-healer
+
+| Parameter | Value |
+|---|---|
+| Namespace | `velero` |
+| Kind | CronJob |
+| Image | `docker.io/alpine/kubectl:1.33.4` |
+| Schedule | `*/10 * * * *` |
+| Tunables | `STALL_SECONDS` 900, `COOLDOWN_SECONDS` 3600, `NODE_AGENT_SELECTOR` `name=node-agent`, `DRY_RUN` false |
+
+Heals the node-agent datapath-slot leak that freezes a PodVolumeBackup in `Prepared` with no error
+anywhere, head-of-line blocking the whole backup until `itemOperationTimeout` expires 4h later. Each
+run heals **at most one node**, and **skips any node with a PVB `InProgress`** — under
+`loadConcurrency: 1` a node legitimately has one running while others wait, so without that guard
+the healer would kill a healthy in-flight backup.
+
+### velero-backup-content-guard
+
+| Parameter | Value |
+|---|---|
+| Namespace | `velero` |
+| Kind | CronJob |
+| Image | `docker.io/alpine/kubectl:1.33.4` |
+| Schedule | `0 9 * * *` |
+
+Alerts when a schedule captures nothing or stops running. It exists because **an empty Velero backup
+reports `Completed`, `0 errors`** — phase is the only signal Velero exposes, and a schedule whose
+`labelSelector` matches zero volumes looks identical to a successful one. `velero-victoria-metrics-b2`
+did exactly that for its entire life.
+
 ## Infrastructure Services
 
 ### cloudflared (Cloudflare Tunnel)
@@ -644,18 +723,18 @@ velero restore create --from-backup <backup-name>
 | CPU | req: 50m, limits: 200m |
 | Memory | req: 64Mi, limits: 128Mi |
 
-Two separate tunnels are deployed — one per externally-accessible media service, for independent blast-radius and revocability.
+**Four independent tunnels are deployed** — one per externally-accessible service, for independent
+blast-radius and revocability: `cloudflared-jellyfin` and `cloudflared-audiobookshelf` in
+`mediastack`, `cloudflared-nginx` in `ingress-nginx`, and `cloudflared-authentik` in `authentik`.
 
-#### cloudflared (Plex tunnel)
+A fifth, the original bare `cloudflared` Deployment, served the Plex tunnel and was removed with
+Plex on 2026-05-09.
 
-| Parameter | Value |
-|---|---|
-| Deployment | `cloudflared` in `mediastack` |
-| Tunnel token | ExternalSecret `cloudflared-tunnel-credentials` (1Password: "Cloudflare Tunnel Token - vollminlab") |
-
-| Hostname | Internal target |
-|---|---|
-| `plex.vollminlab.com` | `http://plex.mediastack.svc.cluster.local:32400` |
+> **A cloudflared tunnel needs two egress rules, not one.** Reaching the Cloudflare edge (7844) and
+> reaching the tunnel's *origin* are separate hops, and only the first fails loudly — the Cloudflare
+> dashboard shows the tunnel healthy while every request 502s. LAN clients mask this completely,
+> because Pi-hole's A-record override sends them straight to the ingress VIP and never through the
+> tunnel, so the breakage is visible only from outside. This went unnoticed for ~68 days.
 
 #### cloudflared-jellyfin (Jellyfin tunnel)
 
@@ -749,8 +828,6 @@ per-namespace port table.
 | sabnzbd | https://sabnzbd.vollminlab.com |
 | prowlarr | https://prowlarr.vollminlab.com |
 | bazarr | https://bazarr.vollminlab.com |
-| overseerr | https://overseerr.vollminlab.com |
-| tautulli | https://tautulli.vollminlab.com |
 | portainer | https://portainer.vollminlab.com |
 | shlink | https://shlink.vollminlab.com |
 
@@ -760,7 +837,6 @@ per-namespace port table.
 |---|---|
 | pihole | https://pihole.vollminlab.com |
 | npm | https://npm.vollminlab.com |
-| plex | https://plex.vollminlab.com |
 | truenas | https://truenas.vollminlab.com |
 | udm | https://udm.vollminlab.com |
 | vcenter | https://vcenter.vollminlab.com |
@@ -805,6 +881,126 @@ per-namespace port table.
 
 ---
 
+### 1Password Connect
+
+| Parameter | Value |
+|---|---|
+| App dir | `1password/1password-connect` |
+| Namespace | `1password` |
+| Chart | connect 2.4.1 (HelmRepository) |
+| Container port | 8080 — API and `/metrics`. The container declares **no** ports and the Service `targetPort` is numeric 8080, so 8080 is the container port |
+| NetworkPolicy | ingress from `monitoring` and `external-secrets` |
+
+The `onepassword-connect` Secret it runs on (`1password-credentials.json` + `token`) is the
+**DR-critical root secret** — not Flux-managed, and must be applied *before* Flux bootstrap or ESO
+can materialize nothing.
+
+### authentik-proxy (forward-auth outpost)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `authentik` |
+| Image | `ghcr.io/goauthentik/proxy:2026.2.2` |
+| Container port | 9000 (Service 9000 → 9000) |
+| Provider | Single `forward_domain` ProxyProvider `vollminlab-forward-auth`, covering all `*.vollminlab.com` |
+
+Every protected Ingress **must** carry `nginx.ingress.kubernetes.io/auth-snippet` setting
+`X-Forwarded-Host`. nginx always sends `Host: authentik-proxy.authentik.svc.cluster.local` in
+`auth_request` sub-locations, so without it the outpost cannot match the request to a provider and
+returns 400 → nginx 500. Domain matching uses `cookie_domain`, not `external_host`.
+
+### Tailscale
+
+| Component | Value |
+|---|---|
+| Operator | `tailscale/tailscale-operator`, chart 1.102.3 (HelmRepository) |
+| Images | `ghcr.io/tailscale/k8s-operator`, `ghcr.io/tailscale/tailscale` |
+| Subnet router | `tailscale-connector/app` — `connector.yaml` is the active path |
+| Tailnet service | `ingress-nginx/tailscale-svc` — Service `ingress-nginx-tailscale`, `type: LoadBalancer`, `loadBalancerClass: tailscale`, hostname `vollminlab-ingress`, port 80 |
+| IaC | `tofu/tailscale-config` → `./terraform/tailscale` |
+
+### Reloader (Stakater)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `reloader` |
+| Chart | reloader 2.2.16 (HelmRepository) |
+| Scope | Watches all namespaces |
+| Opt-in | `reloader.stakater.com/auto: "true"` on Deployments, StatefulSets, DaemonSets |
+
+Triggers rolling restarts on ConfigMap or Secret change, removing the manual
+`kubectl rollout restart` step.
+
+### Goldilocks (VPA recommender)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `goldilocks` |
+| Chart | goldilocks 11.0.0 (HelmRepository) |
+| Ingress | `goldilocks.vollminlab.com` |
+
+Recommendations only — it does not mutate workloads. Resource limits across the cluster were
+right-sized from its data.
+
+### Trivy Operator
+
+| Parameter | Value |
+|---|---|
+| Namespace | `trivy-system` |
+| Chart | trivy-operator 0.35.0 (HelmRepository) |
+| Produces | `VulnerabilityReport` and `ConfigAuditReport` CRs |
+| Tolerations | DMZ and control-plane nodes |
+
+### Descheduler
+
+| Parameter | Value |
+|---|---|
+| Namespace | `kube-system` |
+| Chart | descheduler 0.36.0 (HelmRepository) |
+| Schedule | `*/30 * * * *` |
+| Policy | `LowNodeUtilization` |
+
+**Classifies on resource _requests_, not actual usage** — a node with low requests and high real
+usage is treated as underutilized. Short-lived CronJobs need `backoffLimit > 0` to survive eviction.
+
+---
+
+## Infrastructure as Code — tofu-controller
+
+Terraform/OpenTofu modules reconciled in-cluster by tofu-controller, one `Terraform` CR per module.
+
+| Parameter | Value |
+|---|---|
+| Namespace | `tofu` |
+| Chart | tofu-controller 0.16.5 (HelmRepository) |
+| State backend | MinIO S3 — bucket `terraform-state` |
+| Interval | 10m |
+
+| Module | CR | Path | approvePlan |
+|---|---|---|---|
+| Authentik | `authentik-config` | `./terraform/authentik` | auto |
+| Backblaze B2 | `b2-config` | `./terraform/b2` | auto |
+| Cloudflare | `cloudflare-config` | `./terraform/cloudflare` | auto |
+| Grafana | `grafana-config` | `./terraform/grafana` | auto |
+| Harbor | `harbor-config` | `./terraform/harbor` | auto |
+| MinIO | `minio-config` | `./terraform/minio` | auto |
+| Prowlarr | `prowlarr-config` | `./terraform/prowlarr` | auto |
+| Radarr | `radarr-config` | `./terraform/radarr` | auto |
+| Readarr | `readarr-config` | `./terraform/readarr` | auto |
+| Sonarr | `sonarr-config` | `./terraform/sonarr` | auto |
+| Tailscale | `tailscale-config` | `./terraform/tailscale` | auto |
+
+**Every module is `approvePlan: auto`**, so a merged change applies within 10 minutes with no
+further gate. Two consequences:
+
+- A Renovate **provider** bump PR is blocked by CI on purpose — merging one would apply an
+  unreviewed plan. See `docs/runbooks/tofu-provider-bumps.md`.
+- **Plan approval cannot go through git.** The plan id is `plan-<branch>-<sha>` and is regenerated
+  by *every* repo commit, so an approval commit invalidates the plan it approves. Approval is a
+  `kubectl patch`.
+
+Never use Terraform `import` blocks in these modules — see the Harbor robot-account incident.
+
 ## CNPG (CloudNative-PG)
 
 Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink, vollmint — `vollmint-db`, 2 instances × 5Gi, barman backup to MinIO at 01:45).
@@ -828,9 +1024,141 @@ Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespa
 
 ---
 
+### CNPG database clusters
+
+All use the MinIO barman object store via the scoped `cnpg-svc` user, plus WAL archiving.
+
+| Cluster | Namespace | Instances | Storage | Scheduled backup (UTC) |
+|---|---|---|---|---|
+| `authentik-db` | `authentik` | 1 | 10Gi | see Authentik |
+| `harbor-db` | `harbor` | 2 | 10Gi | `0 15 1 * * *` |
+| `shlink-db` | `shlink` | 1 | 5Gi | `0 30 1 * * *` |
+| `jellystat-db` | `mediastack` | 1 | 5Gi | `0 0 3 * * *` |
+| `vollmint-db` | `vollmint` | 2 | 5Gi | see Applications |
+
+**All five are single-sited in MinIO** — there is no offsite copy of any database. Tracked as an
+open issue.
+
+Any namespace hosting a CNPG cluster needs an `allow-cnpg-operator` NetworkPolicy admitting **both**
+port 5432 and port 8000 (the instance status API). Omitting the peer is silent: `vollmint-db` went
+24 days with no backup because MinIO's `allow-cnpg-backups` policy did not list it.
+
+## Monitoring & Observability
+
+Metrics are two-tier: Prometheus scrapes and `remote_write`s to both VictoriaMetrics instances,
+holding only 24h locally itself.
+
+### VictoriaMetrics — hot tier
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Chart | victoria-metrics-single 0.45.0 (HelmRepository) |
+| Retention | 30d |
+| Grafana | Owns the `prometheus` datasource UID, so existing dashboards query it transparently |
+| Backup | **None, deliberately** — Prometheus remote-writes the same stream to both tiers, so the hot tier is an exact subset of the cold tier |
+
+### VictoriaMetrics — cold tier (`victoria-metrics-lt`)
+
+| Parameter | Value |
+|---|---|
+| Chart | victoria-metrics-single 0.45.0 (HelmRepository) |
+| Retention | 395d |
+| Storage | 750Gi — a dedicated PV/StorageClass on `pool_0`, **off Longhorn** |
+| Backup | Own `vmbackup` CronJob, `docker.io/victoriametrics/vmbackup:v1.149.0`, `30 7 * * *` |
+| Backup target | `s3://vollminlab-k8s-metrics` — **its own bucket** |
+
+The bucket separation is load-bearing. Velero's BSL sets no prefix, so it validates the bucket's
+top-level directories and rejects any it does not own. Pointing vmbackup at Velero's bucket flipped
+that BSL to `Unavailable` and killed all three B2 schedules on 2026-08-17. **Any new B2 workload
+gets its own bucket.**
+
+`vmbackup` asks VictoriaMetrics for a real snapshot first; Velero file-system backup would walk a
+directory that background merges are actively rewriting and produce a torn copy. That is why
+`monitoring` is in `excludedNamespaces` on the Velero schedules.
+
+### karma (Alertmanager dashboard)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Source | OCIRepository |
+| Image | `ghcr.io/prymitive/karma:v0.131` |
+| Ingress | `karma.vollminlab.com` |
+| Container port | 8080 (Service 80 → 8080) |
+| NetworkPolicy | `allow-ingress-nginx` ingress from `ingress-nginx` |
+
+### vmware-exporter
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Chart | vmware-exporter 2.3.0 (HelmRepository) |
+| Ingress | `vcenter.vollminlab.com` |
+| Ships | ServiceMonitor, PrometheusRules for host/datastore alerts, Grafana dashboards for ESXi hosts and datastores/VMs |
+
+Credentials are a vCenter SSO account subject to a **90-day global expiry policy with no per-user
+opt-out**. It expired silently once, which is what `vcenter-credential-age` now guards.
+
+### vcenter-credential-age
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Kind | CronJob |
+| Image | `alpine:3.23.4` |
+| Schedule | `17 8 * * 1` (weekly, Monday) |
+
+Warns before the vCenter metrics password expires. Note this is one of three bespoke
+expiry monitors; the credentials behind the 78 `ExternalSecret` CRs are not covered.
+
+### b2-exporter
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Image | `harbor.vollminlab.com/vollminlab/b2-exporter:1.0.2` (in-house) |
+| Exposes | Backblaze B2 bucket statistics as Prometheus metrics |
+| Consumed by | Homepage prometheus widget |
+
+### bazarr-exportarr
+
+| Parameter | Value |
+|---|---|
+| Namespace | `mediastack` |
+| Image | `ghcr.io/onedr0p/exportarr:v2.2.0` (digest-pinned) |
+| Exposes | Bazarr metrics; ServiceMonitor + PodDisruptionBudget |
+
+Exportarr instances for Radarr, Sonarr and SABnzbd are documented under Media Stack.
+
+---
+
+## Maintenance CronJobs
+
+Cluster-level scheduled maintenance outside the storage and backup namespaces.
+
+| Job | Namespace | Image | Schedule (UTC) | Purpose |
+|---|---|---|---|---|
+| `etcd-defrag` | `kube-system` | `alpine/kubectl:1.33.4` | `0 3 * * *` | Defragments etcd |
+| `kubeadm-cert-monitor` | `kube-system` | `alpine/kubectl:1.33.4` | `0 9 1 * *` | Monthly control-plane certificate expiry check → Pushover |
+| `kubeadm-cert-renew` | `kube-system` | `alpine/kubectl:1.33.4` | `0`/`15`/`30 2 14 4,10 *` | Renews control-plane certificates — three staggered CronJobs, semi-annual (14 April / 14 October) |
+| `longhorn-mount-healer` | `kube-system` | `alpine/kubectl:1.33.4` | `*/10 * * * *` | See Storage |
+| `velero-pvb-healer` | `velero` | `alpine/kubectl:1.33.4` | `*/10 * * * *` | See Backup |
+| `velero-backup-content-guard` | `velero` | `alpine/kubectl:1.33.4` | `0 9 * * *` | See Backup |
+| `vcenter-credential-age` | `monitoring` | `alpine:3.23.4` | `17 8 * * 1` | See Monitoring |
+
+**A merged, Ready, reconciled CronJob is not a working CronJob.** `velero-pvb-healer` ran and exited
+137 on *every* invocation for one PR cycle while Flux reported success throughout. After any CronJob
+change, check the job pods' exit codes — not the CronJob's status.
+
+```bash
+kubectl get jobs -n <ns> --sort-by=.metadata.creationTimestamp | tail
+kubectl logs -n <ns> -l job-name=<job> --tail=20
+```
+
 ## Media Stack
 
-All apps in the `mediastack` namespace. Shared SMB storage mounted at the namespace level. App configs stored on Longhorn (5Gi RWO each, except Tautulli at 1Gi).
+All apps in the `mediastack` namespace. Shared SMB storage mounted at the namespace level. App configs stored on Longhorn.
 
 ### Sonarr (TV automation)
 
@@ -881,15 +1209,6 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Config PVC | 5Gi Longhorn RWO |
 | Volumes | pvc-movies (RWX), pvc-tv (RWX) |
 
-### Overseerr (Media requests)
-
-| Parameter | Value |
-|---|---|
-| Source | OCIRepository |
-| Ingress | `overseerr.vollminlab.com` |
-| Port | 5055 |
-| Config PVC | 5Gi Longhorn RWO |
-
 ### Jellyfin (Media server)
 
 | Parameter | Value |
@@ -901,32 +1220,29 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Config PVC | `pvc-jellyfin-config` 20Gi Longhorn RWO |
 | Volumes | `pvc-movies` at `/movies` (RWX), `pvc-tv` at `/tv` (RWX) |
 | UID/GID | 568 |
-| External access | Cloudflare Tunnel via `cloudflared-jellyfin` Deployment (separate from Plex tunnel) |
+| External access | Cloudflare Tunnel via `cloudflared-jellyfin` Deployment (one of four independent tunnels) |
 | Security gate | Jellyfin built-in auth only — no Cloudflare Access (native apps require no browser challenge) |
 | Public signup | Disabled — accounts created manually by admin |
 | Hardware transcoding | Deferred — CPU only for initial deployment |
 
-### Plex (Media server)
+### FileBrowser (File drop)
 
 | Parameter | Value |
 |---|---|
-| Chart | TrueCharts plex 22.1.2 (OCIRepository) |
-| Ingress | `plex.vollminlab.com` |
-| Port | 32400 |
-| Config PVC | 20Gi Longhorn RWO |
-| Volumes | pvc-movies (RWX), pvc-tv (RWX) |
-| Allowed networks | `172.16.0.0/12, 10.0.0.0/8, 192.168.0.0/16` |
-| External access | Cloudflare Tunnel via cloudflared (see Infrastructure Services) |
-| Notes | Claim server via web UI on first launch from same-LAN browser |
+| Image | `filebrowser/filebrowser:v2.63.3` |
+| Ingress | `filebrowser.vollminlab.com` |
+| Config PVC | 1Gi Longhorn |
+| Storage | SMB-backed — audiobooks-incoming, misc-incoming |
+| Auth | Authentik forward-auth; own Cloudflare tunnel |
+| IaC | Group and policy management via tofu |
 
-### Tautulli (Plex monitoring)
+### FlareSolverr (Indexer proxy)
 
 | Parameter | Value |
 |---|---|
-| Chart version | v11.3.1 |
-| Ingress | `tautulli.vollminlab.com` |
-| Port | 8181 |
-| Config PVC | 1Gi Longhorn RWO |
+| Image | `ghcr.io/flaresolverr/flaresolverr:v3.4.6` (digest-pinned) |
+| Purpose | Cloudflare challenge solver for Prowlarr Cardigann indexers |
+| Ingress | None — internal Service only |
 
 ### Shared Secrets
 
@@ -956,7 +1272,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 | Group | Services |
 |---|---|
-| Media Stack | Plex, Overseerr, Tautulli, Sonarr, Radarr, Prowlarr, SABnzbd |
+| Media Stack | Jellyfin, Jellystat, Seerr, Sonarr, Radarr, Readarr, Bazarr, Prowlarr, SABnzbd, qBittorrent, Audiobookshelf |
 | Infrastructure | Pi-hole, TrueNAS, vCenter, Portainer, Nginx Proxy Manager, UDM, HAProxy stats |
 | Monitoring | Grafana, Prometheus |
 | Documentation | BookStack, Homepage, GitHub repo, ChatGPT, Reddit, Chocolatey |
@@ -980,6 +1296,35 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Memory | req: 128Mi, limits: 128Mi |
 
 ---
+
+### Foundry VTT
+
+| Parameter | Value |
+|---|---|
+| Namespace | `foundry` |
+| Category | `gaming` |
+| Chart | foundryvtt 15.2.3 (HelmRepository — charts.derwitt.dev) |
+| Image | `felddy/foundryvtt` |
+| Ingress | `foundry.vollminlab.com` |
+| PVC | 10Gi Longhorn |
+| Auth | Authentik forward-auth (domain-wide provider); per-world Foundry passwords left blank |
+| External | Shared `nginx` Cloudflare tunnel |
+| Backup | VolSync clone-based restic to B2 |
+
+Foundry has no native OIDC and never will, hence forward-auth plus blank internal passwords. Its
+own snapshot export is UI-only, and this cluster has no VolumeSnapshotClass and no Velero CSI
+plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
+
+### vollmint (Budgeting)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `vollmint` |
+| Components | Go API + SPA, CNPG database, SimpleFIN sync CronJob |
+| Container port | 8080 (API + SPA, via ingress-nginx) |
+| Egress | 443 to SimpleFIN Bridge (sync CronJob) |
+| Auth | Authentik SSO |
+| NetworkPolicy | Default-deny with explicit allows |
 
 ## DMZ — Isolated Workloads
 
@@ -1036,6 +1381,15 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 - Liveness: initialDelay=30s, period=5s, failureThreshold=10
 
 ---
+
+### masters-league (Fantasy golf dashboard)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `dmz` |
+| Images | `harbor.vollminlab.com/vollminlab/masters-league:v1.1.1` (in-house), `redis:7.4.2-alpine` |
+| NetworkPolicy | Default-deny; reaches `masters-redis` by `podSelector` |
+| Node placement | Kyverno-injected `nodeSelector` + toleration — do not set manually |
 
 ## CI/CD
 
