@@ -75,6 +75,13 @@ that made the Portainer loss permanent.
 Labels are mutable, so a post-render patch relabels the live PVC in place: no rebind, no data
 movement, no restart.
 
+**A StatefulSet `volumeClaimTemplates` PVC cannot take the label at all.** Kubernetes forbids
+updating `volumeClaimTemplates` after creation, so a `postRenderers` patch adding the label there
+makes every subsequent Helm upgrade of that release fail permanently (verified 2026-08-22 against
+`foundry` with a server-side dry-run). For that shape only, fall back to the pod annotation
+`backup.velero.io/backup-volumes-excludes: <volume-name>` in the chart's `podAnnotations` — it
+achieves the same skip, is mutable, and stays in git. `foundry` is the one instance today.
+
 ## The monitoring namespace is deliberately mostly unbacked
 
 `monitoring` is in `excludedNamespaces` on `daily-full`, `daily-b2` and `monthly-b2`. That is
