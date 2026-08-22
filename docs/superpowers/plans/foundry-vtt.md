@@ -622,13 +622,6 @@ data:
       env: production
       category: gaming
 
-    podAnnotations:
-      # Keep Velero's file-system backup away from the live LevelDB. Foundry's
-      # docs are explicit that copying its database files while the server runs
-      # can corrupt them. The durable copy is the VolSync ReplicationSource,
-      # which restics a frozen Longhorn CLONE instead of the live volume.
-      backup.velero.io/backup-volumes-excludes: data
-
     # The chart default is 18 x 10s = 3 minutes, which is not enough for the
     # first-boot distribution download. 60 x 10s = 10 minutes.
     startupProbe:
@@ -867,8 +860,10 @@ Kyverno validates `category: "?*"` — any non-empty string — so this table is
 **Delete that row entirely** and add a row to the "## Completed" table instead:
 
 ```
-| Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backed up by VolSync clone-based restic to B2. |
+| Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backup via VolSync clone-based restic to B2 follows in a separate PR. |
 ```
+
+The backup sentence is deliberately future-tense — the ReplicationSource lands in PR 3. Task 15 updates this row to past tense once a non-empty restic snapshot has actually been verified, per .claude/rules/velero.md's "verify the artifact, not the status".
 
 Three details in the old row were wrong or superseded and must not survive: `category: apps` (the deployment uses `gaming`, matching Minecraft), `~5Gi PVC` (10Gi), and "handles its own player auth" (it is behind Authentik). The "sequence after Cilium migration" note is deliberately dropped — the chart ships a native `HTTPRoute` template, so the Phase 8 migration is a values change rather than a rewrite, and Phase 8 migrates all 34 ingresses regardless. Do not leave a stale Deferred row alongside a live deployment.
 
@@ -1129,10 +1124,23 @@ resources:
   - volsync
 ```
 
-- [ ] **Step 5: Commit, push, open the PR**
+- [ ] **Step 5: Now exclude the data volume from Velero FSB**
+
+Add this block to `clusters/vollminlab-cluster/foundry/foundry/app/configmap.yaml`, immediately after the `podLabels:` block:
+
+    podAnnotations:
+      # Keep Velero's file-system backup away from the live LevelDB. Foundry's
+      # docs are explicit that copying its database files while the server runs
+      # can corrupt them. The durable copy is the ReplicationSource added in
+      # this same PR, which restics a frozen Longhorn clone instead.
+      backup.velero.io/backup-volumes-excludes: data
+
+This is deliberately in PR 3 and not PR 2: it disables Velero coverage, so it must land in the same commit as the VolSync ReplicationSource that replaces it. Adding it earlier leaves the volume covered by neither system.
+
+- [ ] **Step 6: Commit, push, open the PR**
 
 ```bash
-git add clusters/vollminlab-cluster/foundry/volsync clusters/vollminlab-cluster/foundry/kustomization.yaml
+git add clusters/vollminlab-cluster/foundry/volsync clusters/vollminlab-cluster/foundry/kustomization.yaml clusters/vollminlab-cluster/foundry/foundry/app/configmap.yaml
 git commit -m "feat(foundry): back up Foundry data with VolSync clone-based restic to B2"
 git push -u origin feat/foundry-backup
 gh pr create --title "feat(foundry): VolSync backup for Foundry data" --body "$(cat <<'EOF'
@@ -1140,7 +1148,7 @@ Adds a nightly VolSync restic backup of the Foundry data volume to Backblaze B2.
 
 `copyMethod: Clone` is deliberate. Foundry v11+ stores worlds in LevelDB and its own docs warn that copying those files while the server runs can corrupt them. A clone is frozen at creation, so restic never walks the live volume and the torn-file window does not exist. Foundry's built-in snapshot feature was evaluated and rejected: it is UI-only with no API, CLI or hook to trigger it non-interactively.
 
-Velero FSB is kept away from the same volume by the `backup.velero.io/backup-volumes-excludes: data` pod annotation set in the previous PR.
+Velero FSB is kept away from the same volume by the `backup.velero.io/backup-volumes-excludes: data` pod annotation, added in this PR alongside the ReplicationSource that replaces it.
 
 Runs at 02:10 UTC — the first free slot before Velero's 03:00 daily-full.
 
@@ -1182,6 +1190,10 @@ kubectl get replicationsource -n foundry foundry-data-restic -o yaml | grep -A5 
 Expected: a populated `lastSyncTime` and a `lastSyncDuration` of more than a couple of seconds. A sub-second duration means it backed up nothing.
 
 Per `.claude/rules/velero.md`, a backup that matched nothing still reports success — verify the artifact, not the status.
+
+- [ ] **Step 4: Only now, correct the roadmap to past tense**
+
+With a verified non-empty snapshot in hand, edit the Foundry row in `docs/roadmap.md`'s Completed table, changing `Backup via VolSync clone-based restic to B2 follows in a separate PR.` to `Backed up by VolSync clone-based restic to B2.` Commit it with the PR 3 work.
 
 ---
 
