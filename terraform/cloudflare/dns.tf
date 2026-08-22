@@ -108,6 +108,15 @@ resource "cloudflare_dns_record" "filebrowser" {
   ttl     = 1
 }
 
+resource "cloudflare_dns_record" "foundry" {
+  zone_id = var.cloudflare_zone_id
+  name    = "foundry.vollminlab.com"
+  type    = "CNAME"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.nginx.id}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_dns_record" "jellyfin" {
   zone_id = var.cloudflare_zone_id
   name    = "jellyfin.vollminlab.com"

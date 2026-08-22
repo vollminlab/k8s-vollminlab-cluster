@@ -112,6 +112,10 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "nginx" {
         service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
       },
       {
+        hostname = "foundry.vollminlab.com"
+        service  = "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80"
+      },
+      {
         service = "http_status:404"
       },
     ]

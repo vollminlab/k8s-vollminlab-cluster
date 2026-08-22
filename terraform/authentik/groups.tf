@@ -13,6 +13,11 @@ resource "authentik_group" "filebrowser_users" {
   users = toset([authentik_user.vollmin.id, authentik_user.jvollmin.id, authentik_user.gkroner.id, authentik_user.jkvedaras.id])
 }
 
+resource "authentik_group" "foundry_users" {
+  name  = "Foundry Users"
+  users = toset([authentik_user.vollmin.id, authentik_user.jvollmin.id, authentik_user.rjutkiewicz.id, authentik_user.speterson.id])
+}
+
 resource "authentik_group" "grafana_admins" {
   name  = "Grafana Admins"
   users = [authentik_user.vollmin.id]
