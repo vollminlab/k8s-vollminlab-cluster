@@ -26,6 +26,8 @@
 
 **Why VolSync `copyMethod: Clone` and not Velero FSB.** Foundry v11+ uses LevelDB. Foundry's own docs: *"never use a data sync service while Foundry VTT is running, you will permanently lose your work."* The danger is a file-by-file copy spanning wall-clock time, capturing `CURRENT`, `MANIFEST-*`, the WAL and the `.ldb` files at different points. `copyMethod: Clone` makes a Longhorn block-level clone first and restic walks *the clone*, which is frozen at creation — so the torn-file window does not exist. Foundry's own snapshot/backup feature was evaluated and rejected: it is UI-only, with no API, CLI, or hook to trigger it non-interactively.
 
+**PVC sizing.** 10Gi on the default `longhorn` StorageClass (3 replicas = 30Gi cluster-wide). Measured 2026-08-21, schedulable headroom above Longhorn's 25% floor: worker01 61.8GiB, worker03 27.3GiB, worker04 36.7GiB, worker02 8.5GiB (the scheduler will skip worker02). Expand later with an online resize rather than provisioning speculatively.
+
 **Ordering constraint.** The Authentik Application must exist **before** the auth-annotated Ingress is reconciled. Without it the outpost returns 400 and nginx converts it to 500. PR 1 (tofu) must merge and apply before PR 2 (manifests).
 
 ---
@@ -67,6 +69,7 @@ clusters/vollminlab-cluster/flux-system/repositories/kustomization.yaml       # 
 clusters/vollminlab-cluster/flux-system/flux-kustomizations/kustomization.yaml # add foundry-kustomization.yaml
 clusters/vollminlab-cluster/homepage/homepage/app/configmap.yaml              # Tools group tile
 README.md                                                                     # structure block + service table
+docs/roadmap.md                                                               # move Foundry Deferred -> Completed
 .claude/rules/networkpolicy.md                                                # container-port table row
 .claude/rules/kyverno.md                                                      # gaming category row
 terraform/authentik/applications.tf                                           # Application + policy binding
@@ -544,8 +547,13 @@ data:
       cssTheme: dark
       downloadRetries: 5
 
+    # 10Gi is the chart default and deliberate: x3 Longhorn replicas = 30Gi
+    # cluster-wide. 20Gi would drop worker03's schedulable headroom from
+    # 27.3GiB to ~7.3GiB and constrain the next PVC anyone provisions. Foundry
+    # itself needs ~1Gi; the rest is uploaded maps and audio. storage.md:
+    # "Start conservative. Expand later." Longhorn resizes online, no downtime.
     storage:
-      size: 20Gi
+      size: 10Gi
       className: longhorn
 
     service:
@@ -800,10 +808,11 @@ Immediately after the `- Vollmint:` block (which ends with `app: vollmint`) and 
 
 The Tools group is correct rather than Personal: Personal holds external bookmarks only, while Tools holds cluster-hosted apps carrying `namespace`/`app` badges (Vollmint is the precedent).
 
-### Task 11: README and rule-file updates
+### Task 11: README, roadmap and rule-file updates
 
 **Files:**
 - Modify: `README.md`
+- Modify: `docs/roadmap.md`
 - Modify: `.claude/rules/networkpolicy.md`
 - Modify: `.claude/rules/kyverno.md`
 
@@ -846,6 +855,22 @@ Expected: `✅ README structure block matches all 34 namespace directories` (34,
 ```
 
 Kyverno validates `category: "?*"` — any non-empty string — so this table is documentation, not enforcement. Correcting it keeps it from misleading the next reader into thinking `gaming` is dmz-scoped.
+
+- [ ] **Step 6: Move Foundry out of the roadmap's Deferred table**
+
+`docs/roadmap.md` line ~449 currently has this row under "## Deferred / Under Evaluation":
+
+```
+| Foundry VTT | Self-hosted tabletop game server (`felddy/foundryvtt` image). Very feasible: single stateful web app, ~5Gi PVC, no database, handles its own player auth. Add to `foundry` namespace with `category: apps`. Sequence after Cilium migration so it lands on the final ingress stack. |
+```
+
+**Delete that row entirely** and add a row to the "## Completed" table instead:
+
+```
+| Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backed up by VolSync clone-based restic to B2. |
+```
+
+Three details in the old row were wrong or superseded and must not survive: `category: apps` (the deployment uses `gaming`, matching Minecraft), `~5Gi PVC` (10Gi), and "handles its own player auth" (it is behind Authentik). The "sequence after Cilium migration" note is deliberately dropped — the chart ships a native `HTTPRoute` template, so the Phase 8 migration is a values change rather than a rewrite, and Phase 8 migrates all 34 ingresses regardless. Do not leave a stale Deferred row alongside a live deployment.
 
 ### Task 12: Validate and commit
 
@@ -892,7 +917,7 @@ git add clusters/vollminlab-cluster/foundry \
         clusters/vollminlab-cluster/flux-system/flux-kustomizations/foundry-kustomization.yaml \
         clusters/vollminlab-cluster/flux-system/flux-kustomizations/kustomization.yaml \
         clusters/vollminlab-cluster/homepage/homepage/app/configmap.yaml \
-        README.md .claude/rules/networkpolicy.md .claude/rules/kyverno.md
+        README.md docs/roadmap.md .claude/rules/networkpolicy.md .claude/rules/kyverno.md
 git commit -m "feat(foundry): deploy Foundry VTT — namespace, HelmRelease, netpols, Authentik-gated ingress"
 ```
 
