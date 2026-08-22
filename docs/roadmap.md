@@ -124,7 +124,7 @@ The Collector arrives regardless — as a log shipper, not a trace pipeline.
 Re-scoped to:
 
 1. **Drop** OTLP tracing and the Tempo export (recorded as rejected, with reasons, in #1194)
-2. **Migrate** Promtail → Alloy, label-for-label, driven by upstream deprecation
+2. **Migrate** Promtail → Alloy, label-for-label, driven by upstream deprecation — **issue #1197**
 3. **Defer** Hubble flow export until Phase 8a (#1190) lands — there is nothing to receive until then
 
 ### 2.5 VictoriaMetrics — Long-Term Metrics Store
