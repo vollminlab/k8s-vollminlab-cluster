@@ -19,6 +19,32 @@ spec:
           kinds: ["Deployment"]
           namespaces: ["flux-system"]
           names: ["helm-controller", "kustomize-controller", "notification-controller", "source-controller"]
+  # Narrowed from policyName: '*' / ruleNames: ['*'] on 2026-08-22.
+  #
+  # Measured before changing it: all four flux-system controllers currently PASS
+  # every policy -- no missing labels, no missing resources -- and gotk-components
+  # .yaml in this repo already carries both, so a re-bootstrap from here stays
+  # compliant. The wildcard was therefore protecting nothing that needed protecting.
+  #
+  # What it WAS doing is exempting the Flux controllers from restrict-privileged,
+  # restrict-hostpath-usage, restrict-image-registries and restrict-latest-tag --
+  # the four things most worth enforcing on a component that can apply anything to
+  # the cluster. Those now apply.
+  #
+  # The two named below are kept as a genuine safety net: `flux bootstrap`
+  # regenerates gotk-components.yaml, and an upstream default that drops the
+  # resource stanza or the app/env/category labels would otherwise block Flux from
+  # reconciling itself -- a deadlock where the thing that fixes the cluster is the
+  # thing being blocked.
+  #
+  # The GitRepository/Kustomization/HelmRelease match blocks above are currently
+  # inert: no policy in this cluster matches those kinds. They are retained
+  # deliberately so a future policy targeting Flux CRs cannot deadlock reconciliation
+  # the same way -- but they are not doing anything today.
   exceptions:
-    - policyName: '*'
-      ruleNames: ['*']
+    - policyName: require-resources
+      ruleNames:
+        - require-limits
+    - policyName: require-standard-labels
+      ruleNames:
+        - require-labels-on-controllers
