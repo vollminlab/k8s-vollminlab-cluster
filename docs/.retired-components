@@ -1,0 +1,13 @@
+# Components removed from the cluster. Checked by scripts/check-doc-currency.sh:
+# each must not reappear as a live app directory, and must not be described in
+# docs/cluster-reference.md as though it were running.
+#
+# The roadmap is deliberately not checked against this list — it is a historical
+# record as well as a plan, and may describe these in the past tense.
+#
+# Format: one directory/component name per line.
+
+plex
+tautulli
+overseerr
+sealed-secrets
