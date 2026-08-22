@@ -2,7 +2,11 @@
 
 Living document tracking planned infrastructure work. Update status as projects progress.
 
-**Status key:** `planned` | `in-progress` | `done` | `blocked` | `deferred`
+**Status key:** `planned` | `in-progress` | `done` | `blocked` | `deferred` | `superseded`
+
+**Last verified against the live cluster: 2026-08-22.** Node versions, deployed namespaces and
+app directories in this document were re-measured on that date. Where a status was wrong it has
+been corrected in place with the evidence; see the "Corrections" note at the end.
 
 ---
 
@@ -105,13 +109,23 @@ Goldilocks VPA recommender deployed in `goldilocks` namespace (PR #721). VPA rec
 
 ### 2.4 OpenTelemetry Collector
 
-**Status:** `planned` (deploy after Phase 5 / Cilium service mesh decision)
+**Status:** `planned` — **re-scoped 2026-08-22, tracked as issue #1194**
 
-Deploy the OpenTelemetry Operator + a collector pipeline:
+The original plan (OTLP traces from instrumented apps and Istio → Grafana Tempo) does not hold:
+**there are no instrumented apps.** Everything user-facing is upstream third-party and emits no
+traces; the only in-house candidate is vollmint, whose `go.mod` has zero OTel dependencies and
+which is an API + SPA + database — not a distributed system. "From Istio" is doubly dead, since
+Phase 5 is likely dropped at Phase 8 (see below).
 
-- Receive OTLP traces from instrumented apps and Istio
-- Export to Grafana Tempo (preferred for Grafana integration)
-- Foundation for distributed tracing across the service mesh
+**The real driver is unrelated to tracing:** `monitoring/promtail` is on chart 6.17.1 and Grafana
+has deprecated Promtail in favour of **Alloy**, which is an OpenTelemetry Collector distribution.
+The Collector arrives regardless — as a log shipper, not a trace pipeline.
+
+Re-scoped to:
+
+1. **Drop** OTLP tracing and the Tempo export (recorded as rejected, with reasons, in #1194)
+2. **Migrate** Promtail → Alloy, label-for-label, driven by upstream deprecation — **issue #1197**
+3. **Defer** Hubble flow export until Phase 8a (#1190) lands — there is nothing to receive until then
 
 ### 2.5 VictoriaMetrics — Long-Term Metrics Store
 
@@ -175,7 +189,11 @@ Design doc: `docs/authentik-design.md`.
 
 ### 3.2 MetalLB: L2 → BGP Peering
 
-**Status:** `planned` (low priority — discuss before Phase 8 Cilium migration)
+**Status:** `superseded` by Phase 8b (issue #1191)
+
+Superseded 2026-08-22. The router-side BGP configuration is the hard part and is identical whether
+the peer is MetalLB or Cilium, so migrating MetalLB to BGP and then deleting MetalLB is wasted
+work. The problem statement below is still accurate and is carried into #1191.
 
 **Problem:** k8sworker04 shows the MetalLB VIP (ingress-nginx LoadBalancer IP) in the UDM console instead of its actual node IP. In L2 mode, MetalLB answers ARP for VIPs from whichever node is the current leader; the UDM sees this ARP and maps that node's MAC to the VIP address, shadowing the real node IP.
 
@@ -185,24 +203,33 @@ Design doc: `docs/authentik-design.md`.
 
 ---
 
-### 3.3 Personal Media Services — External Access (Plex)
+### 3.3 Personal Media Services — External Access
 
-**Status:** `done`
+**Status:** `done`, then `superseded` — **Plex was removed from the cluster on 2026-05-09** (commit
+`f02501f8`, "remove plex from cluster — migrating to Jellyfin"). This section described a running
+Plex deployment for roughly 3.5 months after it was deleted. Corrected 2026-08-22.
 
-- Plex migrated from TrueNAS into `mediastack` namespace (PRs #439, #442). Media files via existing SMB CSI mounts (`pvc-movies`, `pvc-tv`). 20Gi Longhorn PVC for config/metadata.
-- `cloudflared` deployed as a plain Deployment in `mediastack` (PR #440). Tunnel connects outbound to Cloudflare edge; routes `plex.vollminlab.com → http://plex.mediastack.svc.cluster.local:32400`.
-- Plex's own auth (myPlex accounts) is the sole access gate — no Cloudflare Access policy. Remote access disabled in Plex; port 32400 confirmed closed on public IP.
-- Pi-hole DNS updated: `plex.vollminlab.com → 192.168.152.244`. TrueNAS Plex shut down.
-- Overseerr replaced by Seerr (Authentik Phase 2, PR #494); Seerr has Authentik OIDC SSO and forward-auth (PR #600).
+Historical record of the Plex era, kept because the tunnel pattern it established is still in use:
+
+- Plex was migrated from TrueNAS into `mediastack` (PRs #439, #442), using the existing SMB CSI
+  mounts (`pvc-movies`, `pvc-tv`) plus a 20Gi Longhorn PVC for config/metadata.
+- `cloudflared` ran as a plain Deployment in `mediastack` (PR #440) — outbound-only tunnel, no open
+  ports. **This pattern survived Plex** and is now used by `cloudflared-jellyfin`,
+  `cloudflared-audiobookshelf`, `cloudflared-nginx` and `cloudflared-authentik`.
+
+Current state: **Jellyfin is the only media server** (3.4). Overseerr was replaced by Seerr
+(PR #494), which has Authentik OIDC SSO and forward-auth (PR #600).
 
 ### 3.4 Jellyfin — Free External Streaming for Friends
 
 **Status:** `done`
 
-- Jellyfin deployed in `mediastack` alongside Plex. Official `jellyfin/jellyfin` chart v3.2.0.
-- Shares `pvc-movies` and `pvc-tv` SMB RWX mounts with Plex (read-only access, UID/GID 568).
+- Jellyfin deployed in `mediastack`. Official `jellyfin/jellyfin` chart v3.2.0. Originally deployed
+  alongside Plex; **sole media server since Plex was removed 2026-05-09** (see 3.3).
+- Uses the `pvc-movies` and `pvc-tv` SMB RWX mounts (read-only access, UID/GID 568).
 - Dedicated `pvc-jellyfin-config` 20Gi Longhorn RWO.
-- Separate `cloudflared-jellyfin` Deployment with its own tunnel — independent blast-radius from Plex.
+- Separate `cloudflared-jellyfin` Deployment with its own tunnel — originally for blast-radius
+  independence from Plex; now one of four independent tunnels.
 - Route: `jellyfin.vollminlab.com → http://jellyfin.mediastack.svc.cluster.local:8096`.
 - Security gate: Jellyfin built-in auth only. No Cloudflare Access policy (native apps cannot complete browser auth challenge). Public signup disabled; accounts managed manually.
 - Hardware transcoding deferred — CPU only. See roadmap for follow-up.
@@ -210,13 +237,17 @@ Design doc: `docs/authentik-design.md`.
 **Deferred follow-ups:**
 
 - Hardware transcoding (`/dev/dri` device mount) — requires evaluating Kyverno `hostPath` audit policy impact
-- Jellyfin metrics / Grafana dashboard (parallel to Tautulli work in 3.5)
+- Jellyfin metrics / Grafana dashboard — **superseded by Jellystat** (3.5)
 
-### 3.5 Tautulli / Plex Metrics Dashboard
+### 3.5 Jellystat — Media Play Metrics (was: Tautulli / Plex)
 
 **Status:** `done`
 
-Tautulli deployed in `mediastack`. Metrics dashboard complete. Tautulli later replaced by Jellystat (PR #526) — Jellyfin-native play history and stats with a CNPG-backed PostgreSQL database and Homepage widget integration.
+**Jellystat** is the live service — Jellyfin-native play history and stats, CNPG-backed PostgreSQL
+(`jellystat-db`), Homepage widget integration (PR #526, 2026-05-12).
+
+Tautulli was the original implementation, deployed against Plex, and was removed by the same PR.
+Section retitled 2026-08-22; the old heading named a service that has not run here since May.
 
 ---
 
@@ -232,7 +263,9 @@ Harbor migrated to `expose.type: loadBalancer` with dedicated MetalLB VIP `192.1
 
 **Status:** `done` — this PR
 
-Stakater Reloader deployed in `reloader` namespace, watching all namespaces. Resources opt in via `reloader.stakater.com/auto: "true"` annotation on Deployments, StatefulSets, and DaemonSets. ConfigMap or SealedSecret changes trigger automatic rolling restarts without manual `kubectl rollout restart`.
+Stakater Reloader deployed in `reloader` namespace, watching all namespaces. Resources opt in via `reloader.stakater.com/auto: "true"` annotation on Deployments, StatefulSets, and DaemonSets. ConfigMap or Secret changes trigger automatic rolling restarts without manual
+`kubectl rollout restart`. (Originally written as "SealedSecret" — the SealedSecrets controller was
+removed 2026-05-31 and all Secrets are now ESO-materialized from 1Password. See 3.8.)
 
 ---
 
@@ -259,15 +292,29 @@ Trivy Operator deployed in `trivy-system` namespace alongside Goldilocks. Scans 
 
 ### 3.10 Tailscale
 
-**Status:** `planned` (lower priority — Cloudflare tunnels cover HTTP; Tailscale adds private mesh)
+**Status:** `done` — PR #740 (2026-05-24). Corrected 2026-08-22; this read `planned` for three
+months after it shipped.
 
-Deploy the Tailscale Kubernetes operator. Enables private WireGuard-based access to any cluster service from any tailnet device — useful for non-HTTP protocols, SSH to nodes, and access during Cloudflare outages. Individual services can be tagged into the tailnet without changing ingress config.
+Tailscale Kubernetes operator deployed, providing private WireGuard-based access to cluster
+services from any tailnet device — non-HTTP protocols, SSH to nodes, and access during a
+Cloudflare outage.
+
+Live components:
+
+- `tailscale/tailscale-operator` — the operator itself
+- `tailscale-connector/app` — subnet router (`connector.yaml` is the active path)
+- `ingress-nginx/tailscale-svc` — service exposed into the tailnet
+- `tofu/tailscale-config` — ACLs and tailnet configuration as IaC
 
 ---
 
 ### 3.11 East-West Network Policies (Non-DMZ)
 
-**Status:** `planned` (security hardening — lower priority)
+**Status:** `in-progress` — tracked as issue **#795**. Measured 2026-08-20: default-deny present in
+**10 of 37 namespaces**. Related: **#796** (Pod Security Standards, enforce in 18 of 37).
+
+Both issues were closed once while this document still said PARTIAL, and were reopened 2026-08-20.
+Do not close either without re-measuring.
 
 All namespaces outside the DMZ are fully open east-west. A compromised pod in `mediastack` can reach Harbor, CNPG, MinIO, or Authentik. Minimum scope:
 
@@ -281,11 +328,41 @@ All namespaces outside the DMZ are fully open east-west. A compromised pod in `m
 
 ## Phase 4 — Infrastructure Diagrams
 
-**Goal:** Create living architecture diagrams for every repo in the org once observability and security are settled — so diagrams reflect a stable system and don't need immediate revision.
+**Goal:** Create living architecture diagrams for every repo in the org once observability and
+security are settled — so diagrams reflect a stable system and don't need immediate revision.
+
+**Met, by a different route.** See 4.0 — diagrams are inline in the docs they explain rather than in
+per-repo `diagrams/` folders.
 
 ### 4.0 Diagram Creation — All Repos
 
-**Status:** `planned`
+**Status:** `done` — **delivered in a different shape than specified below.** Measured 2026-08-22:
+**all 14 org repos carry mermaid diagrams, 22 in total**, as inline ```` ```mermaid ```` fences in
+markdown rather than standalone `.mmd` files in a `diagrams/` directory.
+
+| Repo | Diagrams | | Repo | Diagrams |
+| --- | ---: | --- | --- | ---: |
+| k8s-vollminlab-cluster | 10 | | homelab-obsidian-vault | 10 |
+| longhorn-rebalancing-controller | 2 | | ansible-playbooks | 1 |
+| dot-github | 1 | | github-admin | 1 |
+| groupme_exporter | 1 | | homelab-infrastructure | 1 |
+| masters-league | 1 | | pihole-flask-api | 1 |
+| shlink-ingress-controller | 1 | | VMDeployTools | 1 |
+| vollmint | 1 | | | |
+
+In this repo they live in `README.md`, six runbooks (`kyverno-recovery`,
+`longhorn-ext4-corruption`, `etcd-local-nvme-migration`, `harbor-dockerhub-proxy-cache`,
+`ci-runner-breakglass`, `expose-dmz-service`) and two design specs.
+
+**The inline placement is better than the `diagrams/` folder this section originally specified, and
+the plan should be considered improved on rather than partially met.** A diagram sitting beside the
+runbook it explains gets revised in the same PR as the procedure; a diagram in a separate top-level
+folder has no such forcing function and rots quietly — which is precisely how the rest of this
+document drifted. Mermaid still renders natively in GitHub and previews in VS Code, so nothing is
+lost by not having discrete files.
+
+**Maintenance rule going forward:** a new runbook or design doc that describes a flow gets its
+diagram in the same file, in the same PR. Do not create per-repo `diagrams/` directories.
 
 Create a `diagrams/` folder in each repo with declarative Mermaid diagrams covering the full system as it exists at that point. Scope:
 
@@ -304,7 +381,13 @@ Create a `diagrams/` folder in each repo with declarative Mermaid diagrams cover
 
 ### 5.1 Istio
 
-**Status:** `planned` (depends on Phase 2 observability being in place)
+**Status:** `planned`, and **likely to be dropped** — decide at Phase 8a (#1190) planning time.
+
+Honest position as of 2026-08-22: this is a single-tenant homelab with roughly 30 services and one
+human. Cluster-wide mTLS and traffic management carry a large, permanent operational cost against a
+threat model where east-west traffic is not the live risk — **#795 (default-deny NetworkPolicy in
+10 of 37 namespaces) is the actual east-west gap, and it is far cheaper to close.** If Cilium's
+native capabilities cover what is wanted, drop Istio entirely rather than deferring it again.
 
 Deploy Istio via the Helm-based install (not `istioctl`):
 
@@ -323,7 +406,14 @@ Note: Istio's sidecar injection will interact with Kyverno policies — review `
 
 ### 6.1 SLOTH — SLO-based Alerting
 
-**Status:** `planned` (depends on Phase 2.1 Prometheus)
+**Status:** `planned` — value is **skill-building, not operational**, and that is a legitimate
+reason here given the roadmap's stated upskilling goal. Worth being explicit that error budgets over
+single-user traffic will not drive real decisions.
+
+**Sequence after #1185 (black-box probing).** SLOs need an availability SLI, and there is currently
+no signal anywhere in the cluster that measures whether a service actually answers — every one of
+the 62 alert rules reads Kubernetes state instead. SLOTH before #1185 would generate burn-rate
+alerts over metrics that cannot observe an outage.
 
 Use SLOTH to generate SLO alert rules from a declarative YAML spec:
 
@@ -346,34 +436,43 @@ Controlled fault injection for resilience testing (pod kill, network partition, 
 
 Normalize all nodes to current versions before the CNI migration. Three sub-items sequenced to allow bundling reboots efficiently.
 
-**Current state (2026-06-12, verified all 9 nodes):**
+**Current state (2026-08-22, verified all 9 nodes via live `kubectl get nodes`):**
 
-K8s, kernel, and containerd are now uniform cluster-wide. The only remaining drift is Ubuntu **patch** level on the three control-plane nodes.
+K8s, kernel, containerd **and Ubuntu patch level are now uniform cluster-wide** — the control-plane
+userspace drift noted in the 2026-06-12 pass is closed. The only remaining Phase 7 work is the
+Kubernetes version itself (7.1, issue **#1193**).
 
 | Node | K8s | Kernel | Ubuntu | containerd |
 | --- | --- | --- | --- | --- |
-| k8scp01 | v1.34.8 | 6.8.0-117 | 24.04.2 | 2.2.4 |
-| k8scp02 | v1.34.8 | 6.8.0-117 | 24.04.1 | 2.2.4 |
-| k8scp03 | v1.34.8 | 6.8.0-117 | 24.04.1 | 2.2.4 |
-| k8sworker01 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
-| k8sworker02 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
-| k8sworker03 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
-| k8sworker04 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
-| k8sworker05 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
-| k8sworker06 | v1.34.8 | 6.8.0-117 | 24.04.4 | 2.2.4 |
+| k8scp01 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8scp02 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8scp03 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker01 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker02 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker03 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker04 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker05 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
+| k8sworker06 | v1.34.8 | 6.8.0-137 | 24.04.4 | 2.2.4 |
 
 ### 7.1 Kubernetes upgrade (1.32 → current stable)
 
-**Status:** `in-progress`
+**Status:** `in-progress` — tracked as issue **#1193**
 
-Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28; the cluster is already off it (on 1.34.8), so the deadline is cleared. Hops 3–4 remain.
+Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28; the cluster is
+already off it (on 1.34.8), so that deadline is cleared. Hops 3–4 remain.
+
+**Measured 2026-08-22:** all 9 nodes on **v1.34.8**; latest upstream release is **v1.36.4**
+(v1.35.8 and a v1.34.11 patch also available). The cluster is two minors behind — still inside the
+N-2 support window, but 1.34 leaves support when 1.37 ships. **Do this before Phase 8a (#1190)**:
+8a's acceptance includes revalidating all 19 NetworkPolicy files, which is worth doing once against
+the final Kubernetes version.
 
 | Hop | Target | Method | Status |
 | --- | --- | --- | --- |
 | 1 | 1.33.12 | Manual node-by-node | `done` — 2026-05-19 |
 | 2 | 1.34.8 | Ansible `k8s-upgrade.yml` | `done` — all 9 nodes |
-| 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` |
-| 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` |
+| 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` — target available (v1.35.8) |
+| 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` — target available (v1.36.4) |
 
 Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain commands, Longhorn volume health gate after each uncordon (waits for zero degraded volumes before proceeding to next node).
 
@@ -387,11 +486,16 @@ All 9 nodes are on containerd **v2.2.4** (docker.com apt repo). The 6 workers we
 
 ### 7.3 Kernel and OS normalization
 
-**Status:** `in-progress` — kernel done; only CP userspace `apt upgrade` remains
+**Status:** `done` — verified 2026-08-22
 
-Run `apt upgrade` on each node to bring kernel and userspace to current; requires full reboot.
+> **Verified 2026-08-22, live `kubectl get nodes` across all 9 nodes:** Ubuntu **24.04.4**, kernel
+> **6.8.0-137-generic**, containerd **v2.2.4** — uniform everywhere. The control-plane userspace
+> drift recorded below (24.04.1 / 24.04.2) is closed, and the kernel has moved on from the
+> 6.8.0-117 this document previously recorded.
 
-> **Status (2026-06-12, re-verified all 9 nodes):** kernel is uniform at **6.8.0-117-generic** across every node and containerd is uniform at **v2.2.4** — those are done. The only remaining drift is Ubuntu **patch** level: the three control-plane nodes are on 24.04.1 (k8scp02/03) / 24.04.2 (k8scp01) while all six workers are on 24.04.4. Remaining work is minor — `apt upgrade` the three control-plane nodes to 24.04.4 userspace (one at a time, Longhorn health gate between reboots).
+> *Superseded status (2026-06-12):* kernel uniform at 6.8.0-117-generic, containerd uniform at
+> v2.2.4, with the three control-plane nodes lagging at 24.04.1 / 24.04.2 against the workers'
+> 24.04.4.
 
 - One node at a time; same Longhorn health gate as the other node-maintenance playbooks
 
@@ -403,8 +507,34 @@ Do not bundle 7.2/7.3 with the Cilium migration — separate maintenance windows
 
 ## Phase 8 — CNI Migration (Calico → Cilium)
 
-**Status:** `planned`
-**Depends on:** ~~1.1 test restore~~ ✓ validated (Minecraft restore), Phase 2 observability ✓ done, Phase 7 node maintenance complete
+**Status:** `planned` — **split into 8a / 8b / 8c on 2026-08-22.** As originally written this phase
+bundled three separately-risky changes into one window, and two of them are blocked on design work
+rather than migration work.
+
+| Sub-phase | Scope | Issue | State |
+| --- | --- | --- | --- |
+| **8a** | Cilium CNI only — keep MetalLB, keep nginx | **#1190** | executable now |
+| **8b** | Cilium L4LB + BGP, drop MetalLB (supersedes 3.2) | **#1191** | blocked on UDM router config |
+| **8c** | Gateway API, decommission nginx-ingress | **#1192** | blocked — see below |
+
+**Two blockers 8c must clear before any `HTTPRoute` migration:**
+
+1. **Gateway API has no forward-auth, and 19 manifests carry `auth-url` annotations.** The entire
+   SSO model — one `forward_domain` ProxyProvider plus nginx `auth_request` plus the mandatory
+   `auth-snippet` `X-Forwarded-Host` header — is nginx-specific. Decommissioning nginx logs every
+   forward-auth service out permanently.
+2. **`shlink-ingress-controller` only reconciles `Ingress`** (`cmd/main.go:66`), and **27 manifests
+   carry `shlink.vollminlab.com/slug`**. Migrating to `HTTPRoute` does not error — short-link
+   creation just silently stops.
+
+**Dependencies (re-verified 2026-08-22):**
+
+- ~~1.1 test restore~~ ✓ validated (Minecraft restore)
+- Phase 2 observability ✓ done
+- Phase 7 node maintenance — **7.2 and 7.3 are done; all 9 nodes measured uniform** at Ubuntu
+  24.04.4 / kernel 6.8.0-137 / containerd 2.2.4. Only 7.1 (K8s hops 3–4, issue **#1193**) remains,
+  and that should land before 8a.
+
 **Risk:** High — CNI replacement requires a full cluster maintenance window
 
 Cilium offers significant advantages over Calico for this use case:
@@ -422,6 +552,9 @@ Cilium offers significant advantages over Calico for this use case:
 - **kube-proxy replacement (optional):** eBPF-based routing; evaluate during planning
 - **Hubble:** L4/L7 network observability (flows, DNS, HTTP) — feeds Phase 2.4 OpenTelemetry pipeline
 - **Istio decision:** If Cilium Mesh provides sufficient mTLS + traffic management, Phase 5 is dropped. Decide at the start of this phase.
+
+**The detail below is retained as the original plan. The authoritative, corrected scope now lives in
+#1190 / #1191 / #1192.**
 
 Migration approach:
 
@@ -498,3 +631,66 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | VictoriaMetrics long-term metrics store | PRs #812/#831/#837 — `victoria-metrics-single` in `monitoring`; Prometheus remote_write + 24h retention, Grafana datasource swap, self-metrics ServiceMonitor |
 | K8s upgrade hop 2 (1.33.12 → 1.34.8) | All 9 nodes upgraded via hardened Ansible `k8s-upgrade.yml` (`serial:1`, `--disable-eviction`, Longhorn health gate); cleared the 1.33 EOL deadline |
 | Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backup via VolSync clone-based restic to B2 follows in a separate PR. |
+| **— Backfilled 2026-08-22 —** | *The rows below were shipped but never recorded here. Found by diffing the 106 live app directories against this document; 41 had no mention at all.* |
+| Authentik SSO + forward-auth architecture | Domain-wide `vollminlab-forward-auth` ProxyProvider on the `vollminlab-proxy` outpost; per-app Applications; native OIDC for Grafana, Harbor, Headlamp, Jellyfin, MinIO, Portainer, Audiobookshelf. Config is tofu-managed (`tofu/authentik-config`). Rules: `.claude/rules/authentik-akshell.md` |
+| Authentik recovery links | Self-service recovery link issuance via the Authentik REST API (PR #1065). Uses the API rather than `ak shell` because the flow needs a `FlowToken` carrying a pickled plan — **and because there is no SMTP path at all** (issue #1186) |
+| karma | Alertmanager dashboard UI in `monitoring` (PR #980) |
+| Policy Reporter | Kyverno policy report UI + metrics in `kyverno` namespace |
+| Descheduler | `LowNodeUtilization` rebalancing (PRs #999, #1000, #1031). Classifies on **requests**, not usage; short-lived CronJobs need `backoffLimit > 0` |
+| longhorn-rebalancing-controller | In-house Go controller, `longhorn-system` (PR #881, now v0.4.0). Convergence verified 2026-07-25: peak node utilization 90.8% → 74.0% |
+| Longhorn trim CronJob | Daily filesystem trim to reclaim thin-provisioned space (PR #869). Longhorn never auto-trims. Was silently trimming **zero** volumes after the 1.12.1 NetworkPolicy change — fixed in #1086 |
+| Longhorn snapshot retention | `snapshot-delete` RecurringJob capping VolSync clone orphans (PR #931) |
+| longhorn-mount-healer | `kube-system` CronJob auto-clearing Longhorn stale-mount crashloops |
+| velero-pvb-healer | `velero` CronJob healing the node-agent datapath-slot leak that freezes PVBs in `Prepared` (PRs #1054, #1055; OOM fix #1056). **Was 100% non-functional — exit 137 on every run — while Flux reported success** |
+| velero-backup-content-guard | Alerts when a schedule captures nothing or stops running (PR #1079). Exists because an empty Velero backup reports `Completed / 0 errors` |
+| VictoriaMetrics cold tier | `victoria-metrics-lt`, 395d retention, 750Gi, off-Longhorn on `pool_0` (PR #923). Backed up by its own `vmbackup` CronJob to a **dedicated** B2 bucket — sharing Velero's bucket root killed all three B2 schedules on 2026-08-17 |
+| CNPG observability | PodMonitors + dashboards for all CNPG clusters (PR #1012). Gotcha: `podMonitorSelector: {}` |
+| vcenter-credential-age | CronJob warning before the vCenter metrics password expires (PR #1102). Built **after** a silent 90-day SSO expiry took out vmware-exporter — see issue #1188 on generalizing this |
+| vollmint | In-house budgeting app (Go API + SPA + CNPG DB + SimpleFIN sync CronJob), own namespace, Authentik SSO, default-deny NetworkPolicies |
+| Audiobookshelf | Audiobook server in `mediastack`; Authentik OIDC with `authOpenIDAutoRegister: true`, group claim sets the role; own Cloudflare tunnel |
+| Shlink web UI | `shlink-web` frontend alongside the Shlink API |
+| masters-league | Fantasy golf dashboard in `dmz` (in-house, own repo) |
+| kubeadm cert monitor + renew | Automated control-plane certificate expiry monitoring and renewal (PR #540) |
+| Harbor registry retention | 8Gi + retention policy (PR #1040). Longhorn schedules against its own ledger, not physical free space |
+| Cloudflare Bot Fight Mode fix | `fight_mode = false` pinned in tofu (PR #1172). A WAF skip rule runs in a different phase and can **never** reach Bot Fight Mode |
+| Kyverno `-batch` policies | Five Job/CronJob counterparts to the Enforce five, in Audit (PR #1182). Enforce policies match only Deployment/StatefulSet/DaemonSet; autogen derives controller rules from Pod rules, never the reverse |
+| tofu-controller modules | 11 Terraform CRs reconciling Authentik, B2, Cloudflare, Grafana, Harbor, MinIO, Tailscale and the four arr apps. **Plan approval cannot go through git** — the plan id embeds the source sha, so every repo commit invalidates it |
+
+---
+
+## Corrections — 2026-08-22 audit
+
+This document was re-measured against the live cluster and repo on 2026-08-22. Six status fields
+were wrong; all are corrected in place above, with the evidence, rather than silently overwritten.
+
+| Section | Was | Now | Evidence |
+| --- | --- | --- | --- |
+| 3.3 Plex | `done`, describing a running Plex | Plex **removed 2026-05-09** (`f02501f8`) | zero grep hits for `plex` in `clusters/` |
+| 3.4 Jellyfin | "alongside Plex", "shares mounts with Plex" | sole media server | same |
+| 3.5 | titled "Tautulli / Plex Metrics Dashboard" | retitled to Jellystat | Tautulli removed by PR #526, 2026-05-12 |
+| 3.7 Reloader | "SealedSecret changes trigger restarts" | Secret | SealedSecrets controller removed 2026-05-31 (3.8) |
+| 3.10 Tailscale | `planned` | `done` — PR #740, 2026-05-24 | operator + connector + `tofu/tailscale-config` all live |
+| 7.3 | "CP nodes on 24.04.1 / 24.04.2" | all 9 uniform at 24.04.4 | live `kubectl get nodes` |
+| 4.0 Diagrams | `planned` | `done`, shape changed | 22 mermaid diagrams across all 14 repos |
+
+**A note on how 4.0 was nearly mis-audited.** The first pass of this audit searched for `.mmd`
+files and `diagrams/` directories — the artifacts this section *specifies* — found almost none, and
+concluded the phase was not started. It had in fact been delivered in full, as inline mermaid.
+Searching for the prescribed mechanism rather than the intended outcome produced a confidently
+wrong answer, which is the same class of error as a NetworkPolicy rule naming a service port: the
+check runs, reports cleanly, and measures the wrong thing. **When auditing a roadmap item, search
+for what the goal would look like if it were met by any means, not for the implementation the plan
+happened to name.**
+
+**Two structural problems, not just stale fields:**
+
+1. **41 of 106 live app directories appeared nowhere in this document.** Partially addressed by the
+   backfill above. The Completed table had drifted roughly three months behind what was shipped.
+2. **Phase 8 bundled three separately-risky changes into one window**, two of which are blocked on
+   design work rather than migration work. Split into #1190 / #1191 / #1192.
+
+**How this drifted:** every wrong field described something that was *replaced* rather than
+*removed* — Plex by Jellyfin, Tautulli by Jellystat, SealedSecrets by ESO. The replacement got
+documented in its own new section while the old section kept its `done`. A `done` status records
+that something was built, not that it is still running; sections describing live infrastructure
+need re-verifying against the cluster, not just against the PR that shipped them.
