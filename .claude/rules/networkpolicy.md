@@ -123,6 +123,20 @@ Harbor VIP on `:443`, but the LoadBalancer remaps `443→8443` and egress policy
 post-DNAT — so an egress `allow ... :443` rule never matches and the connection times out. Use the
 destination **container port** (8443) in the egress rule, exactly as for ingress.
 
+**An RFC1918 `except` on an 80/443 egress rule cannot break DNS.** This misconception kept
+`dmz/minecraft`'s `0.0.0.0/0` egress un-narrowed for months (#1162): the fear was that excluding
+`10.0.0.0/8` would take out the service CIDR and with it kube-dns. It cannot. DNS is UDP/TCP **53**,
+so an 80/443 rule never carried it in the first place, and it is granted separately by the
+namespace-wide `allow-dns` policy — NetworkPolicies are purely additive, so a narrower rule in one
+policy can never revoke what another policy allows.
+
+**So do not "carve back in" the service and pod CIDRs to make an `except` safe.** `10.96.0.0/12`
+and `172.18.0.0/16` cover every ClusterIP and every pod in the cluster; re-allowing them on 80/443
+restores almost exactly the exposure the `except` was added to remove, and the policy then reads as
+hardened while enforcing nearly nothing. Enumerate the workload's real in-cluster dependencies
+instead, and give each one its own rule with a `podSelector` — the way `dmz/masters-league` reaches
+`masters-redis`. If the enumeration comes back empty, the bare `except` is the correct policy.
+
 ## Checklist — before opening any NetworkPolicy PR
 
 - [ ] For every `port:` field, verify containerPort with `kubectl get pod ... ports` — not guessed, not from service YAML alone

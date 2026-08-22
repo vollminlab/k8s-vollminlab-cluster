@@ -26,9 +26,32 @@ spec:
         - protocol: TCP
           port: 8100  # Web map interface
   egress:
+    # Outbound HTTP/HTTPS to the public internet only. Everything this pod fetches
+    # is external: the Paper jar (api.papermc.io), the BlueMap plugin
+    # (cdn.modrinth.com, see PLUGINS in configmap.yaml) and Mojang session auth.
+    #
+    # The `except` blocks are the same structure the neighbouring masters-league
+    # policy uses, and they deliberately cover the service CIDR (10.96.0.0/12) and
+    # the pod CIDR (172.18.0.0/16) as well as the LAN — this is the one
+    # internet-exposed workload in the cluster, so a compromise here must not be
+    # able to reach in-cluster HTTP endpoints either.
+    #
+    # This does NOT affect DNS. DNS is UDP/TCP 53 to kube-dns and is granted by the
+    # namespace-wide `allow-dns` policy; NetworkPolicies are additive, so nothing
+    # written here can take it away. (The issue this fixes, #1162, assumed an
+    # RFC1918 `except` would break DNS. It cannot — this rule only ever covered
+    # 80/443.)
+    #
+    # If a future in-cluster dependency is added, give it its own rule with a
+    # podSelector — the way masters-league reaches masters-redis — rather than
+    # re-opening a CIDR.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # incl. service CIDR 10.96.0.0/12
+              - 172.16.0.0/12    # incl. pod CIDR 172.18.0.0/16
+              - 192.168.0.0/16   # LAN
       ports:
         - protocol: TCP
           port: 443
