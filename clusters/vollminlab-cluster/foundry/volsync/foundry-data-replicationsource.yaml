@@ -1,0 +1,20 @@
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: foundry-data-restic
+  namespace: foundry
+spec:
+  sourcePVC: data-foundry-0
+  trigger:
+    schedule: "10 2 * * *"
+  restic:
+    pruneIntervalDays: 7
+    repository: volsync-foundry-data-restic
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 3
+    copyMethod: Clone
+    storageClassName: longhorn-r1
+    cacheCapacity: 1Gi
+    cacheStorageClassName: longhorn

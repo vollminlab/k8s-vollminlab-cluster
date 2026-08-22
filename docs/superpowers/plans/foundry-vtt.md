@@ -1126,13 +1126,39 @@ resources:
 
 - [ ] **Step 5: Now exclude the data volume from Velero FSB**
 
+The repo's Velero contract (`.claude/rules/velero.md`, "Dividing VolSync and Velero") is that
+`velero-skip-smb-policy` skips any PVC carrying `backup.vollminlab.com/volsync: "true"`, applied
+via a `postRenderers` kustomize patch on the HelmRelease for a chart-templated PVC. That mechanism
+does not work here: Foundry's PVC comes from the chart's StatefulSet `volumeClaimTemplates`, and
+Kubernetes forbids updating `volumeClaimTemplates` after creation — verified 2026-08-22, a
+server-side dry-run patch adding the label is rejected. A `postRenderers` patch attempting it would
+make every future Helm upgrade of this release fail permanently. Do not use `existingClaim` either
+— that drops the PVC out of the Helm release, and every Longhorn StorageClass is
+`reclaimPolicy: Delete`, the exact mechanism that made the Portainer data loss permanent.
+
+So Foundry falls back to the documented exception: the pod annotation
+`backup.velero.io/backup-volumes-excludes: data`. It achieves the same skip, is mutable, and stays
+in git.
+
 Add this block to `clusters/vollminlab-cluster/foundry/foundry/app/configmap.yaml`, immediately after the `podLabels:` block:
 
     podAnnotations:
-      # Keep Velero's file-system backup away from the live LevelDB. Foundry's
-      # docs are explicit that copying its database files while the server runs
-      # can corrupt them. The durable copy is the ReplicationSource added in
-      # this same PR, which restics a frozen Longhorn clone instead.
+      # Keep Velero's file-system backup away from the live LevelDB. Foundry's own
+      # docs are explicit that copying its database files while the server runs can
+      # corrupt them. The durable copy is the ReplicationSource added in this same
+      # PR, which restics a frozen Longhorn clone instead of the live volume.
+      #
+      # This is the documented EXCEPTION to the `backup.vollminlab.com/volsync: "true"`
+      # PVC-label contract in .claude/rules/velero.md. That contract's mechanism for a
+      # chart-templated PVC is a postRenderers patch (harbor is the worked example),
+      # but Foundry's PVC comes from the chart's StatefulSet volumeClaimTemplates,
+      # which Kubernetes forbids updating after creation — verified 2026-08-22, a
+      # server-side dry-run patch adding the label is rejected with "updates to
+      # statefulset spec for fields other than 'replicas', 'ordinals', 'template',
+      # 'updateStrategy', 'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy'
+      # and 'minReadySeconds' are forbidden". A postRenderer would make every future
+      # Helm upgrade of this release fail permanently. The pod annotation achieves the
+      # same skip, is mutable, and stays in git.
       backup.velero.io/backup-volumes-excludes: data
 
 This is deliberately in PR 3 and not PR 2: it disables Velero coverage, so it must land in the same commit as the VolSync ReplicationSource that replaces it. Adding it earlier leaves the volume covered by neither system.

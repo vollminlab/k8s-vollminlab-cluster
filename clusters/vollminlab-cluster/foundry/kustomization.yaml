@@ -4,3 +4,4 @@ resources:
   - namespace.yaml
   - foundry/app
   - networkpolicies
+  - volsync
