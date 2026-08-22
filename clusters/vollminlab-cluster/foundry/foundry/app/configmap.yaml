@@ -87,6 +87,25 @@ data:
       env: production
       category: gaming
 
+    podAnnotations:
+      # Keep Velero's file-system backup away from the live LevelDB. Foundry's own
+      # docs are explicit that copying its database files while the server runs can
+      # corrupt them. The durable copy is the ReplicationSource added in this same
+      # PR, which restics a frozen Longhorn clone instead of the live volume.
+      #
+      # This is the documented EXCEPTION to the `backup.vollminlab.com/volsync: "true"`
+      # PVC-label contract in .claude/rules/velero.md. That contract's mechanism for a
+      # chart-templated PVC is a postRenderers patch (harbor is the worked example),
+      # but Foundry's PVC comes from the chart's StatefulSet volumeClaimTemplates,
+      # which Kubernetes forbids updating after creation — verified 2026-08-22, a
+      # server-side dry-run patch adding the label is rejected with "updates to
+      # statefulset spec for fields other than 'replicas', 'ordinals', 'template',
+      # 'updateStrategy', 'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy'
+      # and 'minReadySeconds' are forbidden". A postRenderer would make every future
+      # Helm upgrade of this release fail permanently. The pod annotation achieves the
+      # same skip, is mutable, and stays in git.
+      backup.velero.io/backup-volumes-excludes: data
+
     # The chart default is 18 x 10s = 3 minutes, which is not enough for the
     # first-boot distribution download. 60 x 10s = 10 minutes.
     startupProbe:
