@@ -685,6 +685,23 @@ jobs:
             yq eval -i '(select(.kind == "Service") | .spec.ports[]?) |= del(.nodePort)' \
               "$RENDER_DIR/rendered.yaml"
 
+            # ── NOT a licence to let charts render Ingresses ───────────────────
+            # The convention in this repo is a STANDALONE ingress.yaml next to the
+            # HelmRelease. 35 of 35 apps follow it. A standalone Ingress is greppable
+            # in git (the "N of M Ingresses carry a slug" audits in CLAUDE.md depend
+            # on that) and never reaches this dry-run at all, because the loop above
+            # skips any file whose kind is not HelmRelease.
+            #
+            # So if a chart wants to emit its own Ingress: set `ingress.enabled: false`
+            # and write the ingress.yaml by hand. If that costs you chart behaviour
+            # wired to the Ingress — foundry's chart only emits FOUNDRY_PROXY_SSL /
+            # FOUNDRY_PROXY_PORT / FOUNDRY_HOSTNAME alongside its own Ingress — re-add
+            # it with a `postRenderers` patch, as foundry's HelmRelease does.
+            #
+            # This block exists only for a chart that gives you no such choice. It is a
+            # backstop, not an alternative to the convention.
+            # ───────────────────────────────────────────────────────────────────────
+            #
             # Rewrite Ingress hostnames before the dry-run, for the same reason as
             # nodePort above: the value in the rendered manifest is by definition
             # already held by the live object, so it cannot be meaningfully checked
@@ -700,10 +717,11 @@ jobs:
             # Ingress passes and every later PR touching that app's values fails, however
             # unrelated the change. #1198 (a VolSync backup) failed exactly this way.
             #
-            # Only Ingresses rendered BY A CHART are affected. This repo normally keeps
-            # Ingresses as standalone ingress.yaml files, which are not part of a
-            # HelmRelease render and never reach this dry-run — foundry is the first app
-            # whose chart emits its own Ingress, which is why this surfaced now.
+            # Only Ingresses rendered BY A CHART are affected. foundry surfaced this by
+            # briefly being the one app in that shape; it has since been moved to a
+            # standalone ingress.yaml like every other app, so as of writing NO app
+            # relies on this rewrite. It is kept because the next chart that emits an
+            # Ingress would otherwise fail in a way that reads as a manifest defect.
             #
             # The rewrite keeps the Ingress in the dry-run so its annotations, TLS block,
             # backend refs, schema and Kyverno admission are all still validated. Only the
