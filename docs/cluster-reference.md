@@ -1120,7 +1120,7 @@ expiry monitors; the credentials behind the 78 `ExternalSecret` CRs are not cove
 | Kind | CronJob |
 | Image | `docker.io/alpine/kubectl:1.33.4` |
 | Schedule | `30 6 * * *` (daily) |
-| Tunables | `PIHOLE_ADDR` `192.168.100.4` (keepalived VIP) |
+| Tunables | `PIHOLE_ADDR` `192.168.100.4` (keepalived VIP); `CANARY_HOST` `cloudflare.com` |
 
 Split-horizon DNS here is **A-only**: Pi-hole holds a local A record for every Ingress host
 pointing at the ingress VIP, but AAAA is forwarded upstream. For a host that also has a Cloudflare
@@ -1136,8 +1136,17 @@ from the LAN: browsers work either way, and only an off-LAN client notices.
 
 This job queries every Ingress host for AAAA and **exits non-zero** if any answers, which the
 existing `KubeJobFailed` alert turns into a Pushover notification — no dedicated PrometheusRule.
-`nslookup` exits 0 whether or not the host leaks, so the script parses output rather than `$?`;
-finding **zero** Ingress hosts is also treated as a failure, because a check that passes because it
+`nslookup` exits 0 whether the host has an AAAA, has none, or hits NXDOMAIN — but exits non-zero
+when the resolver itself is unreachable, and that distinction matters: a dead Pi-hole and a
+genuinely clean host both print nothing matching `Address:`, so a check that only parsed output
+would call a dead resolver "clean". The script therefore captures `nslookup`'s own exit status
+per host (not the exit status of the `awk`/`grep` pipeline it feeds, which reflects only whether a
+line matched) and reports a resolver failure as its own outcome, distinct from both a leak and a
+clean pass. Before checking any host it also queries `CANARY_HOST` — a name guaranteed to have a
+real AAAA — and fails immediately if that lookup errors or comes back empty, on the reasoning that
+an unreachable or untrustworthy resolver makes "no AAAA" for every other host meaningless; this
+also avoids burning nslookup's ~10s unreachable-server retry on all ~30 hosts one at a time. Finding
+**zero** Ingress hosts is likewise treated as a failure, because a check that passes because it
 looked at nothing is the exact failure mode being guarded against.
 
 ### b2-exporter

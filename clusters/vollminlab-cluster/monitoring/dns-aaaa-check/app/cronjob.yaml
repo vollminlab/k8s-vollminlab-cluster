@@ -21,8 +21,22 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      # Daily, one kubectl list + up to ~30 nslookups. Generous headroom.
+      # Daily, one kubectl list + a canary lookup + up to ~30 nslookups.
+      # Generous headroom.
       activeDeadlineSeconds: 300
+      # WITHOUT THIS THE ALERT NEVER CLEARS. kube_job_failed is reported per
+      # Job OBJECT and stays 1 for as long as the Job exists; a later
+      # successful run does not touch it. failedJobsHistoryLimit only evicts
+      # a failed Job once three NEWER failures replace it, which for a daily
+      # schedule with no leaks in between could take weeks (see the six-week
+      # stuck sealed-secrets kopia job cited in
+      # monitoring/vcenter-credential-age/app/cronjob.yaml). 86400 matches
+      # velero-backup-content-guard, the other daily deliberate-failure
+      # CronJob: the alert fires the morning of a leak, self-clears a day
+      # later once this schedule's own Job object ages out, and re-fires the
+      # next run if the leak is still unfixed -- a daily nag rather than a
+      # permanently stuck alert.
+      ttlSecondsAfterFinished: 86400
       # restartPolicy Never + backoffLimit 0, deliberately -- NOT the healer
       # pattern. This script fails ON PURPOSE when it finds a leak (or when
       # the query itself found nothing) specifically to raise KubeJobFailed.
@@ -55,6 +69,13 @@ spec:
                 # is representative of what a LAN client actually resolves.
                 - name: PIHOLE_ADDR
                   value: "192.168.100.4"
+                # A name that is guaranteed to have a real AAAA record.
+                # Queried once before the host loop: if the resolver can't
+                # answer for this, it can't be trusted to mean anything by
+                # "no AAAA" for the hosts that follow. See check.sh's
+                # canary_check() for the full reasoning.
+                - name: CANARY_HOST
+                  value: "cloudflare.com"
               volumeMounts:
                 - name: script
                   mountPath: /scripts
