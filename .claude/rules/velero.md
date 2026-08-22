@@ -45,6 +45,27 @@ on both; the hand-applied `app` label is usually pod-only. Verify, don't assume:
 kubectl get pvc -n <ns> <pvc> -o jsonpath='{.metadata.labels}' | python3 -m json.tool
 ```
 
+## Dividing VolSync and Velero — and labelling a PVC a chart owns
+
+13 PVCs run a nightly VolSync `ReplicationSource` (restic to B2). Velero FSB would
+otherwise copy each of them again into *both* the MinIO 96h tier and the B2 2160h tier, so
+`velero-skip-smb-policy` skips any PVC carrying `backup.vollminlab.com/volsync: "true"`.
+That label is the whole contract: **VolSync owns the volume, Velero stands down.**
+
+Wiring a new VolSync source therefore means two edits, and the second is the one that gets
+forgotten — the `ReplicationSource`, and the label on the PVC. A missing label is invisible:
+both systems just succeed, and you pay for the volume three times a night.
+
+**When the PVC is templated by the app's own chart, put the label on with a `postRenderers`
+kustomize patch on the HelmRelease** — `harbor/harbor/app/helmrelease.yaml` is the worked
+example. Do **not** reach for the chart's `existingClaim` so you can declare the PVC in
+git: that drops the PVC out of the Helm release manifest, and every Longhorn StorageClass
+is `reclaimPolicy: Delete` (#1160), so Helm removing it deletes the data. That is the exact
+mechanism that made the Portainer loss permanent.
+
+Labels are mutable, so a post-render patch relabels the live PVC in place — no rebind, no
+data movement, no restart.
+
 ## The monitoring namespace is deliberately mostly unbacked
 
 `monitoring` is in `excludedNamespaces` on `daily-full`, `daily-b2` and `monthly-b2`.
