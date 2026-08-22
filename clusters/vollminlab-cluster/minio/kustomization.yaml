@@ -4,3 +4,4 @@ resources:
   - namespace.yaml
   - networkpolicies
   - minio/app
+  - cnpg-b2-mirror/app

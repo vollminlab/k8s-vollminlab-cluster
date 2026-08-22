@@ -586,7 +586,48 @@ Kubernetes manifests are **not** backed up by Velero — they are restored by Fl
 | API endpoint (in-cluster) | `http://minio.minio.svc.cluster.local:9000` |
 | Console | `minio.vollminlab.com` (port 9001) |
 | Root user | `root` (password in 1Password: **MinIO**) |
-| Bucket | `velero` (auto-provisioned on startup) |
+| Buckets | `velero`, `loki`, `cnpg-backups`, `terraform-state` (auto-provisioned on startup) |
+| Service accounts | `cnpg-svc` (cnpg-policy, `cnpg-backups` only), `tofu-svc` (tofu-state-policy, `terraform-state` only) |
+
+### cnpg-b2-mirror (CNPG offsite copy)
+
+CronJob in the `minio` namespace that mirrors the `cnpg-backups` bucket to Backblaze B2.
+
+| Parameter | Value |
+|---|---|
+| Manifests | `./clusters/vollminlab-cluster/minio/cnpg-b2-mirror/app` |
+| Image | `docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z` |
+| Schedule | 09:00 UTC daily |
+| Source | `s3://cnpg-backups` via the `cnpg-svc` principal (read only in practice) |
+| Destination | `s3://vollminlab-k8s-cnpg` |
+| B2 endpoint | `https://s3.us-west-000.backblazeb2.com` |
+| B2 credentials | 1Password: **Backblaze B2 - vollminlab-k8s-cnpg** (fields `keyID`, `credential`) |
+| Retention | none applied by the job; set a B2 lifecycle rule on the bucket |
+
+**Why it exists.** CloudNativePG writes base backups and WAL to exactly one object store.
+`spec.backup.barmanObjectStore` is a single object, and the newer barman-cloud plugin does not
+fan out either: its second `ObjectStore` is a *recovery source* for a replica cluster, not a
+second backup destination. All five clusters therefore archive only to MinIO, which puts every
+restorable Postgres backup on one Longhorn PVC in one rack.
+
+Velero's `daily-b2` does copy each `pgdata` volume to B2 nightly, but that is a filesystem walk
+of a running PostgreSQL data directory with no `pg_backup_start()` / `pg_backup_stop()` bracket.
+It is torn across files, carries no WAL continuity, supports no PITR, and CloudNativePG cannot
+bootstrap a `Cluster` from it. It reports `Completed` every night regardless, so it reads as
+protection without being any.
+
+Mirroring the bucket sidesteps the single-destination limit without touching CNPG: what lands in
+B2 is the real barman artifacts, and a recovery `Cluster` can be pointed straight at them.
+
+**The job runs without `--remove`**, so B2 keeps objects after MinIO's retention (7d for
+`authentik-db`, 14d for the other four) has expired them. The offsite copy therefore reaches
+further back than the local one, and B2 growth is bounded by a bucket lifecycle rule rather than
+by the mirror.
+
+**It fails loudly rather than quietly.** It lists both endpoints before mirroring and counts
+objects in the destination afterwards, exiting non-zero if the destination is empty. A mirror
+that copies nothing into an empty bucket otherwise exits 0, which is indistinguishable from
+"already up to date".
 
 ### Velero
 

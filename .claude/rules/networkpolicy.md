@@ -84,6 +84,7 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `authentik` | n/a (egress target → ingress-nginx) | 80 | cloudflared tunnel **origin** — `ingress-nginx-controller.ingress-nginx.svc:80`; svc 80→targetPort `http`→containerPort 80 | allow-cloudflared-nginx-egress egress (`app: cloudflared-authentik` only) |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
 | `minio` | `minio` | 9000 | S3 API — reached by the Helm post-upgrade hook pod (`app: minio-job`) to create buckets/users | allow-post-job-egress (from hook) + allow-post-job-ingress (to minio); intra-namespace |
+| `minio` | `minio` | 9000 | S3 API — reached by the `cnpg-b2-mirror` CronJob (`app: cnpg-b2-mirror`) reading the `cnpg-backups` bucket. Its other hop, Backblaze B2 on 443, needs no rule: `allow-https-egress` has `podSelector: {}` | allow-cnpg-b2-mirror-egress + allow-cnpg-b2-mirror-ingress; intra-namespace |
 | `tofu` | n/a (egress target → mediastack) | 7878/8989/8787/9696 | radarr/sonarr/readarr/prowlarr API (arr Terraform providers) | allow-mediastack-arr-egress egress |
 | `tofu` | n/a (egress target → harbor) | 8443 | Harbor API; svc 443→**8443**, egress evaluated post-DNAT so 443 ≠ enough | allow-harbor-egress egress |
 | `longhorn-system` | `longhorn-manager` | 9500 | Longhorn manager metrics — chart 1.12.1+ ships its own policies that exclude Prometheus | allow-monitoring-scrape ingress (from monitoring) |
