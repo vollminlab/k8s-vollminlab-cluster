@@ -1112,6 +1112,34 @@ opt-out**. It expired silently once, which is what `vcenter-credential-age` now 
 Warns before the vCenter metrics password expires. Note this is one of three bespoke
 expiry monitors; the credentials behind the 78 `ExternalSecret` CRs are not covered.
 
+### dns-aaaa-check
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Kind | CronJob |
+| Image | `docker.io/alpine/kubectl:1.33.4` |
+| Schedule | `30 6 * * *` (daily) |
+| Tunables | `PIHOLE_ADDR` `192.168.100.4` (keepalived VIP) |
+
+Split-horizon DNS here is **A-only**: Pi-hole holds a local A record for every Ingress host
+pointing at the ingress VIP, but AAAA is forwarded upstream. For a host that also has a Cloudflare
+tunnel CNAME, upstream returns Cloudflare's IPv6 — so an IPv6-capable LAN client hairpins out
+through the tunnel instead of reaching nginx directly, and Cloudflare's 100 MB request-body cap
+starts applying to uploads that should bypass it.
+
+The fix per host is one `local=/<host>/` line in `misc.dnsmasq_lines` on **pihole1 only**
+(nebula-sync `FULL_SYNC=true`, hourly, replicates to pihole2). **Nothing automates that line** —
+external-dns creates the A record when an Ingress appears, so every new tunnel-exposed host
+silently reintroduces the leak. It recurred five times before this job existed, and it is invisible
+from the LAN: browsers work either way, and only an off-LAN client notices.
+
+This job queries every Ingress host for AAAA and **exits non-zero** if any answers, which the
+existing `KubeJobFailed` alert turns into a Pushover notification — no dedicated PrometheusRule.
+`nslookup` exits 0 whether or not the host leaks, so the script parses output rather than `$?`;
+finding **zero** Ingress hosts is also treated as a failure, because a check that passes because it
+looked at nothing is the exact failure mode being guarded against.
+
 ### b2-exporter
 
 | Parameter | Value |
@@ -1146,6 +1174,7 @@ Cluster-level scheduled maintenance outside the storage and backup namespaces.
 | `velero-pvb-healer` | `velero` | `alpine/kubectl:1.33.4` | `*/10 * * * *` | See Backup |
 | `velero-backup-content-guard` | `velero` | `alpine/kubectl:1.33.4` | `0 9 * * *` | See Backup |
 | `vcenter-credential-age` | `monitoring` | `alpine:3.23.4` | `17 8 * * 1` | See Monitoring |
+| `dns-aaaa-check` | `monitoring` | `alpine/kubectl:1.33.4` | `30 6 * * *` | See Monitoring |
 
 **A merged, Ready, reconciled CronJob is not a working CronJob.** `velero-pvb-healer` ran and exited
 137 on *every* invocation for one PR cycle while Flux reported success throughout. After any CronJob
