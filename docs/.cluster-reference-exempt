@@ -1,0 +1,48 @@
+# Baseline of app directories not yet documented in docs/cluster-reference.md,
+# captured 2026-08-22. This is a RATCHET, not an allowlist: it exists so the
+# check can land without a mass-documentation PR, and it is meant to shrink to
+# empty. Backfill is tracked as a GitHub issue.
+#
+# Do NOT add a new app here to silence a CI failure. Document the app instead.
+
+1password-connect
+authentik-config
+authentik-proxy
+b2-config
+b2-exporter
+bazarr-exportarr
+cloudflare-config
+csi-snapshot-crds
+descheduler
+etcd-defrag
+filebrowser
+flaresolverr
+foundry
+goldilocks
+grafana-config
+harbor-config
+harbor-db
+jellystat-db
+karma
+kubeadm-cert-monitor
+longhorn-mount-healer
+longhorn-rebalancing-controller
+longhorn-snapshot-retention
+longhorn-trim
+masters-league
+minio-config
+readarr-config
+reloader
+shlink-db
+tailscale-config
+tailscale-operator
+tailscale-svc
+tofu-controller
+trivy-operator
+vcenter-credential-age
+velero-backup-content-guard
+velero-pvb-healer
+victoria-metrics
+victoria-metrics-lt
+vmware-exporter
+volsync
