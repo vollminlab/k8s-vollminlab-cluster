@@ -21,9 +21,14 @@ resources:
   - mutate-default-sa-pod-automount.yaml
   - require-labels.yaml
   - require-resources.yaml
+  - require-resources-batch.yaml
   - restrict-default.yaml
   - restrict-image-registries.yaml
+  - restrict-image-registries-batch.yaml
   - restrict-hostpath.yaml
+  - restrict-hostpath-batch.yaml
   - restrict-latest-tag.yaml
+  - restrict-latest-tag-batch.yaml
   - restrict-loadbalancer.yaml
   - restrict-privileged.yaml
+  - restrict-privileged-batch.yaml
