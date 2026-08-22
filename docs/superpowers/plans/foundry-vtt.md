@@ -863,7 +863,7 @@ Kyverno validates `category: "?*"` — any non-empty string — so this table is
 | Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backup via VolSync clone-based restic to B2 follows in a separate PR. |
 ```
 
-The backup sentence is deliberately future-tense — the ReplicationSource lands in PR 3. Task 15 updates this row to past tense once a non-empty restic snapshot has actually been verified, per .claude/rules/velero.md's "verify the artifact, not the status".
+The backup sentence is deliberately future-tense — the ReplicationSource lands in PR 3. **Task 16 Step 4** updates this row to past tense, and only once a non-empty restic snapshot has actually been verified, per `.claude/rules/velero.md`'s "verify the artifact, not the status". Task 15 creates the ReplicationSource but proves nothing about it.
 
 Three details in the old row were wrong or superseded and must not survive: `category: apps` (the deployment uses `gaming`, matching Minecraft), `~5Gi PVC` (10Gi), and "handles its own player auth" (it is behind Authentik). The "sequence after Cilium migration" note is deliberately dropped — the chart ships a native `HTTPRoute` template, so the Phase 8 migration is a values change rather than a rewrite, and Phase 8 migrates all 34 ingresses regardless. Do not leave a stale Deferred row alongside a live deployment.
 
