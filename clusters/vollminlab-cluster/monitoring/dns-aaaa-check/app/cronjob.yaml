@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dns-aaaa-check
+  namespace: monitoring
+  labels:
+    app: dns-aaaa-check
+    env: production
+    category: observability
+spec:
+  # Daily. The thing being detected (a new tunnel-exposed Ingress with no
+  # matching local= line) changes at most a few times a month, so daily is
+  # more than enough cadence while still catching a new leak within 24h of
+  # the Ingress landing. 06:30 UTC is a free :30 slot -- no other CronJob in
+  # this repo uses it (checked against every schedule: in the monitoring
+  # namespace the closest neighbor is victoria-metrics-lt's 07:30 backup).
+  schedule: "30 6 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Daily, one kubectl list + up to ~30 nslookups. Generous headroom.
+      activeDeadlineSeconds: 300
+      # restartPolicy Never + backoffLimit 0, deliberately -- NOT the healer
+      # pattern. This script fails ON PURPOSE when it finds a leak (or when
+      # the query itself found nothing) specifically to raise KubeJobFailed.
+      # OnFailure or a nonzero backoffLimit would retry and could mask a
+      # single real failure behind a later clean re-run within the same Job,
+      # or just delay the alert -- either way it defeats the one purpose this
+      # job has: being loud.
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: dns-aaaa-check
+            env: production
+            category: observability
+        spec:
+          serviceAccountName: dns-aaaa-check
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: check
+              image: docker.io/alpine/kubectl:1.33.4
+              command: ["/bin/sh", "/scripts/check.sh"]
+              env:
+                # Pi-hole VIP (keepalived) -- both pihole1 (.2) and pihole2
+                # (.3) answer identically for AAAA today, so querying the VIP
+                # is representative of what a LAN client actually resolves.
+                - name: PIHOLE_ADDR
+                  value: "192.168.100.4"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+          volumes:
+            - name: script
+              configMap:
+                name: dns-aaaa-check-script

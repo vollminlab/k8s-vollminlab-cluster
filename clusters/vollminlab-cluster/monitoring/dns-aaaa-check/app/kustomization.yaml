@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: dns-aaaa-check
+# Required: configMapGenerator emits a ConfigMap with no namespace. rbac.yaml
+# (ServiceAccount) and cronjob.yaml already carry namespace: monitoring
+# explicitly; this makes the generated ConfigMap match them. Same convention
+# as velero/velero-pvb-healer/app and monitoring/vcenter-credential-age/app.
+namespace: monitoring
+resources:
+  - rbac.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: dns-aaaa-check-script
+    files:
+      - check.sh
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: dns-aaaa-check
+    env: production
+    category: observability
