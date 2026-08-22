@@ -446,7 +446,6 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | Dynatrace / Dash0 | Homegrown stack (Prometheus + Loki + Grafana) is now established — evaluate if a managed platform adds value |
 | Tekton | Not needed for dependency updates (Renovate covers that); revisit if building/pushing custom images |
 | Crossplane | Potential future IaC-as-Kubernetes for cloud resources — redundant with tofu-controller today |
-| Foundry VTT | Self-hosted tabletop game server (`felddy/foundryvtt` image). Very feasible: single stateful web app, ~5Gi PVC, no database, handles its own player auth. Add to `foundry` namespace with `category: apps`. Sequence after Cilium migration so it lands on the final ingress stack. |
 
 ---
 
@@ -498,3 +497,4 @@ This is a cluster rebuild risk event — do not attempt without working backups.
 | external-secrets + 1Password Connect | PRs #818–#830 — ESO + 1Password Connect replaced SealedSecrets entirely; `sealed-secrets` controller removed 2026-05-31 |
 | VictoriaMetrics long-term metrics store | PRs #812/#831/#837 — `victoria-metrics-single` in `monitoring`; Prometheus remote_write + 24h retention, Grafana datasource swap, self-metrics ServiceMonitor |
 | K8s upgrade hop 2 (1.33.12 → 1.34.8) | All 9 nodes upgraded via hardened Ansible `k8s-upgrade.yml` (`serial:1`, `--disable-eviction`, Longhorn health gate); cleared the 1.33 EOL deadline |
+| Foundry VTT | Deployed to `foundry` namespace, `category: gaming`, 10Gi Longhorn PVC. Authentik forward-auth (domain-wide provider, blank per-world Foundry passwords). Exposed via the shared `nginx` Cloudflare tunnel. Backed up by VolSync clone-based restic to B2. |
