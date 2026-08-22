@@ -22,3 +22,32 @@ spec:
     - kind: ConfigMap
       name: harbor-values
       valuesKey: values.yaml
+  # The registry PVC is templated by the chart, so it cannot carry the
+  # `backup.vollminlab.com/volsync` label from a manifest in git the way the 12
+  # mediastack PVCs do. Without that label Velero FSB copies registry-data into
+  # both the MinIO and the B2 tier every night — 4.79 GB measured in
+  # velero-daily-full-20260821030059 — on top of the nightly VolSync restic pass
+  # that already sends it offsite. Three copies of the same volume.
+  #
+  # A post-render patch is the only way to label it that stays in git. The
+  # alternative — switching the chart to `existingClaim` and declaring the PVC
+  # here — would drop the PVC out of the Helm release manifest, and every
+  # Longhorn StorageClass is reclaimPolicy: Delete (#1160), so Helm removing it
+  # takes the data with it. That is the mechanism that made the Portainer loss
+  # permanent; don't repeat it for 3.4 GiB of registry content.
+  #
+  # Labels are mutable, so this patches the existing PVC in place on the next
+  # reconcile — no rebind, no data movement.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: PersistentVolumeClaim
+              name: harbor-registry
+            patch: |
+              apiVersion: v1
+              kind: PersistentVolumeClaim
+              metadata:
+                name: harbor-registry
+                labels:
+                  backup.vollminlab.com/volsync: "true"

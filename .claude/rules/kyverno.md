@@ -18,6 +18,12 @@ description: Kyverno policy rules, required labels, DMZ constraints, and enforce
 | `require-standard-labels`        | Every pod/controller/namespace must have `app`, `env`, `category` labels      |
 | `dmz-restrict-external-access`   | `external-access` / `internet-egress` labels only inside `dmz`                |
 
+**These five match `Deployment`, `StatefulSet` and `DaemonSet` — not `Pod`, and not `Job`
+or `CronJob`.** Autogen does not close that gap: it derives *controller* rules from
+*Pod*-matching policies, never the reverse. So a policy written against controller kinds
+covers exactly the kinds it lists. Job and CronJob were unvalidated by anything until the
+`-batch` policies below (#1164).
+
 **A CPU limit is deliberately NOT required.** Throttling degrades latency-sensitive
 workloads and cannot protect a node from exhaustion the way a memory limit does —
 `coredns` and `kyverno-admission-controller` both omit theirs upstream. Set requests
@@ -36,6 +42,37 @@ there is nothing to block.
 | `inject-resource-requirements`    | Injects resources for Longhorn workloads the chart can't set     |
 | `mutate-default-sa-automount`     | Disables token automount on the `default` ServiceAccount         |
 | `mutate-default-sa-pod-automount` | Same, for pods using the `default` ServiceAccount                |
+
+## The `-batch` policies — Job and CronJob coverage
+
+`require-resources-batch`, `restrict-privileged-batch`, `restrict-latest-tag-batch`,
+`restrict-hostpath-usage-batch` and `restrict-image-registries-batch` are one-for-one
+counterparts of the Enforce five, matching `Job` and `CronJob`. They are **separate
+policies, in Audit**, for two reasons:
+
+1. **The container path differs per kind** — `spec.template.spec.containers` on a Job,
+   `spec.jobTemplate.spec.template.spec.containers` on a CronJob. One rule matching both
+   kinds resolves to null on whichever kind it wasn't written for, and a null `foreach.list`
+   emits *no result at all* rather than a failure — the inert-policy mode of #1104/#1109.
+   So each kind gets its own rule, and `pass` counts are the only proof they evaluate.
+2. **Adding the kinds to the existing Enforce policies would have been a same-day
+   Enforce.** These reach operator-created objects — velero's kopia maintenance Jobs,
+   VolSync mover Jobs, trivy scan Jobs, Helm hook Jobs — that no manifest in this repo
+   controls, on a fail-closed webhook. Audit first, then flip from a read report.
+
+Measured 2026-08-22 with `kyverno apply` over every live object (18 CronJobs, 152 Jobs):
+**pass 544, fail 133, error 0.** Every failure is `require-resources-batch`, and every one
+comes from a workload not authored in this repo — 129 velero `*-kopia-maintain-job-*` Jobs,
+plus the 2 CronJobs longhorn-manager generates from the `filesystem-trim` /
+`snapshot-retention` `RecurringJob` CRs and the 2 Jobs those CronJobs had running. The
+other four policies are clean cluster-wide.
+
+**Before flipping any of these to Enforce**, read the live PolicyReport after at least one
+full backup cycle, one VolSync cycle and one Helm reconcile — a snapshot of currently
+*running* Jobs cannot see the transient ones, and VolSync's 13 ReplicationSources all have
+`moverResources: null`, so their mover Jobs will fail `require-resources-batch` when they
+next run.
+
 
 ## A policy with zero pass results is not enforcing
 
