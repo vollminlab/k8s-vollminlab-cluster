@@ -37,6 +37,20 @@ resource "authentik_policy_binding" "filebrowser_users" {
   order  = 0
 }
 
+resource "authentik_application" "foundry" {
+  name             = "Foundry VTT"
+  slug             = "foundry"
+  meta_description = "Virtual tabletop for online tabletop RPG sessions"
+  meta_launch_url  = "https://foundry.vollminlab.com"
+  open_in_new_tab  = false
+}
+
+resource "authentik_policy_binding" "foundry_users" {
+  target = authentik_application.foundry.uuid
+  group  = authentik_group.foundry_users.id
+  order  = 0
+}
+
 resource "authentik_application" "grafana" {
   name              = "Grafana"
   slug              = "grafana"
