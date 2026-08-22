@@ -76,7 +76,7 @@ Restic-based PVC replication to Backblaze B2 for 13 PVCs (CNPG clusters, Harbor 
 
 ## Phase 2 — Observability Stack
 
-**Goal:** Build a production-grade SRE observability platform to upskill and to support everything that follows (Istio, Chaos Mesh, SLOs).
+**Goal:** Build a production-grade SRE observability platform to upskill and to support everything that follows (Chaos Mesh, SLOs). Istio was on this list too, until Phase 5 was dropped on 2026-08-22.
 
 ### 2.1 Prometheus + Grafana (kube-prometheus-stack)
 
@@ -114,8 +114,8 @@ Goldilocks VPA recommender deployed in `goldilocks` namespace (PR #721). VPA rec
 The original plan (OTLP traces from instrumented apps and Istio → Grafana Tempo) does not hold:
 **there are no instrumented apps.** Everything user-facing is upstream third-party and emits no
 traces; the only in-house candidate is vollmint, whose `go.mod` has zero OTel dependencies and
-which is an API + SPA + database, not a distributed system. "From Istio" is doubly dead, since
-Phase 5 is likely dropped at Phase 8 (see below).
+which is an API + SPA + database, not a distributed system. "From Istio" is doubly dead: Phase 5
+was dropped outright on 2026-08-22.
 
 **The real driver is unrelated to tracing:** `monitoring/promtail` is on chart 6.17.1 and Grafana
 has deprecated Promtail in favour of **Alloy**, which is an OpenTelemetry Collector distribution.
@@ -377,28 +377,29 @@ Create a `diagrams/` folder in each repo with declarative Mermaid diagrams cover
 
 ---
 
-## Phase 5 — Service Mesh
+## Phase 5 — Service Mesh (dropped)
 
 ### 5.1 Istio
 
-**Status:** `planned`, and **likely to be dropped** — decide at Phase 8a (#1190) planning time.
+**Status:** `dropped` — decided 2026-08-22. Not deferred, and not pending a Phase 8 evaluation.
 
-Honest position as of 2026-08-22: this is a single-tenant homelab with roughly 30 services and one
-human. Cluster-wide mTLS and traffic management carry a large, permanent operational cost against a
-threat model where east-west traffic is not the live risk. **#795 (default-deny NetworkPolicy in
-10 of 37 namespaces) is the actual east-west gap, and it is far cheaper to close.** If Cilium's
-native capabilities cover what is wanted, drop Istio entirely rather than deferring it again.
+This is a single-tenant homelab with roughly 30 services and one human. Cluster-wide mTLS and
+traffic management carry a large, permanent operational cost against a threat model where
+east-west traffic is not the live risk, and sidecar injection would interact with Kyverno policies
+on a fail-closed webhook.
 
-Deploy Istio via the Helm-based install (not `istioctl`):
+**The actual east-west gap is #795** — default-deny NetworkPolicy exists in only 10 of 37
+namespaces. That is the real exposure, it is far cheaper to close, and a service mesh would have
+sat on top of a flat network rather than fixing it.
 
-- Mutual TLS (mTLS) between all services by default
-- Traffic management (weighted routing, retries, circuit breaking)
-- Integration with Kiali for topology visualization
-- Distributed tracing via OTLP → Grafana Tempo
+Planned and not being built: Helm-based Istio install, mTLS between all services, weighted routing
+and circuit breaking, Kiali topology visualization, OTLP tracing to Grafana Tempo. The tracing half
+is separately dead — see 2.4 and issue #1194, there is nothing instrumented to trace.
 
-Note: Istio's sidecar injection will interact with Kyverno policies, so review `kyverno.md` before deploying.
-
-**Cilium decision point:** Cilium (Phase 8) ships a native service mesh (Cilium Mesh) with mTLS, traffic management, and Hubble L7 observability. Evaluate at Phase 8 planning time whether Cilium Mesh satisfies these requirements before investing in Istio. If it does, Phases 5 and 8 merge and Istio is dropped entirely.
+**If a service mesh is ever wanted again**, evaluate Cilium Mesh (Phase 8a, #1190) rather than
+reopening this. It ships mTLS, traffic management and Hubble L7 observability on the CNI that is
+already planned, so it carries none of Istio's sidecar cost. That evaluation is not scheduled and
+gates nothing.
 
 ---
 
@@ -551,7 +552,7 @@ Cilium offers significant advantages over Calico for this use case:
 - **Gateway API adoption:** Cilium's native Gateway API implementation replaces nginx-ingress. All `ingress.yaml` files migrate to `HTTPRoute` resources. nginx-ingress is decommissioned at the end of this phase.
 - **kube-proxy replacement (optional):** eBPF-based routing; evaluate during planning
 - **Hubble:** L4/L7 network observability (flows, DNS, HTTP); feeds the Phase 2.4 OpenTelemetry pipeline
-- **Istio decision:** If Cilium Mesh provides sufficient mTLS + traffic management, Phase 5 is dropped. Decide at the start of this phase.
+- **Istio:** already dropped (Phase 5, 2026-08-22), so this phase has no mesh decision left to make. If a mesh is ever wanted, evaluate Cilium Mesh on its own merits then.
 
 **The detail below is retained as the original plan. The authoritative, corrected scope now lives in
 #1190 / #1191 / #1192.**
