@@ -1401,7 +1401,7 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 | JVM memory | 6G |
 | CPU | req: 2000m, limits: 4000m |
 | Memory | req: 6Gi, limits: 8Gi |
-| Config PVC | 20Gi `longhorn-dmz` RWX |
+| Data PVC | `pvc-minecraft-datadir`, 20Gi `longhorn-dmz`, RWX |
 | View distance | 8 |
 | Simulation distance | 6 |
 | Max players | 20 |
@@ -1412,10 +1412,33 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 | Service type | NodePort |
 | Minecraft port | NodePort `32565` |
 | BlueMap port | NodePort `32566` (container port 8100) |
+| Public hostname | `minecraft.vollminlab.com` (CNAME → `dynamic.vollminlab.com` → WAN IP, unproxied) |
+| Public port | **57913**, forwarded by the router to the HAProxy VIP `192.168.160.4:25565` |
+| SRV record | `_minecraft._tcp.minecraft.vollminlab.com` → `0 5 57913 dynamic.vollminlab.com` |
+
+**External access.** Players type the hostname with no port. A Java client resolves
+`_minecraft._tcp.<host>` before connecting and uses the port that record names, falling back to
+25565 only when no SRV exists. The record therefore lives on Cloudflare, the authoritative public
+zone, and is read client-side: it routes no traffic. The port translation is the router's, on its
+WAN interface.
+
+Cloudflare proxying must stay **off** for both records. The orange-cloud proxy carries HTTP/HTTPS
+only, not the Minecraft TCP protocol.
+
+Bedrock clients ignore SRV entirely and would need `:57913` typed. Not applicable here, the server
+is Paper (Java).
+
+One SRV serves LAN and WAN alike **only because Pi-hole holds no local override for this
+hostname** (verified 2026-08-23: `192.168.100.2` and `.3` both return the public address). LAN
+clients hairpin through the router like anyone else. Add an override for this name and LAN play
+breaks while external play keeps working, because the port translation lives on a WAN interface a
+LAN client never crosses; that case needs a matching `srv-host=` in both Pi-holes on port 25565.
 
 **Allowed ingress:** HAProxy nodes `192.168.160.2/32` and `192.168.160.3/32` on ports 25565 (game) and 8100 (BlueMap).
 
-**Allowed egress:** `0.0.0.0/0` on ports 80, 443 (downloads/updates) + DNS to `10.96.0.10:53`.
+**Allowed egress:** ports 80 and 443 to `0.0.0.0/0` **excluding RFC1918** (`10/8`, `172.16/12`,
+`192.168/16`), which covers the LAN, the service CIDR and the pod CIDR. DNS is granted separately
+by the namespace-wide `allow-dns` policy, not by this rule.
 
 **Probes:**
 - Readiness: initialDelay=30s, period=10s, failureThreshold=10
