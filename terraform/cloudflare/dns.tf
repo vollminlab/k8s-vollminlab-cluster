@@ -95,6 +95,21 @@ resource "cloudflare_dns_record" "minecraft" {
 #
 # Java Edition only. Bedrock ignores SRV, so a Bedrock client would need the
 # port typed explicitly. Not a concern here -- the server is Paper.
+#
+# priority is set TWICE, deliberately, and both are load-bearing.
+#
+# The provider schema marks data.priority merely "optional", so a config with
+# only the top-level priority passes tofu validate and plans cleanly -- then
+# fails at apply time against the real API with
+# "code 9101: priority is a required data field". That is what happened on
+# 2026-08-24: the record was never created and the Terraform CR retry-looped
+# until this fix. Verified against the live zone: the top-level-only payload
+# is rejected, the payload below is accepted.
+#
+# The top-level one stays because Cloudflare echoes priority back in BOTH
+# places for SRV, and the top-level attribute is optional-not-computed.
+# Dropping it from the config would leave config null against a state of 0,
+# which plans as a permanent one-line diff on every reconcile.
 resource "cloudflare_dns_record" "minecraft_srv" {
   zone_id  = var.cloudflare_zone_id
   name     = "_minecraft._tcp.minecraft.vollminlab.com"
@@ -104,9 +119,10 @@ resource "cloudflare_dns_record" "minecraft_srv" {
   priority = 0
 
   data = {
-    port   = 57913
-    target = "dynamic.vollminlab.com"
-    weight = 5
+    priority = 0
+    port     = 57913
+    target   = "dynamic.vollminlab.com"
+    weight   = 5
   }
 }
 
