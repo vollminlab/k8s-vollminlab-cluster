@@ -11,7 +11,11 @@ data:
   values.yaml: |
     image:
       repository: itzg/minecraft-server
-      tag: "java21"
+      # 26.x requires Java 25 (1.21.x required 21). Paper's own version
+      # metadata reports java.version.minimum=25 for 26.1.2 and 26.2, so this
+      # tag has to move in the same commit as the version below or the server
+      # will not start.
+      tag: "java25"
     resources:
       requests:
         cpu: 2000m
@@ -51,7 +55,21 @@ data:
       storageClass: longhorn-dmz
     minecraftServer:
       eula: "TRUE"
-      version: "1.21.10"
+      # 26.2, Paper's current release line (build #116, 2026-08-23).
+      #
+      # 1.21.10 was EOL: its last build was #130 on 2026-01-04 and Paper's API
+      # reports support.status=UNSUPPORTED, end=2026-01-17. The obvious smaller
+      # hop, 1.21.11, is EOL too -- last build #132 on 2026-05-11, support ended
+      # 2026-06-15 -- so it would trade one dead branch for another and still
+      # need this same window later. Only 26.1.2 and 26.2 report SUPPORTED, and
+      # 26.2 is the current line.
+      #
+      # This migrates the world format and is NOT reversible. Verified backups
+      # exist before the roll: minecraft-pre-1131-20260824010150 (MinIO, 720h),
+      # velero-daily-full-20260823030001 (MinIO), velero-daily-b2-20260823040001
+      # (B2, 2160h) -- each with a Completed PodVolumeBackup for `datadir`
+      # carrying a real snapshot ID and ~5.85 GB, not just a Completed Backup.
+      version: "26.2"
       type: "PAPER"
       memory: "6G"
       viewDistance: 8
@@ -96,7 +114,11 @@ data:
       # default is 0, i.e. disabled. 300 is the commonly used safe value -- high
       # enough that normal play never approaches it, low enough to blunt a flood.
       RATE_LIMIT: "300"
-      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/lfk408pd/bluemap-5.13-spigot.jar"
+      # BlueMap 5.23. This MUST move in the same roll as the version above:
+      # 5.13 supports 1.20 through 1.21.11 and stops there, 5.23 supports 26.1
+      # through 26.2 and starts there. There is no build that spans both, so
+      # staging the two bumps separately leaves BlueMap broken in between.
+      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/g7xgp4Xr/bluemap-5.23-spigot.jar"
       OVERRIDE_WHITELIST: "TRUE"
     # RCON password from secret (itzg/minecraft-server supports RCON_PASSWORD env var)
     # Note: The Helm chart may need extraEnvVars or envFrom instead - check chart docs

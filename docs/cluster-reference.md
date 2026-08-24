@@ -1396,8 +1396,9 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 |---|---|
 | Chart version | v4.0.0 |
 | Helm repo | https://itzg.github.io/minecraft-server-charts/ |
-| Image | `itzg/minecraft-server:java21` |
+| Image | `itzg/minecraft-server:java25` (26.x requires Java 25) |
 | Server type | PAPER |
+| Server version | `26.2` (Paper's current supported line; 1.21.x is EOL) |
 | JVM memory | 6G |
 | CPU | req: 2000m, limits: 4000m |
 | Memory | req: 6Gi, limits: 8Gi |
@@ -1408,7 +1409,7 @@ The `dmz` namespace is a security boundary for internet-exposed workloads. Full 
 | Difficulty | normal |
 | Max world size | 29,999,984 |
 | RCON | enabled (ExternalSecret: `minecraft-rcon-secret`) |
-| Plugins | BlueMap v5.13 (spigot) |
+| Plugins | BlueMap v5.23 (spigot) — 5.23 supports 26.1–26.2 only; 5.13 topped out at 1.21.11, so plugin and server versions must move together |
 | Service type | NodePort |
 | Minecraft port | NodePort `32565` |
 | BlueMap port | NodePort `32566` (container port 8100) |
