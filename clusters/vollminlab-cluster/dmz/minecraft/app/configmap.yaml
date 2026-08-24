@@ -115,11 +115,24 @@ data:
       # default is 0, i.e. disabled. 300 is the commonly used safe value -- high
       # enough that normal play never approaches it, low enough to blunt a flood.
       RATE_LIMIT: "300"
-      # BlueMap 5.23. This MUST move in the same roll as the version above:
-      # 5.13 supports 1.20 through 1.21.11 and stops there, 5.23 supports 26.1
-      # through 26.2 and starts there. There is no build that spans both, so
-      # staging the two bumps separately leaves BlueMap broken in between.
-      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/g7xgp4Xr/bluemap-5.23-spigot.jar"
+      # BlueMap 5.23, the **paper** build. This server is Paper, and the spigot
+      # build warns on every boot:
+      #   This seems to be a PAPER-based server, but you are using the SPIGOT
+      #   version of BlueMap.
+      #   Failed to detect the minecraft version of this server! Using latest
+      #   version.
+      # The second line is the one that matters: BlueMap falls back to guessing
+      # the resource version instead of asking the server, which risks incorrect
+      # block rendering for anything new in 26.2.
+      #
+      # The spigot pin was inherited from the 5.13 era and carried forward
+      # unexamined through the 26.2 upgrade (#1219); it was never the right
+      # build for this server.
+      #
+      # Version must stay in step with minecraftServer.version above: 5.23
+      # covers 26.1 through 26.2 only, and 5.13 covered 1.20 through 1.21.11.
+      # No build spans both, so the two always move together.
+      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/K5U1ASjn/bluemap-5.23-paper.jar"
       OVERRIDE_WHITELIST: "TRUE"
     # RCON password from secret (itzg/minecraft-server supports RCON_PASSWORD env var)
     # Note: The Helm chart may need extraEnvVars or envFrom instead - check chart docs
@@ -129,6 +142,26 @@ data:
           secretKeyRef:
             name: minecraft-rcon-secret
             key: password
+    # A startup probe is what makes a long first boot safe. While one is defined
+    # and not yet passing, the kubelet suspends BOTH the liveness and readiness
+    # probes, so the server gets this whole budget to come up before anything
+    # can kill it.
+    #
+    # Without it the liveness probe alone bounds startup at
+    # initialDelaySeconds 30 + periodSeconds 5 x failureThreshold 10 = ~80s.
+    # The 1.21.10 -> 26.2 upgrade (#1219) reached `Done` at 40.9s including the
+    # 61 MB server jar, the BlueMap jar and the world-format migration, so it
+    # cleared that by ~39s. A larger world, a slower registry or a longer
+    # migration would not have, and a kill *during* a world migration is how a
+    # save gets corrupted -- the failure mode the backup gate exists for.
+    #
+    # 60 x 10s = 600s, roughly 7x the measured cold start. Bounded on purpose:
+    # a genuinely wedged server still restarts, just after 10 minutes instead of
+    # 80 seconds. Nothing is waiting on this service.
+    startupProbe:
+      enabled: true
+      failureThreshold: 60
+      periodSeconds: 10
     readinessProbe:
       initialDelaySeconds: 30
       periodSeconds: 10
