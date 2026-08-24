@@ -68,6 +68,64 @@ resource "cloudflare_dns_record" "minecraft" {
   ttl     = 1
 }
 
+# Moves Java clients off the default port without anyone having to type one.
+#
+# A Java client given "minecraft.vollminlab.com" queries
+# _minecraft._tcp.<host> for an SRV record first, and only falls back to
+# A/AAAA plus port 25565 if there is none. So this record is read entirely on
+# the client side before it opens a socket: it reroutes nothing, it just tells
+# the client which WAN port to dial. The port translation itself stays on the
+# router (57913 -> 192.168.160.4:25565).
+#
+# One record covers LAN and WAN both. Pi-hole holds no local override for
+# minecraft.vollminlab.com (verified 2026-08-23: both 192.168.100.2 and .3
+# return 108.5.213.103, the public address), so LAN clients resolve exactly as
+# external ones do and hairpin through the router. If an override is ever added
+# for this name, this record has to be mirrored into both Pi-holes with port
+# 25565, or LAN players break while external ones keep working -- the same
+# split-horizon shape as the AAAA leak that hid the tunnel outage for 68 days.
+#
+# target is dynamic.vollminlab.com, not minecraft.vollminlab.com: RFC 2782
+# requires an SRV target to be a real hostname and minecraft.vollminlab.com is
+# a CNAME. Pointing at the A record also means the SRV follows the WAN address
+# whenever DDNS updates it.
+#
+# proxied stays false, as it must: Cloudflare's proxy carries HTTP/HTTPS only,
+# not the Minecraft TCP protocol.
+#
+# Java Edition only. Bedrock ignores SRV, so a Bedrock client would need the
+# port typed explicitly. Not a concern here -- the server is Paper.
+#
+# priority is set TWICE, deliberately, and both are load-bearing.
+#
+# The provider schema marks data.priority merely "optional", so a config with
+# only the top-level priority passes tofu validate and plans cleanly -- then
+# fails at apply time against the real API with
+# "code 9101: priority is a required data field". That is what happened on
+# 2026-08-24: the record was never created and the Terraform CR retry-looped
+# until this fix. Verified against the live zone: the top-level-only payload
+# is rejected, the payload below is accepted.
+#
+# The top-level one stays because Cloudflare echoes priority back in BOTH
+# places for SRV, and the top-level attribute is optional-not-computed.
+# Dropping it from the config would leave config null against a state of 0,
+# which plans as a permanent one-line diff on every reconcile.
+resource "cloudflare_dns_record" "minecraft_srv" {
+  zone_id  = var.cloudflare_zone_id
+  name     = "_minecraft._tcp.minecraft.vollminlab.com"
+  type     = "SRV"
+  proxied  = false
+  ttl      = 1
+  priority = 0
+
+  data = {
+    priority = 0
+    port     = 57913
+    target   = "dynamic.vollminlab.com"
+    weight   = 5
+  }
+}
+
 resource "cloudflare_dns_record" "vpn" {
   zone_id = var.cloudflare_zone_id
   name    = "vpn.vollminlab.com"
