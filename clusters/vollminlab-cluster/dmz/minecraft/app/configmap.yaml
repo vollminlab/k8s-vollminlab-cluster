@@ -114,11 +114,24 @@ data:
       # default is 0, i.e. disabled. 300 is the commonly used safe value -- high
       # enough that normal play never approaches it, low enough to blunt a flood.
       RATE_LIMIT: "300"
-      # BlueMap 5.23. This MUST move in the same roll as the version above:
-      # 5.13 supports 1.20 through 1.21.11 and stops there, 5.23 supports 26.1
-      # through 26.2 and starts there. There is no build that spans both, so
-      # staging the two bumps separately leaves BlueMap broken in between.
-      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/g7xgp4Xr/bluemap-5.23-spigot.jar"
+      # BlueMap 5.23, the **paper** build. This server is Paper, and the spigot
+      # build warns on every boot:
+      #   This seems to be a PAPER-based server, but you are using the SPIGOT
+      #   version of BlueMap.
+      #   Failed to detect the minecraft version of this server! Using latest
+      #   version.
+      # The second line is the one that matters: BlueMap falls back to guessing
+      # the resource version instead of asking the server, which risks incorrect
+      # block rendering for anything new in 26.2.
+      #
+      # The spigot pin was inherited from the 5.13 era and carried forward
+      # unexamined through the 26.2 upgrade (#1219); it was never the right
+      # build for this server.
+      #
+      # Version must stay in step with minecraftServer.version above: 5.23
+      # covers 26.1 through 26.2 only, and 5.13 covered 1.20 through 1.21.11.
+      # No build spans both, so the two always move together.
+      PLUGINS: "https://cdn.modrinth.com/data/swbUV1cr/versions/K5U1ASjn/bluemap-5.23-paper.jar"
       OVERRIDE_WHITELIST: "TRUE"
     # RCON password from secret (itzg/minecraft-server supports RCON_PASSWORD env var)
     # Note: The Helm chart may need extraEnvVars or envFrom instead - check chart docs
