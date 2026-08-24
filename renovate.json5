@@ -52,8 +52,45 @@
         "image:\\s+(?<depName>[^\\s:]+):(?<currentValue>[^\\s\"']+)"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      // The Paper server version is a bare string in the minecraft chart values
+      // with no datasource behind it, which is why 1.21.10 sat 7.5 months past
+      // its branch's last build before anyone noticed (#1131).
+      //
+      // Matched via the `# renovate:` marker comment rather than by the field
+      // name, so it cannot start silently matching some other `version:` added
+      // to this file later. A custom manager that quietly stops matching is
+      // worse than no manager at all, because the dashboard then reads clean.
+      "customType": "regex",
+      "description": "Paper server version in the minecraft Helm values",
+      "managerFilePatterns": [
+        "/clusters/vollminlab-cluster/dmz/minecraft/app/configmap\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+version:\\s+\"(?<currentValue>[^\"]+)\""
+      ],
+      // Paper mixes two schemes -- 1.21.10 and calendar 26.2 -- so semver is
+      // wrong here. loose compares component-wise and orders 26.2 above 1.21.10.
+      "versioningTemplate": "loose"
     }
   ],
+  "customDatasources": {
+    "papermc": {
+      "defaultRegistryUrlTemplate": "https://fill.papermc.io/v3/projects/paper",
+      "format": "json",
+      // v3 returns versions as an object of release-family -> array, newest
+      // first, e.g. {"26.2": ["26.2","26.2-rc-2"], "1.21": ["1.21.11", ...]}.
+      // `versions.*` flattens every family's array into one sequence; the
+      // filter drops rc/pre builds, which are the only entries containing "-".
+      //
+      // Verified against a live response before merging: 54 releases, 26.2
+      // first, 1.21.10 present, 0 pre-releases leaked.
+      "transformTemplates": [
+        "{ \"releases\": versions.*[$not($contains($, \"-\"))].{\"version\": $} }"
+      ]
+    }
+  },
   "registryAliases": {
     "arc-controller-repo": "oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller",
     "arc-runners-repo": "oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set",
@@ -138,6 +175,24 @@
       "matchDatasources": ["docker"],
       "matchPackageNames": ["velero/velero-plugin-for-aws"],
       "allowedVersions": "<=1.14.0"
+    },
+    {
+      // Surface Paper drift on the Dependency Dashboard, but never open a PR
+      // for it unaided.
+      //
+      // A Paper bump is not a version-string change. Going 1.21.10 -> 26.2
+      // (#1219) also required the image tag to move java21 -> java25, because
+      // 26.x needs Java 25, and BlueMap to move 5.13 -> 5.23 in the same roll,
+      // because no BlueMap build spans both ranges. It then migrated the world
+      // format, which is not reversible. A merged auto-PR carrying only the
+      // version would start a server that cannot boot, or boot one that
+      // silently rewrites the save with a broken map plugin.
+      //
+      // So the value here is visibility -- knowing the branch went EOL -- not
+      // automation. Approval on the dashboard is the gate.
+      "description": "Paper: report drift on the dashboard, require approval before any PR",
+      "matchDatasources": ["custom.papermc"],
+      "dependencyDashboardApproval": true
     }
   ]
 }
