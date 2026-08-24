@@ -379,6 +379,43 @@ spec:
             summary: "Longhorn volume {{ $labels.pvc }} ({{ $labels.pvc_namespace }}) is faulted"
             description: "Volume {{ $labels.volume }} backing PVC {{ $labels.pvc }} in {{ $labels.pvc_namespace }} is faulted. Data may be inaccessible."
 
+        # A replica stranded mid-rebuild. Longhorn can leave a replica with healthyAt
+        # unset indefinitely: a stale "is rebuilding" flag on an ALREADY-healthy peer
+        # blocks the pre-rebuild snapshot purge, so the new replica never starts. The
+        # orphan holds no data (absent from the engine replicaModeMap) and nothing in
+        # Longhorn ever reaps it.
+        #
+        # LonghornVolumeDegraded cannot see this. With spec.numberOfReplicas=3 and 3
+        # replicas RW, the volume reports *healthy* most of the time even though a 4th
+        # orphan CR exists; it only flips to degraded while something surges the spec.
+        # Measured 2026-08-24 over the 24h before the fix, the volume that had been
+        # stuck for 51h was degraded just 4.9% of the window, ranking below `minio`
+        # (33%) and `pvc-filebrowser-config` (6.3%) — both merely rebalancing normally.
+        # Time-in-degraded is therefore not a usable signal; the replica CR is.
+        #
+        # A healthy rebuild here completes in ~51s (measured, 2Gi volume), so 1h is
+        # ~70x headroom and cannot fire on normal rebalancing churn.
+        # Runbook: .claude/rules/storage.md + the surge-move loop in
+        # vollminlab/longhorn-rebalancing-controller#22.
+        - alert: LonghornReplicaStuckRebuilding
+          expr: |
+            longhorn_crd_replica_info{healthy_at="", failed_at="", active="true"} == 1
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Longhorn replica {{ $labels.replica }} has never become healthy"
+            description: >-
+              Replica {{ $labels.replica }} of volume {{ $labels.volume }} on node
+              {{ $labels.node }} has had healthyAt unset for over an hour, so it is
+              stranded mid-rebuild rather than slow. Confirm with a large and still-growing
+              `count` on the FailedStartingSnapshotPurge event for that volume's engine
+              (`kubectl get events -n longhorn-system --field-selector reason=FailedStartingSnapshotPurge`);
+              the IP in that error maps to an already-healthy RW replica, not this one.
+              Fix: patch spec.numberOfReplicas back to the intended count, then delete this
+              replica CR explicitly — it survives the patch — and clear any
+              rebalancer.vollminlab.com/move-* annotations left on the volume.
+
         - alert: LonghornNodeStorageLow
           expr: |
             (longhorn_node_storage_capacity_bytes - longhorn_node_storage_usage_bytes)

@@ -350,6 +350,9 @@ data:
           - apiGroups: ["infra.contrib.fluxcd.io"]
             resources: ["terraforms"]
             verbs: ["list", "watch"]
+          - apiGroups: ["longhorn.io"]
+            resources: ["replicas"]
+            verbs: ["list", "watch"]
       customResourceState:
         enabled: true
         config:
@@ -448,6 +451,37 @@ data:
                           ready: [status, conditions, "[type=Ready]", status]
                           reason: [status, conditions, "[type=Ready]", reason]
                           suspended: [spec, suspend]
+              # Longhorn Replica CRs. Longhorn's own exporter is volume-scoped
+              # (longhorn_volume_robustness) and exposes nothing per replica, so a
+              # replica stranded mid-rebuild is invisible to Prometheus. That is the
+              # exact shape of the 51h stall on 2026-08-22..24: the volume kept
+              # flickering back to `healthy` (3 of 3 spec'd replicas RW) while a 4th
+              # orphan replica sat with healthyAt unset and never rebuilt, so
+              # longhorn_volume_robustness read degraded only 4.9% of a 24h window —
+              # ranked *below* several healthy-but-rebalancing volumes.
+              # Cardinality is bounded by replica count (139 on 2026-08-24): metadata.name
+              # is already a label, and healthy_at flips "" -> timestamp exactly once per
+              # replica lifetime, so this adds no series beyond the replicas themselves.
+              - groupVersionKind:
+                  group: longhorn.io
+                  version: v1beta2
+                  kind: Replica
+                metricNamePrefix: longhorn_crd
+                labelsFromPath:
+                  replica: [metadata, name]
+                  exported_namespace: [metadata, namespace]
+                metrics:
+                  - name: replica_info
+                    help: "Longhorn Replica CR state, for detecting replicas stranded mid-rebuild."
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          volume: [spec, volumeName]
+                          node: [spec, nodeID]
+                          healthy_at: [spec, healthyAt]
+                          failed_at: [spec, failedAt]
+                          active: [spec, active]
               # tofu-controller Terraform CRs (served v1alpha2). Same Ready-condition
               # shape; reason carries TerraformAppliedSucceed / TFExecPlanFailed /
               # DriftDetected — the alert keys on reason to skip intentional drift.
