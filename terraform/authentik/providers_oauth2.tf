@@ -55,10 +55,17 @@ resource "authentik_provider_oauth2" "headlamp" {
     }
   ]
 
-  property_mappings = concat(local.common_property_mappings, [
+  # Deliberately NOT local.common_property_mappings: that list carries authentik's
+  # built-in email scope, which returns email_verified=false since 2026.8.0 and is
+  # rejected by the apiserver's --oidc-username-claim=email rule. Headlamp takes
+  # the custom email mapping in its place; see scope_mappings.tf for the full why.
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+    authentik_property_mapping_provider_scope.headlamp_email.id,
     data.authentik_property_mapping_provider_scope.offline_access.id,
     authentik_property_mapping_provider_scope.groups.id,
-  ])
+  ]
 }
 
 resource "authentik_provider_oauth2" "minio" {
