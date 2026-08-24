@@ -69,6 +69,7 @@ data:
       # velero-daily-full-20260823030001 (MinIO), velero-daily-b2-20260823040001
       # (B2, 2160h) -- each with a Completed PodVolumeBackup for `datadir`
       # carrying a real snapshot ID and ~5.85 GB, not just a Completed Backup.
+      # renovate: datasource=custom.papermc depName=paper
       version: "26.2"
       type: "PAPER"
       memory: "6G"
