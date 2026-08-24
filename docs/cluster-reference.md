@@ -1442,8 +1442,17 @@ LAN client never crosses; that case needs a matching `srv-host=` in both Pi-hole
 by the namespace-wide `allow-dns` policy, not by this rule.
 
 **Probes:**
+- Startup: period=10s, failureThreshold=60 (600s budget)
 - Readiness: initialDelay=30s, period=10s, failureThreshold=10
 - Liveness: initialDelay=30s, period=5s, failureThreshold=10
+
+While the startup probe is defined and not yet passing, the kubelet suspends **both** the
+liveness and readiness probes, so a cold boot has the full 600s before anything can kill the
+container. That matters because a kill during a world-format migration is how a save gets
+corrupted. Measured cold start for the 1.21.10 → 26.2 upgrade was 40.9s including the 61 MB
+server jar, the BlueMap jar and the migration itself — against the ~80s the liveness probe would
+otherwise have allowed (`30 + 5 × 10`). Raise the threshold before any future major version hop
+on a larger world rather than discovering the ceiling during one.
 
 ---
 

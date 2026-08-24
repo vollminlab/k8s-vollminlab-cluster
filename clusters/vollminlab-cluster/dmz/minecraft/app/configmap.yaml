@@ -128,6 +128,26 @@ data:
           secretKeyRef:
             name: minecraft-rcon-secret
             key: password
+    # A startup probe is what makes a long first boot safe. While one is defined
+    # and not yet passing, the kubelet suspends BOTH the liveness and readiness
+    # probes, so the server gets this whole budget to come up before anything
+    # can kill it.
+    #
+    # Without it the liveness probe alone bounds startup at
+    # initialDelaySeconds 30 + periodSeconds 5 x failureThreshold 10 = ~80s.
+    # The 1.21.10 -> 26.2 upgrade (#1219) reached `Done` at 40.9s including the
+    # 61 MB server jar, the BlueMap jar and the world-format migration, so it
+    # cleared that by ~39s. A larger world, a slower registry or a longer
+    # migration would not have, and a kill *during* a world migration is how a
+    # save gets corrupted -- the failure mode the backup gate exists for.
+    #
+    # 60 x 10s = 600s, roughly 7x the measured cold start. Bounded on purpose:
+    # a genuinely wedged server still restarts, just after 10 minutes instead of
+    # 80 seconds. Nothing is waiting on this service.
+    startupProbe:
+      enabled: true
+      failureThreshold: 60
+      periodSeconds: 10
     readinessProbe:
       initialDelaySeconds: 30
       periodSeconds: 10
