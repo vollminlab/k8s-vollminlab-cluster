@@ -42,6 +42,24 @@ spec:
             - "longhorn-manager-*"
             - "longhorn-ui-*"
             - "c-*"
+      # RecurringJob-generated CronJobs (filesystem-trim, snapshot-retention)
+      # and the Jobs they spawn. There is no way to give these resources: the
+      # recurringjobs.longhorn.io v1beta2 spec is
+      # {concurrency, cron, groups, labels, name, parameters, retain, task} —
+      # verified against the live CRD schema, there is no resources field. They
+      # are also unreachable by inject-resource-requirements, which matches
+      # Deployment/DaemonSet/StatefulSet only. Matched on Longhorn's own
+      # managed-by label rather than by name, so a RecurringJob added later is
+      # covered automatically and nothing we author can ever match.
+      - resources:
+          kinds:
+            - CronJob
+            - Job
+          namespaces:
+            - longhorn-system
+          selector:
+            matchLabels:
+              longhorn.io/managed-by: longhorn-manager
   exceptions:
     - policyName: require-standard-labels
       ruleNames:
@@ -50,3 +68,7 @@ spec:
     - policyName: require-resources
       ruleNames:
         - require-limits
+    - policyName: require-resources-batch
+      ruleNames:
+        - require-limits-job
+        - require-limits-cronjob

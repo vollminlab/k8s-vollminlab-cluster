@@ -60,17 +60,35 @@ data:
     credentials:
       useSecret: false
 
-    repositoryMaintenanceJob:
-      repositoryConfigData:
-        global:
-          keepLatestMaintenanceJobs: 3
-          podResources:
-            cpuRequest: "50m"
-            cpuLimit: "200m"
-            memoryRequest: "128Mi"
-            memoryLimit: "256Mi"
-
     configuration:
+      # Nesting matters: the chart reads
+      # .Values.configuration.repositoryMaintenanceJob.repositoryConfigData
+      # (templates/repo-maintenance-configmap.yaml). This block sat at the top
+      # level from #668 until 2026-08-25, one level too high, where nothing read
+      # it — so podResources was silently ignored for its entire life and every
+      # kopia-maintain pod ran with `resources: {}`. The velero-repo-maintenance
+      # ConfigMap still rendered, from the chart's OWN default of
+      # keepLatestMaintenanceJobs: 3, which is why it looked configured.
+      # That is also the whole of Kyverno's require-resources-batch backlog:
+      # 134 of 138 failures were these Jobs.
+      #
+      # memoryLimit is 512Mi, NOT the 256Mi this block used to carry and not the
+      # 200Mi in velero's own docs. Measured over 7d, peak working set is 295 MiB
+      # (mediastack-b2), with harbor/dmz/minio repos at 207-278 MiB — both of
+      # those values would OOMKill maintenance on the largest repos, and a failed
+      # kopia maintenance degrades quietly. 512Mi is ~1.7x the observed peak.
+      # No cpuLimit: measured peak is 42m, and per .claude/rules/kyverno.md a CPU
+      # limit is deliberately not required — requests plus a memory limit is the
+      # house rule, and this is the first time these values take effect at all.
+      repositoryMaintenanceJob:
+        repositoryConfigData:
+          global:
+            keepLatestMaintenanceJobs: 3
+            podResources:
+              cpuRequest: "50m"
+              memoryRequest: "256Mi"
+              memoryLimit: "512Mi"
+
       # Use kopia file-system backup for PVC data
       defaultVolumesToFsBackup: true
 
