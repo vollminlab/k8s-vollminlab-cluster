@@ -29,8 +29,8 @@ in_cooldown "" "200" "60";    assert_rc "$?" "1" "in_cooldown false when no last
 # A crashlooping radarr pod on a longhorn RWO PVC.
 kc() {
   case "$*" in
-    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}")
-      echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}")
+      echo "false" ;;
     "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}")
       echo "37 " ;;
     "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}")
@@ -46,18 +46,28 @@ kc() {
     "get rs radarr-5d9 -n mediastack -o jsonpath={.metadata.ownerReferences[?(@.kind==\"Deployment\")].name}")
       echo "radarr" ;;
     # a healthy pod (no waiting reason) on an smb PVC
-    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}")
-      echo "" ;;
+    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}")
+      echo "true" ;;
     "get pod prowlarr-y -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}")
       echo "media-share" ;;
     "get pvc media-share -n mediastack -o jsonpath={.spec.storageClassName}")
       echo "smb" ;;
+    # Regression, 2026-08-25: a crash-cycling pod sampled BETWEEN backoffs.
+    # The container is Running (no waiting reason at all) but not ready, and
+    # restartCount is already high. The old waiting-reason check returned 0
+    # here, so the healer skipped prowlarr for the entire incident.
+    "get pod sonarr-mid -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}")
+      echo "false" ;;
+    "get pod sonarr-mid -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}")
+      echo "9 " ;;
     *) echo "" ;;
   esac
 }
 
 assert_eq "$(pod_crashloop_restarts mediastack radarr-x)" "37" "crashlooping pod -> summed restarts"
 assert_eq "$(pod_crashloop_restarts mediastack prowlarr-y)" "0" "healthy pod -> 0 restarts"
+assert_eq "$(pod_crashloop_restarts mediastack sonarr-mid)" "9" "crash-cycling pod sampled mid-Running -> still counted"
+
 assert_eq "$(longhorn_rwo_volume mediastack radarr-x)" "pvc-abc123" "longhorn RWO pod -> PV name"
 assert_eq "$(longhorn_rwo_volume mediastack prowlarr-y)" "" "smb pod -> no volume"
 assert_eq "$(owner_deployment mediastack radarr-x)" "radarr" "pod -> owning Deployment"
@@ -84,7 +94,7 @@ heal_workload() { HEALED="$1/$2 vol=$3"; }
 kc() {
   case "$*" in
     "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "prowlarr-y" ;;
-    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "" ;;
+    "get pod prowlarr-y -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}") echo "true" ;;
     "get pod prowlarr-y -n mediastack -o jsonpath={.status.phase}") echo "Running" ;;
     *) echo "" ;;
   esac
@@ -101,7 +111,7 @@ kc() {
   case "$*" in
     "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "radarr-x sonarr-z" ;;
     # radarr: crashlooping over threshold, longhorn RWO
-    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}") echo "false" ;;
     "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}") echo "37 " ;;
     "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}") echo "radarr-config" ;;
     "get pvc radarr-config -n mediastack -o jsonpath={.spec.storageClassName}") echo "longhorn" ;;
@@ -126,7 +136,7 @@ NOWEPOCH=$(date -u +%s)
 kc() {
   case "$*" in
     "get pods -n mediastack -o jsonpath={.items[*].metadata.name}") echo "radarr-x" ;;
-    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}") echo "CrashLoopBackOff" ;;
+    "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}") echo "false" ;;
     "get pod radarr-x -n mediastack -o jsonpath={.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}") echo "37 " ;;
     "get pod radarr-x -n mediastack -o jsonpath={.spec.volumes[*].persistentVolumeClaim.claimName}") echo "radarr-config" ;;
     "get pvc radarr-config -n mediastack -o jsonpath={.spec.storageClassName}") echo "longhorn" ;;

@@ -40,13 +40,29 @@ in_cooldown() {
   [ "$delta" -lt "$cd" ]
 }
 
-# pod_crashloop_restarts: echo summed restartCount IF a container/init is in
-# CrashLoopBackOff, else echo 0. $1=ns $2=pod
+# pod_crashloop_restarts: echo summed restartCount IF a container/init is
+# not ready, else echo 0. $1=ns $2=pod
+#
+# Gated on readiness, NOT on `state.waiting.reason == CrashLoopBackOff`, because
+# a crash-cycling pod is only *waiting* for part of each cycle — between backoffs
+# the container is Running again. Sampling the waiting reason therefore misses the
+# pod whenever the CronJob happens to fire during that window, and the window is
+# not small: prowlarr ran ~42s per attempt against a 5m backoff.
+#
+# That is not hypothetical. On 2026-08-25 prowlarr crash-looped in mediastack from
+# 07:59:36 with an EIO stale mount, which is exactly what this healer exists for.
+# The 08:00 run saw it below the restart threshold; the 08:10 run — by which point
+# it was over the threshold — sampled it mid-Running and read the waiting reason as
+# empty, so it reported "no stuck workloads found" and the pod stayed broken until
+# a human scaled it. Readiness is false for the WHOLE cycle, so it does not race.
+#
+# Readiness also keeps the check conservative in the other direction: a pod that is
+# Ready is never touched, however many times it has restarted in the past.
 pod_crashloop_restarts() {
   ns="$1"; pod="$2"
-  reasons=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.containerStatuses[*].state.waiting.reason}{.status.initContainerStatuses[*].state.waiting.reason}')
-  case "$reasons" in
-    *CrashLoopBackOff*) ;;
+  ready=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.containerStatuses[*].ready}{.status.initContainerStatuses[*].ready}')
+  case "$ready" in
+    *false*) ;;
     *) echo 0; return 0 ;;
   esac
   restarts=$(kc get pod "$pod" -n "$ns" -o jsonpath='{.status.containerStatuses[*].restartCount} {.status.initContainerStatuses[*].restartCount}')
