@@ -224,6 +224,54 @@ spec:
             summary: "Velero monthly-b2 backup is stale"
             description: "velero-monthly-b2 last succeeded {{ $value | humanizeDuration }} ago (threshold 32d, matching the content guard's 768h override for this schedule)."
 
+    # A CronJob that stops succeeding is invisible here. Nothing watches Job
+    # exit codes, and the CronJob object itself keeps reporting normally — the
+    # only thing that changes is a timestamp that stops advancing. minio's
+    # cnpg-b2-mirror last succeeded 2026-08-23 and was found by accident two
+    # days later while reading Headlamp warnings; CNPG's offsite copy was stale
+    # that whole time with nothing said.
+    #
+    # Keyed on lastScheduleTime - lastSuccessfulTime, NOT on time() - success.
+    # A time()-based staleness threshold cannot work here, because the schedules
+    # span five orders of magnitude: */5 (pihole-watchdog) through 0 9 1 * *
+    # (kubeadm-cert-monitor, monthly) to 0 2 14 4,10 * (cert-renew, twice a
+    # year). Any threshold catching a missed daily run fires permanently on the
+    # monthly ones — kubeadm-cert-monitor reads 571h since last success while
+    # being perfectly healthy.
+    #
+    # The schedule-relative form is immune to that: it asks "has the most
+    # recent scheduled run succeeded yet", which is frequency-independent.
+    # Measured across all 16 CronJobs on 2026-08-25, the separation is total:
+    # cnpg-b2-mirror at +23.83h, and EVERY other job negative (-0.0008h to
+    # -0.12h, i.e. success completing after its schedule, as normal). The 2h
+    # threshold therefore has ~12x margin on the real failure and cannot reach
+    # any healthy job, including the monthly and twice-yearly ones.
+    #
+    # Suspended CronJobs are excluded: a deliberately paused job is not a fault.
+    - name: cronjobs
+      rules:
+        - alert: CronJobNotSucceeding
+          expr: |
+            (
+              kube_cronjob_status_last_schedule_time
+                - on(namespace, cronjob) kube_cronjob_status_last_successful_time
+            ) > 2 * 3600
+            and on(namespace, cronjob) kube_cronjob_spec_suspend == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has not succeeded since it was last scheduled"
+            description: >-
+              Its most recent scheduled run was {{ $value | humanizeDuration }} before its
+              last success, so the latest run has not completed successfully. The CronJob
+              object stays healthy-looking, so check the Jobs directly:
+              `kubectl get jobs -n {{ $labels.namespace }} | grep {{ $labels.cronjob }}`.
+              Failed Job pods are garbage-collected quickly and their logs are not reliably
+              retained in Loki, so if the pods are already gone, re-run it to capture the
+              failure live:
+              `kubectl create job -n {{ $labels.namespace }} --from=cronjob/{{ $labels.cronjob }} {{ $labels.cronjob }}-diag`.
+
     - name: node-disk
       rules:
         - alert: NodeDiskSpaceLow

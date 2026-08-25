@@ -92,3 +92,53 @@ data:
                 cold-remount before investigating: the CSI driver runs `fsck -a` on mount,
                 and that repair is what destroys data. Take a VolSync snapshot first.
                 Runbook: docs/runbooks/longhorn-ext4-corruption.md
+  velero-maintenance-alerts.yaml: |
+    groups:
+      # Velero repo maintenance that never starts.
+      #
+      # On 2026-08-25 an omitted cpuLimit in the repo-maintenance podResources
+      # made velero fail to BUILD the maintenance job. That aborts before the
+      # Job object is created, so every conventional signal stayed green:
+      # each BackupRepository still reported phase Ready, no Job existed for a
+      # Job-failure alert to key on, and the only trace anywhere in the cluster
+      # was a level=warning line in the velero server log. All 44 repositories
+      # went unmaintained for ~2.5h and nothing said so. Kopia maintenance is
+      # what reclaims space, so the eventual symptom would have been MinIO
+      # filling with no indication of why.
+      #
+      # There is no metric for this. velero exposes no gauge for maintenance
+      # success, and BackupRepository.status.lastMaintenanceTime is a CR field
+      # rather than a series. The log line is the only available signal, which
+      # is exactly the case Loki rules exist for.
+      #
+      # Scoped to namespace="velero". That is not cosmetic: Loki logs every
+      # query it serves, so an unscoped matcher on an error string matches its
+      # own query text and self-amplifies (~1200 hits/eval when this was last
+      # hit). Loki's own logs are in namespace="monitoring", so pinning the
+      # namespace keeps the rule from reading itself.
+      - name: velero-maintenance
+        rules:
+          - alert: VeleroRepoMaintenanceNotStarting
+            expr: |
+              sum(
+                count_over_time(
+                  {namespace="velero", container="velero"}
+                    |= "Starting repo maintenance failed"
+                    [15m]
+                )
+              ) > 3
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Velero cannot start repo maintenance — kopia is not reclaiming space"
+              description: >-
+                {{ $value | humanize }} maintenance-start failures in 15 minutes. The job fails
+                before creation, so BackupRepositories still read Ready and no Job exists to
+                inspect. Confirm the scope with the timestamp that stops advancing:
+                `kubectl get backuprepositories.velero.io -n velero -o custom-columns='NAME:.metadata.name,LAST:.status.lastMaintenanceTime'`
+                and read the reason with
+                `kubectl logs -n velero -l app.kubernetes.io/name=velero --tail=2000 | grep 'repo maintenance failed'`.
+                A common cause is an incomplete podResources block in the velero-repo-maintenance
+                ConfigMap — velero parses all four fields unconditionally, so omitting one
+                fails with `couldn't parse CPU limit ""`.
