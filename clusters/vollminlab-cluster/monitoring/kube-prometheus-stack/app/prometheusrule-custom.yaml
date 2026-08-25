@@ -308,6 +308,79 @@ spec:
     # available memory — the real memory-starvation thrash the alert is meant to catch
     # (which inherently drives MemAvailable down as reclaim churns). I/O-driven fault
     # storms on a node with ample free memory no longer trip it.
+    # Datastore write latency, which is what actually takes nodes down here.
+    #
+    # 2026-08-25 07:52:57: k8sworker01, 03 and 04 all flapped Ready simultaneously,
+    # bouncing ~10 stateful pods. prowlarr and sonarr came back on stale mounts and
+    # sonarr looked like SQLite corruption. Nothing alerted, before or during.
+    #
+    # It was NOT a network event: no node rebooted (all 9 at 413h uptime), no carrier
+    # changes, and it does not follow ESXi host placement — worker05 shares host-9001
+    # with worker01 and worker03 and did not flap. kubelet simply blocked on I/O past
+    # its heartbeat grace period.
+    #
+    # Keyed on write LATENCY, deliberately not on PSI io-stall, because PSI is the
+    # wrong signal here and would have failed in both directions. Measured on worker01:
+    #
+    #   window                    io-stall   write latency   flapped
+    #   backup 03:20-03:30        0.096      16 ms           no
+    #   pre-flap 07:36-07:46      0.080      384 ms          YES
+    #
+    # PSI was HIGHER during a completely harmless backup pass than during the incident,
+    # so any PSI threshold either fires nightly or misses this. Latency separated them
+    # by 24x. (The older note that PSI spikes "cause zero harm" came from exactly that
+    # backup-window observation; it does not generalise.)
+    #
+    # 50ms threshold: the flapping nodes ran 92-384 ms, a normal backup peaks ~23 ms.
+    # Over the 24h to 2026-08-25 only 1-2 five-minute windows per node exceeded 50 ms,
+    # so `for: 10m` needs two consecutive windows and lands on the real event.
+    #
+    # Control planes are excluded from the tighter numbers by physics, not by filter:
+    # they sit on the dedicated NVMe zvol from the etcd latency fix and measure
+    # 0.16-0.32 ms. That contrast is the argument for moving worker storage too — the
+    # same fix has already worked once on this cluster.
+    - name: node-disk-latency
+      rules:
+        - alert: NodeDiskWriteLatencyHigh
+          expr: |
+            (
+              sum by (instance) (rate(node_disk_write_time_seconds_total{device!~"loop.*|dm-.*"}[5m]))
+              /
+              clamp_min(sum by (instance) (rate(node_disk_writes_completed_total{device!~"loop.*|dm-.*"}[5m])), 0.001)
+            ) * 1000 > 50
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} disk write latency {{ $value | humanize }}ms"
+            description: >-
+              Sustained write latency above 50ms. The backing store is iSCSI-attached from
+              TrueNAS over 10GbE with jumbo frames, and peak observed throughput (~74 MB/s)
+              is nowhere near that link, so this is array-side saturation rather than a
+              network limit. Left unchecked this stalls kubelet past its heartbeat grace
+              period and takes the node NotReady, which detaches volumes and leaves stale
+              mounts behind — see StaleMountErrorsPersisting. Check which datastore the node
+              sits on (vmstore1/vmstore2) and what else is writing to it.
+
+        - alert: NodeDiskWriteLatencyCritical
+          expr: |
+            (
+              sum by (instance) (rate(node_disk_write_time_seconds_total{device!~"loop.*|dm-.*"}[5m]))
+              /
+              clamp_min(sum by (instance) (rate(node_disk_writes_completed_total{device!~"loop.*|dm-.*"}[5m])), 0.001)
+            ) * 1000 > 200
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.instance }} disk write latency {{ $value | humanize }}ms — node flap likely"
+            description: >-
+              At this latency kubelet is at real risk of missing its node-status heartbeat.
+              On 2026-08-25 worker01 reached 384ms and three nodes went NotReady within
+              minutes, bouncing ~10 stateful pods. Reduce write load on the datastore now
+              (velero kopia maintenance, Longhorn rebuilds, VolSync) or expect pod eviction
+              and stale mounts.
+
     - name: node-memory
       rules:
         - alert: NodeMemoryMajorPagesFaults
