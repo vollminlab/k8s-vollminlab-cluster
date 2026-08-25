@@ -77,15 +77,25 @@ data:
       # (mediastack-b2), with harbor/dmz/minio repos at 207-278 MiB — both of
       # those values would OOMKill maintenance on the largest repos, and a failed
       # kopia maintenance degrades quietly. 512Mi is ~1.7x the observed peak.
-      # No cpuLimit: measured peak is 42m, and per .claude/rules/kyverno.md a CPU
-      # limit is deliberately not required — requests plus a memory limit is the
-      # house rule, and this is the first time these values take effect at all.
+      # cpuLimit MUST be set, even though .claude/rules/kyverno.md says a CPU limit
+      # is deliberately not required. That rule is about what Kyverno enforces on
+      # our own workloads; velero's parser is stricter than Kubernetes. Once
+      # podResources exists at all, ParseResourceRequirements
+      # (pkg/util/kube/resource_requirements.go) reads all four fields
+      # unconditionally, so an omitted one arrives as "" and fails:
+      #   couldn't parse CPU limit "": quantities must match the regular expression
+      # That is not a per-job failure — it aborts the maintenance job BEFORE
+      # creation, so every repo silently stops being maintained while the
+      # BackupRepository stays Ready. Dropping this line on 2026-08-25 stopped
+      # maintenance on all 44 repos for ~1.5h with no alert. 200m is ~4.8x the
+      # measured 42m peak, so it is headroom rather than throttling.
       repositoryMaintenanceJob:
         repositoryConfigData:
           global:
             keepLatestMaintenanceJobs: 3
             podResources:
               cpuRequest: "50m"
+              cpuLimit: "200m"
               memoryRequest: "256Mi"
               memoryLimit: "512Mi"
 
