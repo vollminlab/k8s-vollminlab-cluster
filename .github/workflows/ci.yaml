@@ -280,6 +280,14 @@ jobs:
       # error reached the merge path unless integration-test happened to catch it later.
       - name: Validate HelmRelease values against chart schemas
         if: env.LINT_FILES != ''
+        env:
+          # Three in-house charts live in the private Harbor project
+          # (longhorn-rebalancing-controller, shlink-ingress-controller, vollmint).
+          # `helm pull` on those needs auth; the github-actions robot already has
+          # project-level pull (terraform/harbor/robots.tf) and these are the same
+          # secrets build-b2-exporter.yaml uses to push.
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           set -euo pipefail
           ./scripts/ci-ensure-pyyaml.sh
@@ -298,6 +306,22 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
           fi
           helm version --short
+
+          # Without this, check-helm-values.py hard-fails with a 401 on any PR that
+          # touches one of the three in-house charts' values:
+          #   helm pull failed for oci://harbor.vollminlab.com/vollminlab/charts/...
+          #   response status code 401: unauthorized
+          # It went unnoticed because the check is scoped to changed files, so it only
+          # fires when someone edits those specific app dirs — and it passes locally for
+          # anyone who has run `helm registry login`, which is how it reached #1239.
+          if [[ -n "${HARBOR_USERNAME:-}" && -n "${HARBOR_PASSWORD:-}" ]]; then
+            printf '%s' "$HARBOR_PASSWORD" | helm registry login harbor.vollminlab.com \
+              --username "$HARBOR_USERNAME" --password-stdin
+            echo "🔑 Authenticated to Harbor for in-house chart pulls"
+          else
+            # Fail loudly rather than letting the 401 masquerade as a values error.
+            echo "::warning::HARBOR_USERNAME/HARBOR_PASSWORD not set — in-house charts cannot be pulled"
+          fi
 
           echo "$CHANGED_HR" | xargs ./scripts/check-helm-values.py
 
