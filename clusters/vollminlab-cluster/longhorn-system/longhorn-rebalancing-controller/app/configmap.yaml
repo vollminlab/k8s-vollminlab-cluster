@@ -28,6 +28,30 @@ data:
         # 77GiB MinIO replica rebuild collapsed under the contention on
         # 2026-07-20 (~02:30), degrading the volume right before daily-full.
         maintenanceWindow: "13:00-19:00"
+        # Halved from the chart default of 4 — see the steadyState note below.
+        maxEvictionsPerDay: 2
+      steadyState:
+        # Raised from the chart default 1.5. Every move is a full replica
+        # rebuild, and on this cluster that I/O lands on pool_1: a 2-way mirror
+        # of consumer Gigastone SSDs at 64% fragmentation, which already runs
+        # 42-216 ms write latency and took three nodes NotReady on 2026-08-25.
+        #
+        # Measured spread on 2026-08-26: scheduled GiB 105 (w06) to 183 (w02),
+        # i.e. a ratio of 1.74 — permanently above the 1.5 default, so the
+        # steady-state path had standing licence to move something. 2.0 leaves
+        # the current spread alone and still reacts if it widens materially.
+        #
+        # Capacity is 54-74% across every node. That is not a problem worth
+        # paying a rebuild for on this storage.
+        imbalanceRatio: 2.0
+        # Chart default is 5. Combined with rebalance.maxEvictionsPerDay that
+        # allowed up to 9 rebuilds a day, at any hour — the steady-state path
+        # does not honour maintenanceWindow (upstream #20), so those landed in
+        # the backup window and at 00:00.
+        maxEvictionsPerDay: 2
+        # Chart default is 10 minutes. An hour between moves lets the array
+        # drain before the next rebuild starts.
+        cooldownMinutes: 60
       move:
         # After a volume is moved, keep it off the victim list for this long so
         # a single convergence run can't shuffle the same volume repeatedly
