@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: longhorn-attachment-ticket-reaper
+  namespace: longhorn-system
+  labels:
+    app: longhorn-attachment-ticket-reaper
+    env: production
+    category: storage
+spec:
+  # Half-hourly is ample: a leaked ticket does no harm until the volume next
+  # needs to detach, and the damage it enables (a stale engine rebuild flag)
+  # takes a rebuild to trigger.
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Two passes RECHECK_SECONDS apart plus API time; 300s is generous.
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 3600
+      # Same reasoning as longhorn-mount-healer: the script never self-fails, so
+      # a Failed job is external pod death (usually a descheduler eviction).
+      # Reaping is idempotent, so retrying is safe.
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: longhorn-attachment-ticket-reaper
+            env: production
+            category: storage
+        spec:
+          serviceAccountName: longhorn-attachment-ticket-reaper
+          restartPolicy: Never
+          containers:
+            - name: reaper
+              image: docker.io/alpine/kubectl:1.33.4
+              command: ["/bin/sh", "/scripts/reap.sh"]
+              env:
+                - name: LONGHORN_NAMESPACE
+                  value: "longhorn-system"
+                # snapshot-controller creates the ticket BEFORE the
+                # VolumeSnapshotContent exists. A single pass would race an
+                # in-flight snapshot and cancel it, so a ticket must look
+                # orphaned in two passes this far apart to be reaped.
+                - name: RECHECK_SECONDS
+                  value: "60"
+                - name: DRY_RUN
+                  value: "false"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+          volumes:
+            - name: script
+              configMap:
+                name: longhorn-attachment-ticket-reaper-script

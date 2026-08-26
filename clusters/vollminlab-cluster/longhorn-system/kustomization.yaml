@@ -5,6 +5,7 @@ metadata:
 resources:
   - namespace.yaml
   - ./longhorn/app
+  - ./longhorn-attachment-ticket-reaper/app
   - ./longhorn-rebalancing-controller/app
   - ./longhorn-snapshot-retention/app
   - ./longhorn-trim/app
