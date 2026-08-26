@@ -40,7 +40,16 @@ live_volumes() {
     -o jsonpath='{range .items[*]}{.spec.source.volumeHandle}{"\n"}{end}' 2>/dev/null || true
 }
 
-# orphan_candidates > file : lines of "<volume> <ticketID>"
+# orphan_candidates > file : lines of "<volume> <ticketID>".
+# Also writes the number of VolumeAttachments actually examined to $WORK.count.
+#
+# That count is the whole point of this function's logging contract. "no orphaned
+# tickets found" is ambiguous on its own: it reads identically whether the query
+# returned 48 attachments with nothing to do, or returned NOTHING because RBAC
+# was wrong and every result was swallowed by `|| true`. velero-pvb-healer has
+# the same distinction documented ("no stalled PodVolumeBackups" vs "no
+# PodVolumeBackups found") for exactly this reason. Callers MUST report the count
+# so a silently-inert reaper is distinguishable from a correctly-idle one.
 orphan_candidates() {
   out="$1"
   live_volumes | sort -u > "$WORK".live
@@ -48,6 +57,10 @@ orphan_candidates() {
   kc get volumeattachments.longhorn.io -n "$NS" \
     -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .spec.attachmentTickets.*}{.id}{","}{end}{"\n"}{end}' \
     2>/dev/null > "$WORK".att || true
+  # `grep -c .` counts NON-BLANK lines, so a query that emits only a newline is
+  # still counted as zero. `|| true` (not `|| echo 0`) because grep already
+  # PRINTS 0 before exiting 1 — the echo would append a second 0.
+  grep -c . "$WORK".att > "$WORK".count 2>/dev/null || true
   while IFS=' ' read -r vol tickets; do
     [ -n "$vol" ] || continue
     # skip any volume that still has a snapshot object
@@ -104,12 +117,24 @@ main() {
   log "longhorn-attachment-ticket-reaper start (ns=$NS recheck=${RECHECK_SECONDS}s dry_run=$DRY_RUN)"
 
   orphan_candidates "$WORK".first
-  if [ ! -s "$WORK".first ]; then
-    log "no orphaned snapshot-controller tickets found"
+  scanned=$(cat "$WORK".count 2>/dev/null || true); scanned=${scanned:-0}
+  live=$(grep -c . "$WORK".live 2>/dev/null || true); live=${live:-0}
+
+  # An empty attachment list is NOT the same as nothing to do. Longhorn always
+  # has VolumeAttachments while any volume is attached, so zero means the query
+  # failed — almost certainly RBAC — and every later check would be vacuous.
+  if [ "$scanned" -eq 0 ]; then
+    log "ERROR: examined 0 VolumeAttachments in $NS — query returned nothing, check RBAC"
     log "longhorn-attachment-ticket-reaper done"
     return 0
   fi
-  log "candidates on first pass: $(wc -l < "$WORK".first)"
+
+  if [ ! -s "$WORK".first ]; then
+    log "examined $scanned VolumeAttachments ($live with a live VolumeSnapshotContent) — no orphaned snapshot-controller tickets"
+    log "longhorn-attachment-ticket-reaper done"
+    return 0
+  fi
+  log "examined $scanned VolumeAttachments ($live with a live VolumeSnapshotContent); candidates on first pass: $(wc -l < "$WORK".first)"
 
   # Two passes, RECHECK_SECONDS apart. snapshot-controller creates the ticket
   # BEFORE the VolumeSnapshotContent exists, so a single pass would race an

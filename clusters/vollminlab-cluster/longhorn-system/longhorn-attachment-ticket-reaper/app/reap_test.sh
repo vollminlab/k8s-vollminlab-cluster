@@ -54,6 +54,16 @@ kubectl() {
 orphan_candidates "$WORK".t3
 assert_eq "$(cat "$WORK".t3)" "" "no candidates when all volumes have live snapshots"
 
+# --- case 3b: the scanned count is recorded, so an idle run is distinguishable
+# from an inert one (the whole reason this log line exists)
+assert_eq "$(cat "$WORK".count)" "3" "records how many VolumeAttachments were examined"
+
+# --- case 3c: a query returning nothing (e.g. RBAC denied) must count 0, so
+# main() can report it as an error instead of "nothing to do"
+kubectl() { echo ""; }
+orphan_candidates "$WORK".t3c
+assert_eq "$(cat "$WORK".count)" "0" "empty attachment query counts 0, not silently idle"
+
 # --- case 4: DRY_RUN never patches
 patched=no
 kubectl() { case "$*" in *patch*) patched=yes ;; esac; echo ""; }
