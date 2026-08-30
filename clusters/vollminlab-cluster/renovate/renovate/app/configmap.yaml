@@ -27,13 +27,27 @@ data:
       seccompProfile:
         type: RuntimeDefault
 
+    # Memory was 512Mi/1536Mi from the original deploy, when renovate managed one
+    # repository. #1148 (2026-08-20) added four more without revisiting it. Peak
+    # working set stepped from ~0.85Gi to ~1.4Gi on the very next run and has sat
+    # pinned at the 1536Mi ceiling since 08-26, OOMKilling every pod.
+    #
+    # 3Gi is deliberately generous, not measured: the true peak is unknowable while
+    # the cgroup clips it, so 1.5Gi is a floor on demand rather than the requirement.
+    # Re-measure after a clean run and trim:
+    #   max_over_time(container_memory_working_set_bytes{namespace="renovate"}[7d])
+    #
+    # The request moves too. 512Mi against a ~1.4Gi working set understated this pod
+    # to the scheduler by ~1Gi, which is how it kept landing on k8sworker04 at 89%
+    # requested memory. It is a ~15-minute daily job, so the larger reservation costs
+    # nothing outside the run.
     resources:
       requests:
         cpu: 200m
-        memory: 512Mi
+        memory: 1Gi
       limits:
         cpu: 2000m
-        memory: 1536Mi
+        memory: 3Gi
 
     envFrom:
       - secretRef:
