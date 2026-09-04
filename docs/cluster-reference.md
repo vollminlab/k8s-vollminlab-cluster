@@ -519,6 +519,43 @@ zero volumes while still exiting 0.
 | `longhorn-trim` | `filesystem-trim` | `filesystem-trim` | `0 6 * * *` | concurrency 2 |
 | `longhorn-snapshot-retention` | `snapshot-retention` | `snapshot-delete` | `0 12 * * *` | retain 3, concurrency 2 |
 
+### longhorn-attachment-ticket-reaper
+
+CronJob in `longhorn-system`, `*/30 * * * *`. Removes leaked
+`snapshot-controller-*` entries from Longhorn `VolumeAttachment.spec.attachmentTickets`.
+
+| Parameter | Value |
+|---|---|
+| Image | `docker.io/alpine/kubectl:1.33.4` |
+| `LONGHORN_NAMESPACE` | `longhorn-system` |
+| `RECHECK_SECONDS` | `60` |
+| `DRY_RUN` | `false` |
+| Resources | 10m / 32Mi request, 64Mi limit |
+
+Longhorn does not release a snapshot-controller attachment ticket when the
+VolumeSnapshot and VolumeSnapshotContent behind it are deleted. Each leaked ticket pins
+the volume `attached`, so its engine process can never stop — and the engine is where
+Longhorn's "is rebuilding" flag lives. Once that flag goes stale every later rebuild on
+the volume deadlocks, and the cure (restarting the engine) needs a full detach that the
+leaked ticket prevents. Scaling the workload to 0 does **not** help: that releases the
+`csi-attacher` ticket while the snapshot ones remain.
+
+Measured 2026-08-26: `mediastack/pvc-filebrowser-config` held **six** leaked tickets with an
+engine running since 2026-05-17, and deadlocked four times in four days. Four more volumes
+were affected — `storage-loki-0`, `pvc-readarr-config`, `pvc-audiobookshelf-metadata`, and
+`pvc-radarr-config` whose engine dated from **2025-05-31**. Cluster-wide there were zero
+VolumeSnapshots and zero VolumeSnapshotContents at the time.
+
+Only `snapshot-controller-*` tickets are removed, and only from volumes with no
+VolumeSnapshotContent referencing them. `csi-attacher` is never touched, so a volume in use
+stays attached — verified across all four volumes with zero workload restarts. Two passes
+`RECHECK_SECONDS` apart are required before reaping, because snapshot-controller creates the
+ticket *before* the VolumeSnapshotContent exists and a single pass would cancel an in-flight
+snapshot.
+
+Tests: `sh reap_test.sh` (pure-shell stubs, no cluster needed). Must pass under `dash` and
+`busybox ash`. Not wired into CI, same as `longhorn-mount-healer`.
+
 ### longhorn-mount-healer
 
 | Parameter | Value |

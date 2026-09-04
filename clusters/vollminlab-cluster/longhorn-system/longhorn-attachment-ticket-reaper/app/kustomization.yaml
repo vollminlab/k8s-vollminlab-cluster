@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: longhorn-attachment-ticket-reaper
+resources:
+  - rbac.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: longhorn-attachment-ticket-reaper-script
+    files:
+      - reap.sh
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: longhorn-attachment-ticket-reaper
+    env: production
+    category: storage

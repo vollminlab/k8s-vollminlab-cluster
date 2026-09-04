@@ -54,9 +54,15 @@ data:
           #   EBADMSG / system error -74 — checksum mismatch on a metadata block
           #
           # `Input/output error` (EIO) is deliberately NOT in the set. On this cluster EIO
-          # is the signature of a stale Longhorn mount after a node event — common, benign
-          # once the pod restarts, and covered by the longhorn-mount-healer. Including it
-          # would bury the real signal in noise, and a noisy alert gets muted.
+          # is the signature of a stale Longhorn mount, not of ext4 metadata damage, and
+          # mixing the two would bury this rule's signal in noise.
+          #
+          # This used to say EIO was "benign once the pod restarts, and covered by the
+          # longhorn-mount-healer". 2026-08-25 disproved the second half: three nodes went
+          # NotReady on an I/O stall, prowlarr came back on a stale mount and crash-looped,
+          # and the healer skipped it for 20+ minutes (#1236). EIO now has its own rule —
+          # StaleMountErrorsPersisting, below — gated so it only fires once the healer has
+          # demonstrably failed to clear it.
           #
           # `pod!~"loki-.*"` is not optional — without it this rule alerts on itself
           # forever. Loki logs the text of every query it serves, once per split/shard, so
@@ -92,3 +98,119 @@ data:
                 cold-remount before investigating: the CSI driver runs `fsck -a` on mount,
                 and that repair is what destroys data. Take a VolSync snapshot first.
                 Runbook: docs/runbooks/longhorn-ext4-corruption.md
+  velero-maintenance-alerts.yaml: |
+    groups:
+      # Velero repo maintenance that never starts.
+      #
+      # On 2026-08-25 an omitted cpuLimit in the repo-maintenance podResources
+      # made velero fail to BUILD the maintenance job. That aborts before the
+      # Job object is created, so every conventional signal stayed green:
+      # each BackupRepository still reported phase Ready, no Job existed for a
+      # Job-failure alert to key on, and the only trace anywhere in the cluster
+      # was a level=warning line in the velero server log. All 44 repositories
+      # went unmaintained for ~2.5h and nothing said so. Kopia maintenance is
+      # what reclaims space, so the eventual symptom would have been MinIO
+      # filling with no indication of why.
+      #
+      # There is no metric for this. velero exposes no gauge for maintenance
+      # success, and BackupRepository.status.lastMaintenanceTime is a CR field
+      # rather than a series. The log line is the only available signal, which
+      # is exactly the case Loki rules exist for.
+      #
+      # Scoped to namespace="velero". That is not cosmetic: Loki logs every
+      # query it serves, so an unscoped matcher on an error string matches its
+      # own query text and self-amplifies (~1200 hits/eval when this was last
+      # hit). Loki's own logs are in namespace="monitoring", so pinning the
+      # namespace keeps the rule from reading itself.
+      - name: velero-maintenance
+        rules:
+          - alert: VeleroRepoMaintenanceNotStarting
+            expr: |
+              sum(
+                count_over_time(
+                  {namespace="velero", container="velero"}
+                    |= "Starting repo maintenance failed"
+                    [15m]
+                )
+              ) > 3
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Velero cannot start repo maintenance — kopia is not reclaiming space"
+              description: >-
+                {{ $value | humanize }} maintenance-start failures in 15 minutes. The job fails
+                before creation, so BackupRepositories still read Ready and no Job exists to
+                inspect. Confirm the scope with the timestamp that stops advancing:
+                `kubectl get backuprepositories.velero.io -n velero -o custom-columns='NAME:.metadata.name,LAST:.status.lastMaintenanceTime'`
+                and read the reason with
+                `kubectl logs -n velero -l app.kubernetes.io/name=velero --tail=2000 | grep 'repo maintenance failed'`.
+                A common cause is an incomplete podResources block in the velero-repo-maintenance
+                ConfigMap — velero parses all four fields unconditionally, so omitting one
+                fails with `couldn't parse CPU limit ""`.
+  stale-mount-alerts.yaml: |
+    groups:
+      # A stale Longhorn mount that auto-remediation did not clear.
+      #
+      # After a node flaps, a pod can come back holding a mount handle that no longer
+      # resolves. Longhorn reports the volume `attached` and `healthy` with every
+      # replica up, because the replicas ARE fine — the damage is to the pod's view of
+      # them, and nothing in Longhorn's own health model can see that.
+      #
+      # It presents in two very different shapes, and this rule has to catch both:
+      #   prowlarr, 2026-08-25 — `Input/output error : /config/config.xml`, CrashLoopBackOff.
+      #   sonarr, same event    — both containers Ready, 0 restarts, HTTP 500s, and SQLite
+      #     reporting `database disk image is malformed`. The database was NOT corrupt:
+      #     mounting the PVC separately gave `integrity_check ok`, 0 foreign-key
+      #     violations, 88 Series / 7067 Episodes. The bytes were fine; the handle wasn't.
+      #
+      # The second shape is why this rule exists. longhorn-mount-healer keys on
+      # crash-cycling, so a Ready pod with 0 restarts is invisible to it by construction,
+      # and a `malformed` message is otherwise indistinguishable from real corruption —
+      # which very nearly cost a VolSync restore and ~6h of sonarr state.
+      #
+      # Gating: the healer runs every 10 minutes. `> 3 occurrences in 15m` sustained for
+      # `15m` means roughly half an hour of continuous errors, so at least two healer
+      # cycles have already had their chance. A transient EIO that gets cleared stops
+      # logging and never reaches the threshold — which is what kept EIO out of the
+      # corruption rule in the first place.
+      #
+      # The `pod!~` exclusions are not optional, and BOTH are needed:
+      #   loki-*     — logs the text of every query it serves, once per split/shard, so an
+      #                unscoped matcher on an error string matches its own regex on the
+      #                next evaluation (~1200 self-matches per eval, measured).
+      #   promtail-* — is the collector. It re-emits the content it ships, so an error
+      #                logged by any workload reappears in promtail's own stream. Replaying
+      #                this rule over the 2026-08-25 incident window without this exclusion
+      #                matched 7 promtail pods (peak 4-7 each) alongside the 2 real ones.
+      #                Same self-reference trap, one layer further out.
+      #
+      # longhorn-system/longhorn-csi-plugin is deliberately NOT excluded — it reports EIO
+      # it genuinely encountered, which is corroborating signal rather than an echo.
+      - name: stale-mount
+        rules:
+          - alert: StaleMountErrorsPersisting
+            expr: |
+              sum by (namespace, pod) (
+                count_over_time(
+                  {job=~".+", pod!~"loki-.*|promtail-.*"}
+                    |~ `(?i)(input/output error|database disk image is malformed)`
+                    [15m]
+                )
+              ) > 3
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Stale Longhorn mount not clearing for {{ $labels.namespace }}/{{ $labels.pod }}"
+              description: >-
+                {{ $value | humanize }} I/O errors in 15 minutes, still going after 15 more —
+                longhorn-mount-healer has had at least two cycles and has not fixed it.
+                Longhorn will report the volume attached and healthy; that is expected and
+                does not mean the data is bad. Fix is a full detach, which a container
+                restart does NOT achieve:
+                `kubectl scale deploy -n {{ $labels.namespace }} <deploy> --replicas=0`,
+                wait for the volume to report `detached`, then scale back to 1.
+                If the message is SQLite `malformed`, VERIFY before restoring anything —
+                mount the PVC in a throwaway pod and run `pragma integrity_check` on the
+                real file. On 2026-08-25 that check came back clean and no restore was needed.

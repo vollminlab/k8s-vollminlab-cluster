@@ -27,7 +27,14 @@ spec:
       # the steady state is one day of base backups plus that day's WAL.
       activeDeadlineSeconds: 5400
       # backoffLimit 0 would make a single transient B2 error a failed day.
-      backoffLimit: 1
+      # Raised 1 -> 3 on 2026-08-25. One retry was not enough: a failed run
+      # leaves the day's WAL unmirrored, so the next run has MORE to copy and
+      # is MORE likely to hit another transient error — the backlog and the
+      # failure probability feed each other. Observed 2026-08-23 -> 08-25:
+      # last success 08-23, and by 08-25 a run was moving 1.08 GiB and dying
+      # partway. Each attempt is incremental and keeps what it copied, so extra
+      # attempts strictly converge.
+      backoffLimit: 3
       template:
         metadata:
           labels:
@@ -108,7 +115,17 @@ spec:
                   # (authentik) / 14d (the rest) retention has expired them, so
                   # the offsite copy reaches further back than the local one.
                   # Bound it with a B2 lifecycle rule, not with --remove.
-                  $MC mirror src/cnpg-backups b2/vollminlab-k8s-cnpg
+                  # --retry retries the individual objects that errored.
+                  # Without it a single transient B2 fault fails the whole run:
+                  #   Failed to copy ... Put "https://s3.us-west-000...":
+                  #   net/http: HTTP/1.x transport connection broken:
+                  #   http: ContentLength=802670 with Body length 0
+                  # mc continues past a failed object but still exits non-zero,
+                  # and `set -e` above turns that into a failed day. Note this
+                  # is NOT --skip-errors: that would exit 0 with objects
+                  # missing, which is the silent-success failure this script
+                  # exists to avoid.
+                  $MC mirror --retry src/cnpg-backups b2/vollminlab-k8s-cnpg
 
                   # Content guard. A mirror that copies nothing into an empty
                   # destination still exits 0.
