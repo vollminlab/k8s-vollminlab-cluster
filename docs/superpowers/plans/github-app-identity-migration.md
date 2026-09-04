@@ -67,10 +67,23 @@ on push to main), pulling credentials at runtime via `1password/load-secrets-act
 **not** a tofu-controller module, so the `approvePlan: auto` auto-apply hazard and
 `scripts/check-tofu-provider-approval.py` do **not** apply to it. Changing its auth is a normal PR.
 
-**The ESO generator is `v1alpha1`.** `githubaccesstokens.generators.external-secrets.io` is present
-in ESO v2.9.0 and its required spec is `appID`, `installID`, `auth.privateKey.secretRef`, with
-optional `permissions` and `repositories`. It is the least stable API surface in ESO — pin it and
-re-verify on any ESO major bump.
+**The ESO generator is `v1alpha1`.** `githubaccesstokens.generators.external-secrets.io` required
+spec is `appID`, `installID`, `auth.privateKey.secretRef`, with optional `permissions`,
+`repositories` and `url`. **Re-verified byte-identical on ESO v2.10.0** (upgraded 2026-09-04), so
+this plan is accurate against what is running. It is still the least stable API surface in ESO —
+re-run `kubectl explain githubaccesstoken.spec` after any future ESO bump rather than trusting this
+paragraph.
+
+**`permissions` and `repositories` default to EVERYTHING when omitted** — "all permissions the
+GitHub App has" and "all repositories the GitHub App is installed to", per the CRD's own field
+descriptions. Least privilege is therefore *not* the default: both must be written explicitly, or
+the generated token is as broad as the App itself. That scoping is the whole advantage over a PAT,
+and it is opt-in.
+
+**ESO CRDs are chart templates, not a `crds/` directory.** They carry
+`app.kubernetes.io/managed-by: Helm` plus the release annotations, so Helm upgrades them normally.
+The HelmRelease leaves `upgrade.crds` unset (Flux default `Skip`), which looks alarming but governs
+only the chart's `crds/` directory and does not apply here. Verified 2026-09-04 — do not "fix" it.
 
 **All three PATs expire inside a three-week window in April 2027.** Whatever is left on PATs after
 this migration must be staggered, or one quiet week next spring takes out everything at once.
