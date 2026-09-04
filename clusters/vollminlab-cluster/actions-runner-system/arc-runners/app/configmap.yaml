@@ -42,7 +42,7 @@ data:
                   topologyKey: kubernetes.io/hostname
         containers:
           - name: runner
-            image: ghcr.io/actions/actions-runner:2.336.0
+            image: ghcr.io/actions/actions-runner:2.337.0
             # Wait for the dind sidecar before registering with GitHub.
             #
             # dockerd needs ~19s to bind :2375 (measured 2026-08-17: container
