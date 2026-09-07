@@ -23,6 +23,9 @@ four minor versions:
 | v1.12.0 | 3 | 0 | 3 |
 | **v1.12.1 (default)** | 2 | 1 | **3** |
 
+*(Post-Stage-1, 2026-09-07: v1.11.2 detached 13 → 0, v1.12.1 detached 1 → 14. The attached
+counts are unchanged and are what Stages 2-3 address.)*
+
 ### Why it costs CPU
 
 `guaranteed-instance-manager-cpu` is `{"v1":"12","v2":"31"}` — a **percentage of node CPU**, not
@@ -71,15 +74,24 @@ cause, but it is a common factor and worth holding in mind.
 
 ---
 
-## Stage 1 — the 13 detached volumes (no downtime, do first)
+## Stage 1 — the 13 detached volumes (no downtime, do first) — **DONE 2026-09-07 21:38Z**
 
 Zero risk and it proves the mechanism before anything attached is touched.
 
-- [ ] List them: `kubectl get volumes.longhorn.io -n longhorn-system -o json | jq -r '.items[] | select(.status.state!="attached") | "\(.metadata.name) \(.status.currentImage)"'`
-- [ ] Upgrade each by patching the volume's desired image:
+**Result: 13/13 upgraded to v1.12.1 in seconds, zero disruption.** All 13 turned out to be VolSync
+restic *cache* PVCs, which is the safest possible first slice — non-primary data, detached, and
+run at 00:00-02:20 so there was a clear window. Every one stayed `detached` and moved
+`currentImage` immediately. After: 0 degraded volumes, 0 stuck replicas, 0 firing alerts.
+
+Note this did **not** change the old instance-manager instance count (16, unchanged) — as
+expected, since a detached volume has no running instance to move. The 480m/node only returns once
+the *attached* volumes migrate in Stages 2-3.
+
+- [x] List them: `kubectl get volumes.longhorn.io -n longhorn-system -o json | jq -r '.items[] | select(.status.state!="attached") | "\(.metadata.name) \(.status.currentImage)"'`
+- [x] Upgrade each by patching the volume's desired image:
       `kubectl patch volumes.longhorn.io -n longhorn-system <vol> --type=merge -p '{"spec":{"image":"docker.io/longhornio/longhorn-engine:v1.12.1"}}'`
-- [ ] Verify each reports `status.currentImage` = v1.12.1
-- [ ] Confirm no volume changed `state` or `robustness`
+- [x] Verify each reports `status.currentImage` = v1.12.1
+- [x] Confirm no volume changed `state` or `robustness`
 
 ## Stage 2 — the 22 attached v1.11.x volumes (live upgrade, supported path)
 
