@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: harbor-registry
   trigger:
-    schedule: "0 2 * * *"
+    schedule: "0 2 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-harbor-registry-restic

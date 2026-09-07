@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-sonarr-config
   trigger:
-    schedule: "50 1 * * *"
+    schedule: "0 1 2-30/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-sonarr-config-restic
