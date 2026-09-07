@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-audiobookshelf-metadata
   trigger:
-    schedule: "10 0 * * *"
+    schedule: "0 1 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-audiobookshelf-metadata-restic

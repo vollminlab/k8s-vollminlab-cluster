@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-bazarr-config
   trigger:
-    schedule: "20 0 * * *"
+    schedule: "20 0 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-bazarr-config-restic

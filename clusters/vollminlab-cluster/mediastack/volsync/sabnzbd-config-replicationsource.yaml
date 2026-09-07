@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-sabnzbd-config
   trigger:
-    schedule: "30 1 * * *"
+    schedule: "40 0 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-sabnzbd-config-restic

@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-readarr-config
   trigger:
-    schedule: "20 1 * * *"
+    schedule: "40 1 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-readarr-config-restic
