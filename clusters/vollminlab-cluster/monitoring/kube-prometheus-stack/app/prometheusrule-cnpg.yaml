@@ -89,11 +89,18 @@ spec:
         # A backup did complete once, but not recently. Guarded on > 0 so it cannot
         # double-fire with CNPGNoRecoverabilityPoint above (a 0 timestamp would
         # otherwise read as ~56 years stale).
+        # ORDER MATTERS. PromQL's `and` yields the value of its LEFT operand, and
+        # that is what $value renders. With the `> 0` guard on the left this
+        # reported the raw epoch timestamp (~1.78e9 s), so humanizeDuration printed
+        # "20700d 1h 30m" for a backup 27h old -- the alert read as "never backed
+        # up" every time it fired (shlink 09-05, authentik 09-07). The age
+        # expression must be the left operand; the guard still applies, it just no
+        # longer supplies the value.
         - alert: CNPGBackupStale
           expr: |
-            (max by (job, namespace) (cnpg_collector_last_available_backup_timestamp) > 0)
-            and
             (time() - max by (job, namespace) (cnpg_collector_last_available_backup_timestamp) > 26 * 3600)
+            and
+            (max by (job, namespace) (cnpg_collector_last_available_backup_timestamp) > 0)
           for: 1h
           labels:
             severity: critical
