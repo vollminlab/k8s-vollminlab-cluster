@@ -79,24 +79,87 @@ tgtadm --lld iscsi --op delete --mode target --tid N                 # "still ac
 Harmless to attempt — all 12 volumes on the node stayed `attached/healthy` — but it does not clear
 the leak.
 
-## Permanent clear: restart the instance-manager
+## Permanent clear: no node drain required
 
-A new instance-manager starts with empty tgt state. This is **proven**, not assumed: across all 7
-affected instance-managers every leaked target postdates its pod's `creationTimestamp`, so no leak
-has ever survived a restart.
+**Executed 2026-09-12: 17 leaks -> 3, zero outages.** Total disruption was ~24 s on one CNPG
+*replica*, one bazarr restart and two alertmanager pod restarts.
 
-A restart kills every engine and replica process on that node, so **drain the node first** and it
-costs nothing beyond the drain:
+### Why it is cheap
+
+There are two instance-manager generations. New instances always go to the **current** generation,
+so the **old** IMs slowly empty out. On 2026-09-12 the old IMs held **14 of the 17 leaks** but
+hosted only **4 engines and 5 replicas between them**. You are moving a handful of processes, not
+draining nodes.
+
+**Longhorn deletes an old IM by itself once it is empty**, taking its leaked targets with it.
+Observed twice during this run — the w03 and w02 old IMs vanished before the delete command ran.
+
+### Procedure
+
+**Restart the WORKLOAD first, then deal with the IM.** A workload restart detaches and reattaches
+the volume, which both moves the engine into a current-generation IM and gives it a fresh engine
+process.
 
 ```bash
-kubectl cordon <node>
-kubectl drain <node> --ignore-daemonsets --delete-emptydir-data   # volumes move off
-kubectl delete pod -n longhorn-system <instance-manager-on-that-node>
-kubectl uncordon <node>
+# 1. list the old-generation IMs and what pins each one alive
+for IM in $(kubectl get pods -n longhorn-system --no-headers | grep instance-manager | awk '{print $1}'); do
+  kubectl get pod -n longhorn-system $IM \
+    -o jsonpath='{.metadata.creationTimestamp}{"  "}{.spec.nodeName}{"  "}{.metadata.name}{"\n"}'
+done | sort            # older timestamps = old generation
+
+# 2. for each, find its running engines (= workloads) and replicas (= rebuilds)
+#    then restart those workloads ONE AT A TIME, confirming attached/healthy after each
+
+# 3. an old IM left holding only replicas: delete the pod directly
+kubectl delete pod -n longhorn-system <old-instance-manager>
 ```
 
-**Do this as part of routine node maintenance.** The ansible playbooks already cordon and drain with
-a Longhorn gate; adding the instance-manager delete means leaks can never accumulate across cycles.
+**Before restarting a workload, confirm its own volume has no leaked target anywhere** — otherwise
+the restart lands in the failure mode at the top of this page. All four candidates were clean.
+
+### Trap: deleting an IM that hosts a REPLICA can deadlock the rebuild
+
+Deleting the w01 old IM killed alertmanager-0's replica process. The rebuild then **hung**:
+`rebuildStatus: {}`, only 2 RW against `numberOfReplicas: 3`, volume `degraded`, and the
+`FailedStartingSnapshotPurge` counter **resumed advancing** (8105 -> 8114) after having been frozen.
+
+That is the stale is-rebuilding flag in the engine process (see the rebalancer/surge-move runbook
+material). Note what it was **not**: the replica count was a correct 3, so there was **no orphan
+replica to delete** — the usual fix did not apply.
+
+**The fix is an engine restart: delete the workload pod.** The rebuild then ran
+`0 -> 34% -> RW=3, attached/healthy` in about two minutes.
+
+So when an old IM holds a replica, prefer restarting that volume's workload *before* deleting the
+IM — and if a rebuild hangs afterwards, restart the workload rather than hunting for an orphan.
+
+**Do not try to predict this from engine age.** The Engine CR's `creationTimestamp` is **not** the
+process age: bazarr's CR reads 2025-10-05 while its process had been restarted minutes earlier.
+The only thing the CR tells you is which instance-manager the process currently lives in.
+
+### Deleting many CRs fragments etcd
+
+Unrelated to tgt, but it came up in the same session: bulk-deleting custom resources leaves
+free-but-unreclaimed space and fires `etcdDatabaseHighFragmentationRatio`. `kube-system/etcd-defrag`
+normally runs at 22:00; by hand it takes ~26 s.
+
+```bash
+kubectl create job -n kube-system --from=cronjob/etcd-defrag etcd-defrag-manual-$(date +%s)
+```
+
+### What is left after the old IMs are gone
+
+Leaks on **current-generation** IMs cannot be cleared this way, because those IMs host live load.
+Measured 2026-09-12 for the 3 remaining:
+
+| node | workloads that would lose their disk | replicas that would rebuild |
+| --- | --- | --- |
+| w04 | 12 | 15 |
+| w06 | **0** | 8 |
+| w02 | 3 | 24 |
+
+**They clear for free on the next Longhorn chart upgrade**, which recreates every instance-manager —
+exactly what the 2026-08-17 upgrade did. Only do one early if it has no engines (w06 above).
 
 ## Find them before they cause an outage
 
