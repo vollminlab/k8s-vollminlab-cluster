@@ -11,6 +11,32 @@ data:
   values.yaml: |
     excludeNamespaces: "actions-runner-system,arc-controller"
 
+    # Chart default is
+    #   pod,replicaset,replicationcontroller,statefulset,daemonset,cronjob,job
+    # `job` is dropped. Velero's kopia maintenance creates a kopia-maintain Job
+    # per BackupRepository and they accumulate: measured 2026-09-11 there were
+    # 160 Jobs cluster-wide, 138 of them in velero, 134 kopia-maintain. Each is a
+    # separate scan target needing its own VulnerabilityReport, and with
+    # scanJobsConcurrentLimit=1 at ~35 s per scan that is 78 minutes of scanning
+    # for the velero Jobs alone — while velero keeps adding more. Only 67 of the
+    # 134 had a report, i.e. the queue never drains.
+    #
+    # That backlog is what produced 59 MB/s of writes on k8sworker04 (83% of ALL
+    # cluster disk writes) for 26 h: each scan unpacks the vulnerability DB and
+    # image layers into the scan pod's emptyDir on the node root disk.
+    #
+    # Coverage cost is one image. Job-scoped reports covered just 2 distinct
+    # images, and only `kyverno/kyverno-cli:v1.19.0` was unreachable any other
+    # way — from `kyverno-migrate-resources`, a bare one-off Job that completed
+    # on 2026-08-21 and runs nowhere. A Job otherwise shares its owner's image,
+    # and the owning CronJob is still scanned.
+    #
+    # `pod` is deliberately KEPT: 9 images are reachable only as Pods, including
+    # kube-apiserver, etcd, kube-scheduler and kube-controller-manager (static
+    # pods have no controller), the CNPG postgres images and the Longhorn
+    # instance-managers. Dropping `pod` would blind us to the control plane.
+    targetWorkloads: "pod,replicaset,replicationcontroller,statefulset,daemonset,cronjob"
+
     operator:
       sbomReport:
         enabled: false
