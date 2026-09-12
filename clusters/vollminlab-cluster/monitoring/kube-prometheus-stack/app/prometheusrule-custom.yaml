@@ -465,6 +465,61 @@ spec:
               it is a stale Longhorn mount follow the scale-0 -> wait-detached -> scale-up
               runbook.
 
+        # A pod-name-keyed alert CANNOT fire when pods churn faster than its `for:`.
+        # On 2026-09-12 prowlarr was down 3h34m and NOTHING alerted. PodNotReady and
+        # KubePodNotReady both matched — ~200 times — and every instance died in
+        # `pending`, because Longhorn's `auto-delete-pod-when-volume-detached-
+        # unexpectedly: true` recreated the pod roughly every 40 s while a stale
+        # iSCSI target blocked the attach. No single `pod` series ever survived the
+        # 15-minute window, so neither alert ever reached `firing`.
+        #
+        # This rule keys on the WORKLOAD, whose series is stable across pod
+        # recreation. Measured against that same outage,
+        # kube_deployment_status_replicas_unavailable held 1 continuously from
+        # 07:02 to 10:17 — it would have fired at 07:17 instead of never.
+        #
+        # It is also deliberately cause-agnostic: it catches a stuck rollout from a
+        # failed volume attach, an unschedulable pod, an image pull failure or a
+        # crash loop, without needing a rule per mechanism.
+        #
+        # NOTE: kube-state-metrics restarts split this into several identically
+        # labelled series (visible in the data above). Each block still spans hours,
+        # so `for: 15m` is safe — but do not use max_over_time() to reason about it,
+        # which reads only one block and reported 0 for an outage that lasted 3h.
+        - alert: WorkloadReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_unavailable{namespace!~"trivy-system|velero"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has {{ $value | printf \"%.0f\" }} replica(s) unavailable for 15m+"
+            description: >-
+              The Deployment cannot get a pod into a ready state. Unlike PodNotReady this
+              survives pod churn, so it is the alert that fires when pods are being
+              recreated in a loop. Check `kubectl describe pod` for the newest pod: a
+              repeating FailedAttachVolume with "failed to delete target ... still active"
+              means a leaked Longhorn iSCSI target on that node — cordon the node and let
+              the pod start elsewhere, then see
+              docs/runbooks/longhorn-stale-tgt-targets.md.
+
+        - alert: StatefulSetReplicasUnavailable
+          expr: |
+            (
+              kube_statefulset_status_replicas_ready{namespace!~"trivy-system|velero"}
+                < kube_statefulset_replicas{namespace!~"trivy-system|velero"}
+            )
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} has fewer ready replicas than desired for 15m+"
+            description: >-
+              Same failure class as WorkloadReplicasUnavailable, for StatefulSets — which
+              is where the CNPG databases, Loki, Prometheus and Alertmanager live. A
+              StatefulSet pod stuck attaching its volume churns the same way and is
+              invisible to any pod-name-keyed rule.
+
         - alert: PodNotReady
           expr: |
             (
