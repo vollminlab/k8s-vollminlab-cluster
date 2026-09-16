@@ -39,5 +39,4 @@ spec:
               # ~0-100Mi' note above was wrong: headless Chromium stays resident.
               memory: 448Mi
             limits:
-              cpu: 1000m
               memory: 1Gi

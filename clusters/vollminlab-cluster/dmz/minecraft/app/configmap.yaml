@@ -76,6 +76,20 @@ data:
       viewDistance: 8
       maxPlayers: 20
       difficulty: normal
+      # gameMode and levelType are pinned here because they were being supplied
+      # by the CHART's defaults, not by us. minecraft chart 5.2.0 changes both
+      # from concrete values to the literal "default" (gameMode: survival ->
+      # default, levelType: DEFAULT -> default), which makes the itzg image skip
+      # setting MODE and LEVEL_TYPE entirely and fall back to whatever
+      # server.properties already holds.
+      #
+      # The live server reads MODE=survival and LEVEL_TYPE=DEFAULT today, both
+      # inherited from chart 5.1.3. Declaring them keeps the env identical
+      # across that bump instead of depending on a chart default that has now
+      # moved twice. No behaviour change on 5.1.3 -- these are the values the
+      # chart is already emitting.
+      gameMode: survival
+      levelType: DEFAULT
       serviceType: NodePort
       nodePort: 32565
       externalTrafficPolicy: Local
