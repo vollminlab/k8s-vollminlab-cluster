@@ -19,7 +19,17 @@ data:
           memory: 64Mi
         limits:
           cpu: 200m
-          memory: 128Mi
+          # 128Mi -> 256Mi. Measured 2026-09-09: 7d p95 90Mi, 7d peak 125Mi
+          # against a 128Mi ceiling -- 98% -- and the container had OOMKilled
+          # (exit 137) 36 times over its 102-day life, most recently during the
+          # 07:30 vmbackup I/O spike. While it is dead no LoadBalancer service
+          # can be allocated an address, which is silent until something needs one.
+          #
+          # The speakers deliberately keep 128Mi: their 7d peak is 52Mi (41% of
+          # limit), so their restarts are not memory. Those cluster on 08-08,
+          # 08-25 and 09-01 -- node flaps and rollouts -- and raising the limit
+          # would only hide that.
+          memory: 256Mi
     frr-k8s:
       prometheus:
         serviceMonitor:
