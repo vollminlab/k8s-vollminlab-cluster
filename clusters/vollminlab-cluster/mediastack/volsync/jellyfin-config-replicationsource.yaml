@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-jellyfin-config
   trigger:
-    schedule: "40 0 * * *"
+    schedule: "20 2 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-jellyfin-config-restic

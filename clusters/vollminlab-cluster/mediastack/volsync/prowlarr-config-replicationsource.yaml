@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-prowlarr-config
   trigger:
-    schedule: "50 0 * * *"
+    schedule: "20 1 1-31/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-prowlarr-config-restic

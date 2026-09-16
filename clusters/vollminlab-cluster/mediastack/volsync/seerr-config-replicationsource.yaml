@@ -6,7 +6,7 @@ metadata:
 spec:
   sourcePVC: pvc-seerr-config
   trigger:
-    schedule: "40 1 * * *"
+    schedule: "20 0 2-30/2 * *"
   restic:
     pruneIntervalDays: 7
     repository: volsync-seerr-config-restic
