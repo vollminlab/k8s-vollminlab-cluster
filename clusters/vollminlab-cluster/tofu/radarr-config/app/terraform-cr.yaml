@@ -10,10 +10,7 @@ metadata:
     category: core
 spec:
   interval: 10m
-  # TEMPORARY -- held on manual to review #1233 devopsarr/radarr 2.4.x -> 2.5.0.
-  # Under `auto` the bump PR applies within the 10m interval with no plan read.
-  # Restored to `auto` by the follow-up PR; see docs/runbooks/tofu-provider-bumps.md.
-  approvePlan: ""
+  approvePlan: auto
   path: ./terraform/radarr
   sourceRef:
     kind: GitRepository
