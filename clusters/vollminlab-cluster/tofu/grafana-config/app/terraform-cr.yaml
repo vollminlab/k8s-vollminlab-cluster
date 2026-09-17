@@ -22,10 +22,7 @@ spec:
   # So a Renovate provider PR arrives blocked by design. To land one, flip this to ""
   # temporarily and follow docs/runbooks/tofu-provider-bumps.md -- including why the
   # approval cannot be delivered through git.
-  # TEMPORARY -- held on manual to review #1242 grafana 4.45.x -> 4.46.0.
-  # Under `auto` the bump PR applies within the 10m interval with no plan read.
-  # Restored to `auto` by the follow-up PR; see docs/runbooks/tofu-provider-bumps.md.
-  approvePlan: ""
+  approvePlan: auto
   path: ./terraform/grafana
   sourceRef:
     kind: GitRepository
