@@ -533,6 +533,36 @@ spec:
             summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
             description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for more than 15 minutes."
 
+    # The stale-space expression is factored into a recording rule because the alert
+    # below wraps it in min_over_time(...[24h]). Evaluating the join 288 times per
+    # alert evaluation as a subquery would be far more expensive than recording it
+    # once every 5m and taking min_over_time over the stored series.
+    - name: longhorn.recording.rules
+      interval: 5m
+      rules:
+        # Bytes Longhorn has allocated beyond what the filesystems on top of it
+        # actually use, summed cluster-wide.
+        #
+        # kubelet reports one series per node for RWX volumes (pvc-completed-downloads
+        # is mounted on several), so the right-hand side MUST be aggregated with
+        # `max by` — an unaggregated join fails with "many-to-many matching not allowed"
+        # rather than returning a wrong number.
+        - record: longhorn:stale_space_bytes:sum
+          expr: |
+            sum(
+              longhorn_volume_actual_size_bytes
+              - on (pvc_namespace, pvc) group_left()
+                max by (pvc_namespace, pvc) (
+                  label_replace(
+                    label_replace(
+                      kubelet_volume_stats_used_bytes,
+                      "pvc_namespace", "$1", "namespace", "(.+)"
+                    ),
+                    "pvc", "$1", "persistentvolumeclaim", "(.+)"
+                  )
+                )
+            )
+
     - name: longhorn
       rules:
         - alert: LonghornVolumeDegraded
@@ -615,42 +645,51 @@ spec:
         # outcome instead of the mechanism, so it catches any future failure of the
         # reclaim path regardless of cause.
         #
-        # kubelet reports one series per node for RWX volumes (pvc-completed-downloads
-        # is mounted on several), so the right-hand side MUST be aggregated with
-        # `max by` — an unaggregated join fails with "many-to-many matching not allowed"
-        # rather than returning a wrong number.
+        # Why min_over_time, and not the instantaneous value: stale space is a SAWTOOTH,
+        # not a level. Measured hourly over 2026-08-25..09-15, it drops ~24GB at the
+        # 06:00 trim and climbs ~1.2GB/h for the rest of the day, dominated by the two
+        # TSDBs (victoria-metrics 14GB, prometheus 13GB) constantly rewriting blocks:
         #
-        # Threshold: measured floor after a working trim is ~26GB, which is space held
-        # by the deliberately retained snapshots of snapshot-retention (retain: 3), not
-        # waste. It was 67GB with trim broken. 60GB sits above the floor and below the
-        # broken state; revisit if snapshot retention changes.
+        #     09-15 06:00  63.6GB   <- just before trim
+        #     09-15 06:30  39.7GB   <- trim reclaimed 24GB
+        #     09-15 12:00  48.2GB   <- snapshot-retention purge: no visible effect
+        #     09-16 04:00  69.2GB   <- normal overnight drift
+        #
+        # The old rule compared the instantaneous value to 60GB, which sits INSIDE that
+        # daily band, so it fired on 7 of 22 days purely from normal churn and always
+        # self-resolved at the next trim. Worse, the band has grown into the broken
+        # state: the comment here used to cite 67GB as the trim-broken level, and the
+        # healthy peak now reaches 69GB. An instantaneous threshold can no longer tell
+        # the two apart at all.
+        #
+        # min_over_time(...[24h]) is the post-trim FLOOR, which is the quantity that
+        # actually means something. Normal daily churn is invisible to it. If trim
+        # breaks, the floor stops dropping and climbs ~25GB/day, crossing this threshold
+        # within a day. If real usage grows, the floor rises too — also worth knowing.
+        #
+        # Threshold: measured floor over that window ranged 30.3-49.7GB. 60GB leaves
+        # ~20% headroom above the worst observed floor. Note the alert is only
+        # meaningful once the recording rule above has 24h of history.
+        #
+        # NOT the fix: lowering snapshot-retention's `retain: 3`. The 12:00 purge moves
+        # this curve by ~0.1GB — retained snapshots are not what is holding the space.
         - alert: LonghornStaleSpaceHigh
           expr: |
-            sum(
-              longhorn_volume_actual_size_bytes
-              - on (pvc_namespace, pvc) group_left()
-                max by (pvc_namespace, pvc) (
-                  label_replace(
-                    label_replace(
-                      kubelet_volume_stats_used_bytes,
-                      "pvc_namespace", "$1", "namespace", "(.+)"
-                    ),
-                    "pvc", "$1", "persistentvolumeclaim", "(.+)"
-                  )
-                )
-            ) > 60e9
-          for: 6h
+            min_over_time(longhorn:stale_space_bytes:sum[24h]) > 60e9
+          for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "Longhorn is holding {{ $value | humanize1024 }}B more than its filesystems use"
+            summary: "Longhorn's post-trim floor is {{ $value | humanize1024 }}B, above the ~50GB expected"
             description: >-
-              Longhorn allocated size exceeds live filesystem usage cluster-wide by
-              {{ $value | humanize1024 }}B, above the ~26GB expected from retained
-              snapshots. The daily filesystem-trim RecurringJob is probably running but
-              reclaiming nothing — check that it logs per-volume "Running recurring
-              filesystem trim" lines, not just a successful exit:
+              The lowest cluster-wide Longhorn stale space in the last 24h was
+              {{ $value | humanize1024 }}B. This is the level the daily 06:00
+              filesystem-trim RecurringJob leaves behind, so a value this high means
+              trim is running but reclaiming little or nothing — check that it logs
+              per-volume "Running recurring filesystem trim" lines, not just a
+              successful exit:
               `kubectl logs -n longhorn-system -l job-name=<latest filesystem-trim job>`.
+              A rising floor with a healthy trim instead means real usage growth.
 
     - name: minio
       rules:
