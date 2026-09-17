@@ -45,6 +45,10 @@ data:
         cpu: 50m
         memory: 256Mi
       limits:
+        # Explicit null, not omission. This chart merges values with
+        # common.resources = {limits: {cpu: 4000m, memory: 8Gi}}, so simply
+        # dropping the key inherits 4000m rather than removing the limit.
+        cpu: null
         memory: 768Mi
     podLabels:
       app: radarr
