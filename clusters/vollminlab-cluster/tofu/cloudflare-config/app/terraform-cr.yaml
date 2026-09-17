@@ -10,7 +10,10 @@ metadata:
     category: core
 spec:
   interval: 10m
-  approvePlan: auto
+  # TEMPORARY -- held on manual to review #1232 cloudflare 5.24.x -> 5.25.0.
+  # Under `auto` the bump PR applies within the 10m interval with no plan read.
+  # Restored to `auto` by the follow-up PR; see docs/runbooks/tofu-provider-bumps.md.
+  approvePlan: ""
   path: ./terraform/cloudflare
   sourceRef:
     kind: GitRepository
