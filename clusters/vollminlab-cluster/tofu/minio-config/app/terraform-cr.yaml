@@ -10,7 +10,12 @@ metadata:
     category: core
 spec:
   interval: 10m
-  approvePlan: auto
+  # TEMPORARY -- held on manual to review the aminueza/minio provider bump in
+  # #1246 (v3.42.x -> v3.43.0). Under `auto` that PR would apply an unreviewed
+  # plan within the 10m interval, which is what scripts/check-tofu-provider-approval.py
+  # blocks. Reverted to `auto` immediately after the plan is approved; see
+  # docs/runbooks/tofu-provider-bumps.md.
+  approvePlan: ""
   path: ./terraform/minio
   sourceRef:
     kind: GitRepository
