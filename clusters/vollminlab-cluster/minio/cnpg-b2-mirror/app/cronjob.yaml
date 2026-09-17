@@ -52,7 +52,13 @@ spec:
               type: RuntimeDefault
           containers:
             - name: mirror
-              image: docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+              # MinIO deleted the minio/mc repository from Docker Hub -- the whole
+              # repo 404s, not just this tag, so the pull fails `not found` and the
+              # CronJob has failed every night since 2026-09-16. The identical tag is
+              # still published on quay.io, which Kyverno's restrict-image-registries
+              # already allows. A pinned tag protects against a surprise change; it
+              # does not protect against the tag being withdrawn.
+              image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
