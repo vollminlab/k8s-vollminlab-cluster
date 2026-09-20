@@ -1108,11 +1108,17 @@ All use the MinIO barman object store via the scoped `cnpg-svc` user, plus WAL a
 
 | Cluster | Namespace | Instances | Storage | Scheduled backup (UTC) |
 |---|---|---|---|---|
-| `authentik-db` | `authentik` | 1 | 10Gi | see Authentik |
+| `authentik-db` | `authentik` | 2 | 10Gi | see Authentik |
 | `harbor-db` | `harbor` | 2 | 10Gi | `0 15 1 * * *` |
-| `shlink-db` | `shlink` | 1 | 5Gi | `0 30 1 * * *` |
-| `jellystat-db` | `mediastack` | 1 | 5Gi | `0 0 3 * * *` |
+| `shlink-db` | `shlink` | 2 | 5Gi | `0 30 1 * * *` |
+| `jellystat-db` | `mediastack` | 2 | 5Gi | `0 0 3 * * *` |
 | `vollmint-db` | `vollmint` | 2 | 5Gi | see Applications |
+
+All five run 2 instances. The three that were at 1 were raised on 2026-09-20: with a single
+instance there is no replica to promote, so a node reboot is a full outage for that database —
+k8sworker04's reboot took authentik down for ~6 minutes while the pod rescheduled and its Longhorn
+volume detached and reattached, while `harbor-db` and `vollmint-db` stayed serving on `READY=1`
+through the same event.
 
 **All five are single-sited in MinIO** — there is no offsite copy of any database. Tracked as an
 open issue.
