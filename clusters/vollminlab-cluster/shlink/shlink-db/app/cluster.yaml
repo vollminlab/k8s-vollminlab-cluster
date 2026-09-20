@@ -8,7 +8,12 @@ metadata:
     env: production
     category: apps
 spec:
-  instances: 1
+  # 2 instances so a node reboot promotes the replica instead of taking the
+  # database down. At 1 there is nothing to promote: k8sworker04's reboot on
+  # 2026-09-20 took authentik down for ~6 minutes while the pod rescheduled and
+  # its Longhorn volume detached and reattached, whereas harbor-db and
+  # vollmint-db (both 2) stayed serving on READY=1 through the same event.
+  instances: 2
   # Sized from 14d measured usage (p95 117Mi, peak 286Mi, cpu p95 10m).
   # Without this block the instance pods are BestEffort -- the first QoS class the
   # kubelet evicts under node memory pressure, and the highest oom_score_adj for the
