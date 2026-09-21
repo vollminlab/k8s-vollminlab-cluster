@@ -39,6 +39,36 @@ data:
         action:
           type: skip
 
+      # CNPG databases — backed up by barman, and the FSB copy is torn.
+      #
+      # Every CNPG cluster runs a scheduledBackup to s3://cnpg-backups/<cluster>
+      # in MinIO, mirrored offsite to B2 by the cnpg-b2-mirror CronJob. That path
+      # takes a real base backup plus WAL archiving. Velero FSB, by contrast,
+      # walks pgdata while postgres is writing it, so what it captures is
+      # crash-inconsistent — the same objection already recorded for
+      # victoria-metrics-lt, where vmbackup asks for a snapshot first.
+      #
+      # It was not a small amount of duplicate work: measured 2026-09-20, 593
+      # PodVolumeBackups across the five clusters (harbor 190, vollmint 118,
+      # authentik 97, mediastack 94, shlink 94), each written into BOTH the MinIO
+      # 96h tier and the B2 2160h tier. #1291 took the three single-instance
+      # clusters to 2, which would have made it 8 torn copies a night.
+      #
+      # Selector verified before being relied on, per the rule that a policy
+      # matching nothing still reports success: all 10 CNPG PVCs carry
+      # app.kubernetes.io/managed-by=cloudnative-pg, and no non-CNPG PVC in the
+      # cluster carries it. The label is on the PVC, not only the pod, which is
+      # what pvcLabels matches. cnpg.io/cluster would also identify them but its
+      # value differs per cluster, and pvcLabels is an exact match.
+      #
+      # There are no separate WAL PVCs on this cluster — walStorage is unset, so
+      # WAL lives inside pgdata and needs no second entry here.
+      - conditions:
+          pvcLabels:
+            app.kubernetes.io/managed-by: cloudnative-pg
+        action:
+          type: skip
+
       # NAS shares — backed up by TrueNAS itself, not by Velero.
       - conditions:
           storageClass:
@@ -73,8 +103,11 @@ data:
       # (pkg/util/podvolume/pod_volume.go GetVolumesByPod, v1.18.1), so listing
       # them here would be dead configuration.
       #
-      # PVC-backed volumes are deliberately NOT skipped — pgdata, registry-data,
-      # config, metadata, media and datadir hold real state.
+      # PVC-backed volumes are deliberately NOT skipped — registry-data, config,
+      # metadata, media and datadir hold real state. `pgdata` was listed here
+      # too until 2026-09-20; it is now skipped by the CNPG rule above, because
+      # holding real state is the reason it needs a *consistent* backup, and FSB
+      # cannot produce one for a running database. barman does.
       #
       # `backupdir` was listed here as PVC-backed. It is not: it is an emptyDir on
       # the minecraft Deployment, so this rule skips it. That is correct, and it
