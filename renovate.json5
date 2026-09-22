@@ -193,6 +193,19 @@
       "description": "Paper: report drift on the dashboard, require approval before any PR",
       "matchDatasources": ["custom.papermc"],
       "dependencyDashboardApproval": true
+    },
+    {
+      // GitHub Actions bumps are the one class where CI is *direct* proof rather than
+      // circumstantial: the workflow that validates the PR is itself the thing that
+      // runs the new action version. If checkout@v7 were broken, the run that would
+      // have to go green in order to automerge is the run that uses it.
+      //
+      // Measured 2026-09-17: 8 of 8 such PRs across the org were single-line `uses:`
+      // changes and all 8 passed. They were merged by hand, which is the waste this
+      // removes -- 38 dependency PRs arrived org-wide in the 7 days to 2026-09-21.
+      "matchManagers": ["github-actions"],
+      "automerge": true,
+      "automergeType": "pr"
     }
   ]
 }
