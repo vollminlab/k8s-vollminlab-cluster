@@ -12,6 +12,12 @@ data:
     kind: CronJob
     schedule: "*/30 * * * *"
 
+    # WITHOUT THIS THE ALERT NEVER CLEARS -- see the note in the pihole-watchdog
+    # CronJob. A failed Job object keeps kube_job_failed=1 indefinitely, pinning
+    # KubeJobFailed on even after every later run succeeds. Supported by the chart
+    # as a top-level value (templates/cronjob.yaml references .Values.ttlSecondsAfterFinished).
+    ttlSecondsAfterFinished: 3600
+
     podLabels:
       app: descheduler
       env: production
