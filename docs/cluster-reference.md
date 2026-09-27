@@ -1425,9 +1425,22 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Backup | None required — regenerate with `build.py`; no mutable server state |
 
 A fantasy-hockey auction valuation board for the 10-team "The Cold War" ESPN league. Projections are
-blended from three sources (ESPN `leaguedefaults` API, Scott Cullen's public sheet, and Daily
-Faceoff via the 5v5hockey embed), scored under the league's own weights, converted to VORP against
-post-keeper replacement level, and priced against the teams' remaining budgets.
+blended per-stat from four sources — ESPN's `leaguedefaults` API (379 players), Scott Cullen's public
+sheet (380), Daily Faceoff via the 5v5hockey embed (654), and Hashtag Hockey (787) — scored under the
+league's own weights, converted to VORP against post-keeper replacement level, and priced against the
+teams' remaining budgets. 801 players blended, 321 corroborated by all four sources; each player
+carries a `coverage` count so thin single-source reads are visible.
+
+Hashtag Hockey needs a `__VIEWSTATE` form POST rather than a GET, and has two silent traps: the
+default `DDRANK=AVG` returns per-game rates rather than season totals, and 66 of its goalie rows
+carry a long display name permuted against the row's own stats (the mobile short name is the correct
+one). The adapter repairs those against the already-blended pool and drops what it cannot resolve
+rather than misattributing a projection.
+
+**The ConfigMap can only be applied server-side.** At ~345 KB it exceeds the 256 KB cap on
+`kubectl.kubernetes.io/last-applied-configuration`, so a client-side `kubectl apply` fails while
+Flux's server-side apply succeeds. This is consistent with `.claude/rules/flux.md`, which forbids
+manual apply under `clusters/` anyway.
 
 All auction math runs **client-side**, so entering sale prices re-prices the remaining pool with no
 round trip and the page keeps working if the cluster is unreachable. Draft state lives in
