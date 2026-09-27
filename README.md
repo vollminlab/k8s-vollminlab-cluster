@@ -106,6 +106,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   dmz/                                  # Internet-exposed workloads (Minecraft, masters-league)
   external-dns/                         # Automated DNS record management (Pi-hole)
   external-secrets/                     # External Secrets Operator
+  fantasy/                              # Fantasy hockey auction valuation board
   foundry/                              # Foundry VTT virtual tabletop
   goldilocks/                           # Resource request/limit recommendations
   harbor/                               # Container registry + Docker Hub proxy cache
