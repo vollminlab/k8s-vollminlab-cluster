@@ -1421,7 +1421,8 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Image | `nginxinc/nginx-unprivileged:1.30.5-alpine` |
 | Container port | 8080 (nginx-unprivileged runs as uid 101 and cannot bind 80) |
 | Ingress | `thecoldwar.vollminlab.com` (shlink slug `thecoldwar`) |
-| Auth | Authentik forward-auth (domain-wide provider, `provider_id=None`) |
+| Auth | Authentik forward-auth (domain-wide provider, `provider_id=None`), restricted to the `Auction Board Users` group — **not** open to every authenticated user |
+| External | Shared `nginx` Cloudflare tunnel; needs `local=/thecoldwar.vollminlab.com/` on pihole1 or LAN clients leak a Cloudflare AAAA and egress through the tunnel |
 | Content | `index.html` + `data.json` shipped via kustomize `configMapGenerator` |
 | Backup | None required — regenerate with `build.py`; no mutable server state |
 
