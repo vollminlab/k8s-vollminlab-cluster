@@ -89,3 +89,12 @@ Guide for adding a new Helm-based application to the cluster following the estab
 After creating files, remind the user to:
 - Open a PR (direct push to main is blocked)
 - Watch `flux get helmreleases -n [namespace]` after merge to confirm reconciliation
+
+## Then finish the rollout
+
+Reconciling is not the same as being done. Run **`/post-deploy`** once the app is
+healthy — it covers the Homepage entry, external access via the Cloudflare tunnel
+(including the Pi-hole AAAA line that silently breaks LAN clients), the Authentik
+Application *and* its access binding, the Shlink slug, and the two CI-enforced
+docs. Those all live outside this app's own directory, which is why a PR can look
+complete while the service is still invisible or reachable by the wrong people.
