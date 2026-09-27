@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cold War Auction Board</title>
+<style>
+:root{
+  --bg:#0f1419; --panel:#171e26; --panel2:#1d2630; --line:#2a3542;
+  --ink:#e8eef4; --dim:#8fa3b5; --faint:#5c6f80;
+  --good:#3fbf7f; --bad:#e35d6a; --warn:#e0a33e; --accent:#4d9de0;
+  --mine:#7b5cd6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{position:sticky;top:0;z-index:20;background:var(--panel);
+  border-bottom:1px solid var(--line);padding:8px 12px}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.stat{display:flex;flex-direction:column;line-height:1.2}
+.stat b{font-size:16px}
+.stat span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+h1{font-size:14px;margin:0 14px 0 0;letter-spacing:.08em;color:var(--accent)}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
+button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  border-radius:4px;padding:4px 9px;cursor:pointer;font:inherit}
+button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);color:#08121c;border-color:var(--accent);font-weight:700}
+input,select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+  border-radius:4px;padding:4px 7px;font:inherit}
+input#q{min-width:190px}
+main{padding:10px 12px 60px}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;background:var(--panel2);text-align:right;padding:5px 7px;
+  font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);
+  cursor:pointer;white-space:nowrap;border-bottom:1px solid var(--line)}
+th.l,td.l{text-align:left}
+th:hover{color:var(--ink)}
+td{padding:4px 7px;text-align:right;border-bottom:1px solid #1b2430;white-space:nowrap}
+tr.gone{opacity:.32}
+tr:hover td{background:#19222c}
+tr.need{box-shadow:inset 3px 0 0 var(--mine)}
+.pos{display:inline-block;width:17px;text-align:center;border-radius:3px;
+  font-size:10px;font-weight:700;padding:1px 0}
+.pF{background:#26405a;color:#9dd0ff}.pD{background:#2c4a36;color:#9ae8b6}
+.pG{background:#4a3a26;color:#ffd79b}
+.edge{font-weight:700}.pos-e{color:var(--good)}.neg-e{color:var(--bad)}
+.val{font-weight:700;color:#ffe9a8}
+.thin{color:var(--warn)}
+.name{color:var(--ink)}
+.kept{font-size:10px;color:var(--faint)}
+#drawer{position:fixed;inset:auto 0 0 0;background:var(--panel);
+  border-top:2px solid var(--accent);padding:10px 12px;display:none;z-index:30}
+#drawer.open{display:block}
+.mini{font-size:11px;color:var(--dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px;margin-top:6px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:5px 7px}
+.card b{display:block;font-size:14px}
+.card span{font-size:9px;color:var(--dim);text-transform:uppercase}
+.tag{font-size:9px;padding:1px 4px;border-radius:3px;background:var(--panel2);
+  border:1px solid var(--line);color:var(--dim)}
+.banner{background:#3a2a14;border:1px solid var(--warn);color:#ffd79b;
+  padding:5px 9px;border-radius:4px;font-size:11px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>COLD WAR · AUCTION BOARD</h1>
+    <div class="stat"><b id="sMoney">—</b><span>$ in room</span></div>
+    <div class="stat"><b id="sSpots">—</b><span>spots left</span></div>
+    <div class="stat"><b id="sInfl">—</b><span>inflation</span></div>
+    <div class="stat"><b id="sDpv">—</b><span>$ / vorp</span></div>
+    <div class="stat"><b id="sMine" style="color:var(--mine)">—</b><span>my $</span></div>
+    <div class="stat"><b id="sMax" style="color:var(--mine)">—</b><span>my max bid</span></div>
+    <div class="stat"><b id="sNeed" style="color:var(--mine)">—</b><span>my needs</span></div>
+  </div>
+  <div class="row" style="margin-top:7px">
+    <input id="q" placeholder="search player…" autocomplete="off">
+    <span class="pill">
+      <button data-pos="ALL" class="on">All</button>
+      <button data-pos="F">F</button><button data-pos="D">D</button><button data-pos="G">G</button>
+    </span>
+    <label class="mini"><input type="checkbox" id="hideGone" checked> hide drafted</label>
+    <label class="mini"><input type="checkbox" id="onlyNeed"> only my needs</label>
+    <label class="mini"><input type="checkbox" id="min2"> ≥2 sources</label>
+    <span class="pill mini">replacement
+      F <b id="rF">—</b> · D <b id="rD">—</b> · G <b id="rG">—</b></span>
+    <button id="undo">↶ undo</button>
+    <button id="exp">export</button>
+    <button id="imp">import</button>
+    <button id="reset">reset draft</button>
+  </div>
+</header>
+
+<main>
+  <div id="warn"></div>
+  <table>
+    <thead><tr>
+      <th class="l" data-k="name">Player</th>
+      <th class="l" data-k="pos">Pos</th>
+      <th class="l" data-k="team">Tm</th>
+      <th data-k="fp">FP</th>
+      <th data-k="vorp">VORP</th>
+      <th data-k="value">Value</th>
+      <th data-k="market_value">Mkt</th>
+      <th data-k="edge">Edge</th>
+      <th data-k="coverage">Src</th>
+      <th class="l">Status</th>
+    </tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+</main>
+
+<div id="drawer">
+  <div class="row">
+    <b id="dName" style="font-size:15px"></b>
+    <span id="dMeta" class="mini"></span>
+    <span style="flex:1"></span>
+    <label>$<input id="dPrice" type="number" min="1" step="1" style="width:70px"></label>
+    <select id="dTeam"></select>
+    <button id="dSell" class="on">Sold</button>
+    <button id="dClose">esc</button>
+  </div>
+  <div class="grid" id="dStats"></div>
+</div>
+
+<script>
+const S = {data:null, drafted:{}, hist:[], pos:'ALL', sort:'value', dir:-1, sel:null};
+const LS = 'coldwar-auction-v1';
+
+const fmt = (n,d=1)=> n==null||isNaN(n) ? '' : (+n).toFixed(d);
+const $ = s=>document.querySelector(s);
+
+// ---- scoring (mirrors scoring.py; weights come from data.json) -------------
+function fantasyPoints(p, stats){
+  const w = S.data.scoring;
+  if(p.pos==='G'){
+    let t=0; for(const k in w.goalie) t += (+stats[k]||0)*w.goalie[k];
+    return t;
+  }
+  let t=0;
+  for(const k in w.skater){ if(k==='DEF') continue; t += (+stats[k]||0)*w.skater[k]; }
+  if(p.positions.includes('D')) t += ((+stats.G||0)+(+stats.A||0))*w.skater.DEF;
+  return t;
+}
+
+// ---- valuation (mirrors valuation.py) -------------------------------------
+function recompute(){
+  const d = S.data, starters = d.starters_per_team, N = d.num_teams;
+  const isGone = p => !!S.drafted[p.key];
+
+  // remaining starter demand = league requirement - already rostered at that pos
+  const rostered = {F:0,D:0,G:0};
+  d.players.forEach(p=>{ if(isGone(p)) rostered[p.pos]++; });
+  const demand = {};
+  for(const k in starters) demand[k] = Math.max(0, starters[k]*N - rostered[k]);
+
+  // replacement = FP of the marginal starter among AVAILABLE players
+  const levels = {};
+  for(const k in demand){
+    const fps = d.players.filter(p=>p.pos===k && !isGone(p)).map(p=>p.fp).sort((a,b)=>b-a);
+    levels[k] = !fps.length ? 0 : (demand[k]<=0 ? fps[0] : fps[Math.min(demand[k],fps.length)-1]);
+  }
+
+  // Money still in the room. Keeper salaries are ALREADY inside t.keeper_total,
+  // so keeper entries must not be counted again out of S.drafted -- doing so
+  // subtracts the same $924 twice and collapses the room to $317.
+  const spend = {};
+  Object.values(S.drafted).forEach(x=>{
+    if(x.team && !x.keeper) spend[x.team]=(spend[x.team]||0)+(+x.price||0);
+  });
+  let money=0;
+  d.teams.forEach(t=>{ money += (t.budget - t.keeper_total) - (spend[t.name]||0); });
+  const spots = Math.max(0, N*d.roster_size - Object.keys(S.drafted).length);
+  const discretionary = Math.max(0, money - spots);   // $1 held per open spot
+
+  const avail = d.players.filter(p=>!isGone(p));
+  avail.forEach(p=>{ p._vorp = Math.max(0, p.fp - (levels[p.pos]||0)); });
+  const draftable = avail.slice().sort((a,b)=>b._vorp-a._vorp).slice(0,spots);
+  const vorpPool = draftable.reduce((s,p)=>s+p._vorp,0);
+  const dpv = vorpPool>0 ? discretionary/vorpPool : 0;
+  avail.forEach(p=>{ p._value = 1 + p._vorp*dpv; });
+
+  // My seat. S.drafted already contains my keepers, so roster counts come from
+  // it alone -- adding me.keepers on top would count them a second time.
+  const meName='Vollmins', me=d.teams.find(t=>t.name===meName);
+  const myBase = me.budget - me.keeper_total - (spend[meName]||0);
+  const myPos = {F:0,D:0,G:0};
+  let myTaken = 0;
+  d.players.forEach(p=>{
+    const x=S.drafted[p.key];
+    if(x && x.team===meName){ myPos[p.pos]++; myTaken++; }
+  });
+  const mySpots = Math.max(0, d.roster_size - myTaken);
+  const myNeed = {F:Math.max(0,starters.F-myPos.F), D:Math.max(0,starters.D-myPos.D),
+                  G:Math.max(0,starters.G-myPos.G)};
+
+  return {demand, levels, money, spots, discretionary, dpv, vorpPool,
+          myBase, mySpots, myNeed,
+          myMax: Math.max(0, myBase - Math.max(0,mySpots-1)),
+          baseDpv: d.diagnostics.dollars_per_vorp};
+}
+
+// ---- render ---------------------------------------------------------------
+function render(){
+  const c = recompute();
+  $('#sMoney').textContent = '$'+fmt(c.money,0);
+  $('#sSpots').textContent = c.spots;
+  $('#sDpv').textContent = fmt(c.dpv,3);
+  const mult = c.baseDpv ? c.dpv/c.baseDpv : 1;
+  const inf = $('#sInfl');
+  inf.textContent = (mult>=1?'+':'')+fmt((mult-1)*100,0)+'%';
+  inf.style.color = mult>1.02 ? 'var(--bad)' : mult<0.98 ? 'var(--good)' : 'var(--ink)';
+  $('#sMine').textContent = '$'+fmt(c.myBase,0);
+  $('#sMax').textContent = '$'+fmt(c.myMax,0);
+  $('#sNeed').textContent = `${c.myNeed.F}F ${c.myNeed.D}D ${c.myNeed.G}G`;
+  $('#rF').textContent = fmt(c.levels.F); $('#rD').textContent = fmt(c.levels.D);
+  $('#rG').textContent = fmt(c.levels.G);
+
+  const q = $('#q').value.trim().toLowerCase();
+  const hideGone=$('#hideGone').checked, onlyNeed=$('#onlyNeed').checked, min2=$('#min2').checked;
+  let rows = S.data.players.filter(p=>{
+    const gone = !!S.drafted[p.key];
+    if(hideGone && gone) return false;
+    if(S.pos!=='ALL' && p.pos!==S.pos) return false;
+    if(min2 && p.coverage<2) return false;
+    if(onlyNeed && !c.myNeed[p.pos]) return false;
+    if(q && !p.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const key = p => {
+    if(S.sort==='edge') return (p._value!=null&&p.market_value!=null)?p._value-p.market_value:-1e9;
+    if(S.sort==='value') return p._value ?? -1;
+    if(S.sort==='vorp') return p._vorp ?? -1;
+    const v = p[S.sort];
+    return typeof v==='string' ? v : (v ?? -1e9);
+  };
+  rows.sort((a,b)=>{ const x=key(a),y=key(b);
+    return (typeof x==='string' ? String(x).localeCompare(String(y)) : x-y)*S.dir; });
+
+  $('#tb').innerHTML = rows.slice(0,400).map(p=>{
+    const gone = S.drafted[p.key];
+    const edge = (p._value!=null&&p.market_value!=null) ? p._value-p.market_value : null;
+    const need = !gone && c.myNeed[p.pos]>0;
+    let status='';
+    if(p.kept_by) status = `<span class="kept">KEPT ${p.kept_by} $${fmt(p.keeper_salary,0)}</span>`;
+    else if(gone) status = `<span class="kept">${gone.team||'?'} $${fmt(gone.price,0)}</span>`;
+    else if(p.injury && p.injury!=='ACTIVE') status = `<span class="tag">${p.injury}</span>`;
+    return `<tr class="${gone?'gone':''} ${need?'need':''}" data-k="${p.key}">
+      <td class="l name">${p.name}</td>
+      <td class="l"><span class="pos p${p.pos}">${p.pos}</span></td>
+      <td class="l">${p.team}</td>
+      <td>${fmt(p.fp)}</td>
+      <td>${gone?'':fmt(p._vorp)}</td>
+      <td class="val">${gone?'':'$'+fmt(p._value)}</td>
+      <td>${p.market_value==null?'':'$'+fmt(p.market_value)}</td>
+      <td class="edge ${edge==null?'':edge>0?'pos-e':'neg-e'}">${edge==null||gone?'':(edge>0?'+':'')+fmt(edge)}</td>
+      <td class="${p.coverage<2?'thin':''}">${p.coverage}</td>
+      <td class="l">${status}</td></tr>`;
+  }).join('');
+
+  const um = S.data.keeper_match.unmatched.length;
+  $('#warn').innerHTML = um ? `<div class="banner">${um} keeper(s) unmatched — prices may be off.</div>` : '';
+  save();
+}
+
+// ---- draft actions --------------------------------------------------------
+function openDrawer(key){
+  const p = S.data.players.find(x=>x.key===key); if(!p) return;
+  S.sel = p;
+  $('#dName').textContent = p.name;
+  const c = recompute();
+  $('#dMeta').innerHTML = `${p.pos} · ${p.team} · FP ${fmt(p.fp)} · VORP ${fmt(p._vorp)}
+    · <b class="val">value $${fmt(p._value)}</b>
+    · mkt $${fmt(p.market_value)} · ${p.coverage} src (${p.sources.join(', ')})`;
+  $('#dStats').innerHTML = Object.entries(p.stats).map(([k,v])=>
+    `<div class="card"><b>${fmt(v)}</b><span>${k}</span></div>`).join('');
+  $('#dPrice').value = Math.max(1, Math.round(p._value||1));
+  $('#drawer').classList.add('open');
+  $('#dPrice').focus(); $('#dPrice').select();
+}
+function sell(){
+  const p=S.sel; if(!p) return;
+  S.hist.push(JSON.stringify(S.drafted));
+  S.drafted[p.key] = {price:+$('#dPrice').value||1, team:$('#dTeam').value};
+  $('#drawer').classList.remove('open'); S.sel=null; $('#q').value=''; render(); $('#q').focus();
+}
+function save(){ try{ localStorage.setItem(LS, JSON.stringify({drafted:S.drafted,hist:S.hist})); }catch(e){} }
+function load(){ try{ const r=JSON.parse(localStorage.getItem(LS)||'{}');
+  if(r.drafted) S.drafted=r.drafted; if(r.hist) S.hist=r.hist; }catch(e){} }
+
+// ---- wiring ---------------------------------------------------------------
+document.addEventListener('click',e=>{
+  const pos=e.target.closest('[data-pos]');
+  if(pos){ S.pos=pos.dataset.pos;
+    document.querySelectorAll('[data-pos]').forEach(b=>b.classList.toggle('on',b===pos)); render(); return; }
+  const th=e.target.closest('th[data-k]');
+  if(th){ const k=th.dataset.k; S.dir = S.sort===k ? -S.dir : -1; S.sort=k; render(); return; }
+  const tr=e.target.closest('tr[data-k]');
+  if(tr){ openDrawer(tr.dataset.k); return; }
+});
+$('#dSell').onclick=sell;
+$('#dClose').onclick=()=>{$('#drawer').classList.remove('open');S.sel=null;};
+$('#dPrice').onkeydown=e=>{ if(e.key==='Enter') sell(); };
+$('#undo').onclick=()=>{ const prev=S.hist.pop(); if(prev){ S.drafted=JSON.parse(prev); render(); } };
+$('#reset').onclick=()=>{ if(confirm('Clear all auction results? Keepers stay.')){
+  S.hist.push(JSON.stringify(S.drafted)); S.drafted={};
+  S.data.players.forEach(p=>{ if(p.kept_by) S.drafted[p.key]={price:p.keeper_salary,team:p.kept_by,keeper:true}; });
+  render(); } };
+$('#exp').onclick=()=>{
+  const b=new Blob([JSON.stringify({drafted:S.drafted},null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download='draft-state-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'')+'.json'; a.click(); };
+$('#imp').onclick=()=>{
+  const i=document.createElement('input'); i.type='file'; i.accept='.json';
+  i.onchange=()=>{ const f=i.files[0]; if(!f) return; const r=new FileReader();
+    r.onload=()=>{ try{ const j=JSON.parse(r.result); if(j.drafted){
+      S.hist.push(JSON.stringify(S.drafted)); S.drafted=j.drafted; render(); } }catch(e){alert('bad file');} };
+    r.readAsText(f); }; i.click(); };
+['#q','#hideGone','#onlyNeed','#min2'].forEach(s=>{
+  $(s).addEventListener('input',render); $(s).addEventListener('change',render); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ $('#drawer').classList.remove('open'); S.sel=null; }
+  if(e.key==='/' && document.activeElement!==$('#q')){ e.preventDefault(); $('#q').focus(); } });
+
+fetch('data.json').then(r=>r.json()).then(d=>{
+  S.data=d;
+  $('#dTeam').innerHTML = d.teams.map(t=>
+    `<option ${t.name==='Vollmins'?'selected':''}>${t.name}</option>`).join('');
+  load();
+  // keepers are pre-loaded as drafted so the pool starts correct
+  d.players.forEach(p=>{ if(p.kept_by)
+    S.drafted[p.key]={price:p.keeper_salary,team:p.kept_by,keeper:true}; });
+  render(); $('#q').focus();
+});
+</script>
+</body>
+</html>

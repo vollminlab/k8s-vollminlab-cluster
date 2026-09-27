@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: auction-board
+  namespace: fantasy
+  labels:
+    app: auction-board
+    env: production
+    category: apps
+spec:
+  # Explicit, so restrict-loadbalancer-services evaluates a present field.
+  type: ClusterIP
+  selector:
+    app: auction-board
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

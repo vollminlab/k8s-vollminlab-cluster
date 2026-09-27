@@ -1,0 +1,73 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: fantasy
+  labels:
+    app: auction-board
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# The board is static files served by nginx: it makes no outbound calls of its
+# own. DNS is still granted because nginx resolves at startup and a missing
+# resolver turns into confusing boot failures rather than a clean error.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: fantasy
+  labels:
+    app: auction-board
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow ingress-nginx to reach the board. NetworkPolicy is evaluated post-DNAT
+# at the pod, so this is the CONTAINER port: the Service is 80, but
+# nginx-unprivileged binds 8080 because it runs as uid 101 and cannot take a
+# privileged port. Using 80 here would silently allow nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-nginx
+  namespace: fantasy
+  labels:
+    app: auction-board
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: auction-board
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080

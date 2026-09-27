@@ -43,3 +43,4 @@ resources:
   - goldilocks-kustomization.yaml
   - trivy-system-kustomization.yaml
   - volsync-kustomization.yaml
+  - fantasy-kustomization.yaml
