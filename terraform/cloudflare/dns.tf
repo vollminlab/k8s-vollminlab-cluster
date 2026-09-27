@@ -175,6 +175,24 @@ resource "cloudflare_dns_record" "foundry" {
   ttl     = 1
 }
 
+# Fantasy auction board. Access control is Authentik forward-auth (the app is
+# bound to a group, so only Scott and his brother pass); the tunnel only makes
+# the Authentik login reachable from outside the VPN.
+#
+# Exposing a host through the tunnel also requires a `local=/<host>/` line in
+# pihole1's misc.dnsmasq_lines, or LAN clients resolve Cloudflare's AAAA and
+# route out through the tunnel instead of straight to the ingress VIP. That has
+# silently recurred for every tunnel host added so far; it is already applied
+# for this one.
+resource "cloudflare_dns_record" "thecoldwar" {
+  zone_id = var.cloudflare_zone_id
+  name    = "thecoldwar.vollminlab.com"
+  type    = "CNAME"
+  content = "${cloudflare_zero_trust_tunnel_cloudflared.nginx.id}.cfargotunnel.com"
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_dns_record" "jellyfin" {
   zone_id = var.cloudflare_zone_id
   name    = "jellyfin.vollminlab.com"
