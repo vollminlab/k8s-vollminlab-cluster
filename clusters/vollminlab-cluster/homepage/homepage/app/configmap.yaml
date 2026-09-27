@@ -424,6 +424,12 @@ data:
                 href: https://community.chocolatey.org
                 icon: si-chocolatey
         - Personal:
+            - Cold War Auction Board:
+                description: Fantasy hockey auction values
+                href: https://thecoldwar.vollminlab.com
+                icon: mdi-hockey-sticks
+                namespace: fantasy
+                app: auction-board
             - Yahoo Fantasy Football:
                 description: Yahoo Fantasy Football
                 href: https://football.fantasysports.yahoo.com/
