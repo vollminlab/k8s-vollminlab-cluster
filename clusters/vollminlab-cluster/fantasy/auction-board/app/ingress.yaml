@@ -13,7 +13,7 @@ metadata:
     # outpost returns 400, which nginx surfaces as a 500.
     nginx.ingress.kubernetes.io/auth-snippet: |
       proxy_set_header X-Forwarded-Host $http_host;
-    shlink.vollminlab.com/slug: auction
+    shlink.vollminlab.com/slug: thecoldwar
   labels:
     app: auction-board
     env: production
@@ -21,7 +21,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: auction.vollminlab.com
+    - host: thecoldwar.vollminlab.com
       http:
         paths:
           - path: /
@@ -33,5 +33,5 @@ spec:
                   number: 80
   tls:
     - hosts:
-        - auction.vollminlab.com
+        - thecoldwar.vollminlab.com
       secretName: wildcard-tls

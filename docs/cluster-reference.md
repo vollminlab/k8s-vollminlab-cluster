@@ -1417,9 +1417,10 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Namespace | `fantasy` |
 | Category | `apps` |
 | Components | Static SPA served by nginx; no backend, no database, no PVC |
+| Roster model | 12 F / 6 D / **3 G** required per team; the 3rd goalie is a roster minimum, not a starting slot, and it sets G replacement level |
 | Image | `nginxinc/nginx-unprivileged:1.30.5-alpine` |
 | Container port | 8080 (nginx-unprivileged runs as uid 101 and cannot bind 80) |
-| Ingress | `auction.vollminlab.com` (shlink slug `auction`) |
+| Ingress | `thecoldwar.vollminlab.com` (shlink slug `thecoldwar`) |
 | Auth | Authentik forward-auth (domain-wide provider, `provider_id=None`) |
 | Content | `index.html` + `data.json` shipped via kustomize `configMapGenerator` |
 | Backup | None required — regenerate with `build.py`; no mutable server state |
