@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: auction-board-app
+
+# Required: configMapGenerator does NOT inherit metadata.namespace from the
+# sibling manifests, so without this the generated ConfigMap lands in `default`
+# and the Deployment in `fantasy` can never mount it.
+namespace: fantasy
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+# The whole app is two static files, so they ship as a ConfigMap rather than a
+# built image: no Harbor push, no CI wait, and the hash suffix kustomize adds
+# rolls the Deployment automatically whenever the projections are regenerated.
+configMapGenerator:
+  - name: auction-board-site
+    files:
+      - site/index.html
+      - site/data.json
+    options:
+      labels:
+        app: auction-board
+        env: production
+        category: apps
