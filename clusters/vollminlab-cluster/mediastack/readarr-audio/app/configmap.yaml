@@ -84,6 +84,10 @@ data:
                 METADATA_URL: "http://rreading-glasses.mediastack.svc.cluster.local"
                 # Pre-set so tofu (readarr-audio-config) and Prowlarr can authenticate
                 # from the first boot. 1P "Readarr Audio API Key".
+                # Authentik forward-auth (bound to authentik Admins) is the login, so
+                # Readarr's own is External rather than a second password. A fresh
+                # config.xml says None, which makes Readarr 0.4 force a setup dialog.
+                READARR__AUTH__METHOD: External
                 READARR__AUTH__APIKEY:
                   secretKeyRef:
                     expandObjectName: false

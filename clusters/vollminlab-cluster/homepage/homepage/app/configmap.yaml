@@ -81,6 +81,9 @@ data:
                 icon: readarr.png
                 namespace: mediastack
                 app: readarr
+                # Both Readarr releases share the chart's app.kubernetes.io/name=readarr,
+                # so select on the release instance instead.
+                podSelector: app.kubernetes.io/instance=readarr
                 widget:
                   type: readarr
                   url: http://readarr.mediastack.svc.cluster.local:8787
@@ -91,6 +94,9 @@ data:
                 icon: readarr.png
                 namespace: mediastack
                 app: readarr-audio
+                # Both Readarr releases share the chart's app.kubernetes.io/name=readarr,
+                # so select on the release instance instead.
+                podSelector: app.kubernetes.io/instance=readarr-audio
                 widget:
                   type: readarr
                   url: http://readarr-audio.mediastack.svc.cluster.local:8787
