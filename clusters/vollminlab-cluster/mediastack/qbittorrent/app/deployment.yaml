@@ -129,14 +129,25 @@ spec:
             - -c
             - |
               while true; do
+                prefs=$(curl -s -4 http://127.0.0.1:8080/api/v2/app/preferences)
                 gluetun_port=$(curl -s -4 http://127.0.0.1:8000/v1/portforward | grep -o '"port":[0-9]*' | cut -d: -f2)
                 if [ -n "$gluetun_port" ]; then
-                  current_port=$(curl -s -4 http://127.0.0.1:8080/api/v2/app/preferences | grep -o '"listen_port":[0-9]*' | cut -d: -f2)
+                  current_port=$(echo "$prefs" | grep -o '"listen_port":[0-9]*' | cut -d: -f2)
                   if [ -n "$current_port" ] && [ "$gluetun_port" != "$current_port" ]; then
                     curl -s -4 -X POST http://127.0.0.1:8080/api/v2/app/setPreferences \
                       --data-urlencode "json={\"listen_port\":$gluetun_port}"
                     echo "listen_port: $current_port -> $gluetun_port"
                   fi
+                fi
+                # Share-ratio limit: stop seeding at ratio 1.0 (max_ratio_act 0 = Stop).
+                # This lives only in qBittorrent.conf on the config PVC, so a rebuilt
+                # config would silently revert to seeding forever. Re-assert it here.
+                if [ -n "$prefs" ] && ! { echo "$prefs" | grep -q '"max_ratio_enabled":true' \
+                    && echo "$prefs" | grep -q '"max_ratio":1[,}]' \
+                    && echo "$prefs" | grep -q '"max_ratio_act":0[,}]'; }; then
+                  curl -s -4 -X POST http://127.0.0.1:8080/api/v2/app/setPreferences \
+                    --data-urlencode 'json={"max_ratio_enabled":true,"max_ratio":1,"max_ratio_act":0}'
+                  echo "share ratio limit re-applied (1.0, stop)"
                 fi
                 sleep 30
               done
