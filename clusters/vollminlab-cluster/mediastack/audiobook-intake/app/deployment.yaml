@@ -41,7 +41,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
         - name: audiobook-intake
-          image: harbor.vollminlab.com/vollminlab/audiobook-intake:0.2.0
+          image: harbor.vollminlab.com/vollminlab/audiobook-intake:0.3.0
           env:
             - name: INCOMING_DIR
               value: /incoming
@@ -66,6 +66,17 @@ spec:
               value: "0.15"
             - name: AUDIBLE_REGION
               value: us
+            # A search match in any other language is refused and the book goes to
+            # review. 2026-10-04: an English upload was filed as the German edition,
+            # because its album tag was a substring of the German title. An ASIN in
+            # the upload's name (or tag) pins the edition and bypasses this.
+            - name: ALLOWED_LANGUAGES
+              value: english
+            # Cutoff when the upload names its ASIN. Looser than MATCH_THRESHOLD on
+            # purpose: the book is already identified, so the distance only measures
+            # how well the files' track count/lengths fit it.
+            - name: PINNED_MATCH_THRESHOLD
+              value: "0.4"
             - name: DRY_RUN
               value: "false"
             - name: ABS_URL
