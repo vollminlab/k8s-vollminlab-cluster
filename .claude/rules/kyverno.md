@@ -122,6 +122,51 @@ Every HelmRelease and pod must use one of:
 - Use `longhorn-dmz` StorageClass for persistent volumes (node-isolated)
 - Full details: `clusters/vollminlab-cluster/dmz/README.md`
 
+## failurePolicy is NOT settable from the chart, and the webhook scope is the lever
+
+The kyverno Helm chart (3.9.0) exposes **no `failurePolicy` value at all**. Kyverno derives it
+from each ClusterPolicy's `spec.failurePolicy` and registers the rules into its own
+`validate.kyverno.svc-fail` / `mutate.kyverno.svc-fail` webhook. All 20 ClusterPolicies here
+leave it unset, so all default to **Fail**, and the resource webhooks are fail-closed.
+
+**Do not try to patch `failurePolicy` on the webhook objects.** The admission controller owns
+that field and reverts any change within seconds. A CronJob did exactly this every 5 minutes
+from an unknown date until 2026-10-04, logging `All webhooks patched successfully` the whole
+time while achieving nothing — and three blocks of chart values
+(`admissionController.failurePolicy`, `validatingWebhookConfiguration`,
+`mutatingWebhookConfiguration`) were silently ignored because none of them are chart keys.
+
+**The one key that works is `config.webhooks.namespaceSelector`.** It lands in the `kyverno`
+ConfigMap's `webhooks` key, which the admission controller reads at runtime to build the webhook
+configurations. Verify a change to it by rendering the chart and diffing that ConfigMap value
+against the live one — not by looking at the webhook object, and never by trusting a patch job's
+exit code.
+
+### Why this matters beyond tidiness: the cold-boot deadlock
+
+A fail-closed webhook plus a Kyverno that is down rejects pod CREATE in every namespace the
+webhook covers. On a **full** cold boot — every node down at once, which is what a power event
+produces — that is a deadlock:
+
+- `calico-system` pods are rejected, so the CNI never starts
+- Kyverno's own controllers are `hostNetwork: false`, so they need the CNI that Calico would have
+  provided
+- `calico-node`, `calico-typha` and `tigera-operator` are all `hostNetwork: true` and would start
+  fine on their own — **admission is the only thing stopping them**
+
+A single node reboot is safe, because Kyverno still answers from the other nodes. Only the
+all-at-once case deadlocks, which is why it survived a month of rolling reboots unnoticed.
+
+`kube-system`, `calico-system` and `tigera-operator` are therefore excluded from the webhook
+scope. **`flux-system` is deliberately NOT**, because enforcing on the one component that can
+apply anything to the cluster was a deliberate choice, and Flux is not on the cold-boot critical
+path — the Calico DaemonSet already exists and is recreated by the DaemonSet controller without
+Flux running.
+
+**A PolicyException does not substitute for this.** Exceptions are evaluated *by* Kyverno; when
+Kyverno is unreachable the webhook call itself fails and `failurePolicy` decides. `ignore-calico-cni`
+exists and is correct for policy exemption, and is useless for backend unavailability.
+
 ## Autogen rules — danger zone
 
 Kyverno autogen automatically generates additional rules to cover pod controllers when a policy targets bare `Pod` objects. This can produce broken rules that block the entire cluster.
