@@ -1380,7 +1380,7 @@ Two instances of the same chart (`readarr-repo`, `ghcr.io/pennydreadful/bookshel
 | Ingress | `readarr.vollminlab.com` | `readarr-audio.vollminlab.com` (Authentik, bound to `authentik Admins`) |
 | Library mount | `/books` (`pvc-books`) only — **no `/audiobooks` mount** | `/audiobooks` (`pvc-audiobooks`, Audiobookshelf's library) only |
 | Quality profile | eBook (EPUB/MOBI/AZW3) | Spoken (M4B/MP3/FLAC) |
-| Renaming | on | **off** — never reorganises Audiobookshelf's Author/Book layout (`readarr_naming` in tofu) |
+| Renaming | on — `Author/Book Title/Author - Title` (`readarr_naming` in tofu) | on — same format, the Author/Book layout Audiobookshelf expects; applies to imports only, never reorganises the existing library |
 | Prowlarr categories | 7000–7060 | 3030 only |
 | Download category | SABnzbd/qBittorrent `books` | SABnzbd `audio`, qBittorrent `audiobooks` |
 | Monitoring | root folder + all authors `none`; only explicitly added books download | same |

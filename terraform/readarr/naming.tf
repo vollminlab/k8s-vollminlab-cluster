@@ -1,8 +1,7 @@
-# Readarr builds the Author/Book layout Audiobookshelf expects:
-#   /audiobooks/<Author>/<Book Title>/<Author> - <Book Title>[ (part)].m4b
-# Renaming applies only to files Readarr imports (and to an explicit Rename); it
-# never reorganises the existing library on its own. Same format as the ebook
-# instance (terraform/readarr/naming.tf) so both shares read the same way.
+# Ebook layout: /books/<Author>/<Book Title>/<Author> - <Book Title>.epub
+# These values were set by hand in the UI and are declared here unchanged (read
+# back from the live config 2026-10-04), so the first apply is a no-op. Same
+# format as readarr-audio (terraform/readarr-audio/naming.tf).
 # readarr_naming is a singleton: create updates the live config, delete only
 # detaches it from state.
 resource "readarr_naming" "this" {
