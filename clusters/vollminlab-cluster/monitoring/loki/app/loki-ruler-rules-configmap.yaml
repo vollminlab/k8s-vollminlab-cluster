@@ -152,10 +152,10 @@ data:
     groups:
       # audiobook-intake problems that do not fail the Job.
       #
-      # The intake CronJob deliberately exits 0 when a single book goes wrong: the book
-      # is moved to _needs-review/ and the run carries on, so one bad upload cannot block
-      # every other friend's. That means KubeJobFailed and CronJobNotSucceeding — which
-      # cover crashes, evictions and image pulls — never see these:
+      # The intake deliberately carries on when a single book goes wrong: the book is
+      # moved to _needs-review/ and the loop continues, so one bad upload cannot block
+      # every other friend's. That means KubePodCrashLooping and friends — which cover
+      # crashes, restarts and image pulls — never see these:
       #   "failed on <book>" / "intake error"  — an unexpected exception on one upload
       #   "audiobookshelf scan request failed" — the ABS API key or URL is broken; books
       #                                          are filed but ABS only notices at its own scan
@@ -188,10 +188,10 @@ data:
               summary: "audiobook-intake logged errors in run {{ $labels.pod }}"
               description: >-
                 {{ $value | humanize }} ERROR lines from audiobook-intake in the last hour.
-                The run still exited 0, so the affected upload is in _needs-review/ (or, for a
+                The intake carried on, so the affected upload is in _needs-review/ (or, for a
                 scan failure, the book was filed but Audiobookshelf was not told). Read the
-                reason with `kubectl logs -n mediastack {{ $labels.pod }}` — the final line is
-                a JSON summary of what was filed and what went to review.
+                reason with `kubectl logs -n mediastack {{ $labels.pod }}` — each pass that did
+                something ends with a JSON summary of what was filed and what went to review.
                 Runbook: docs/runbooks/audiobook-intake.md
   stale-mount-alerts.yaml: |
     groups:
