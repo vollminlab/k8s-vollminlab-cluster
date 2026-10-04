@@ -33,10 +33,6 @@ data:
         # dropping the key inherits 4000m rather than removing the limit.
         cpu: null
         memory: 1Gi
-    podLabels:
-      app: sonarr
-      env: production
-      category: media
     # Velero FSB: exclude ephemeral scratch emptyDirs. MUST live under
     # workload.main.podSpec.annotations — the TrueCharts common chart ignores a
     # top-level podAnnotations key, so the annotation never reached the pod. The
@@ -45,6 +41,14 @@ data:
     workload:
       main:
         podSpec:
+          # Pod labels MUST live here, for the same reason as the annotations: the
+          # common chart ignores a top-level podLabels key. Without this the chart
+          # sets app=<chart>-<version> and no category, and a stale category written
+          # by an old Kyverno mutation (security) was never corrected.
+          labels:
+            app: sonarr
+            env: production
+            category: media
           containers:
             # The exportarr sidecar comes from the chart, and its 256Mi/512Mi-1Gi
             # defaults were never ours. Measured 2026-08-19 over 14d, every exportarr
