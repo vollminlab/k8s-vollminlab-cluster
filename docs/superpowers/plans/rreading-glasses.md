@@ -608,5 +608,5 @@ Expected: `0`.
   - **Not new:** this is the same server software as `hardcover.bookinfo.pro`, so it is not a regression introduced by self-hosting. Task 6 Step 2a takes a backup first; count `Deleting N` in the Readarr debug log after the first refresh.
 
 - **bookshelf #134:** an author's page may omit popular works with 3+ editions after a refresh. Search can still find them, and adding the book directly from search works. Bumping bookshelf to `hardcover-v0.4.21.182` does **not** fix it (nothing in `RefreshAuthorService` changed), so it stays out of this plan.
-- **Hardcover token death:** Hardcover may reset tokens without notice during its API beta, and a dead token makes search return `[]` with HTTP 200. That looks exactly like "no books found", not an error. Follow-up issue: alert on rreading-glasses 401s in Loki, or run a canary search CronJob.
+- **Hardcover token death (RESOLVED 2026-10-04 by the `rreading-glasses-canary` CronJob):** Hardcover may reset tokens without notice during its API beta, and a dead token makes search return `[]` with HTTP 200. That looks exactly like "no books found", not an error. Follow-up issue: alert on rreading-glasses 401s in Loki, or run a canary search CronJob.
 - **No version tags upstream:** Renovate cannot bump a digest-only `hardcover` tag meaningfully. Re-pin by hand when the upstream image changes.

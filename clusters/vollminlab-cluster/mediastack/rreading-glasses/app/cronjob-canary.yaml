@@ -1,0 +1,78 @@
+# Daily end-to-end check that Readarr's metadata search still works.
+#
+# The failure this exists for is silent: if the Hardcover API key dies (Hardcover
+# "may reset tokens without notice" during its API beta), rreading-glasses answers
+# searches with an empty list or an error, and Readarr just shows "no results" -
+# indistinguishable from a book Hardcover doesn't have. Nothing else would notice.
+#
+# The search call itself is never served from rreading-glasses' cache (only the
+# per-work lookups are), so every run exercises the key against Hardcover.
+#
+# No alert rule of its own: a failed Job fires KubeJobFailed within 15m, and a
+# daily CronJob that stops succeeding fires CronJobNotSucceededRecently at 26h.
+# Both route to Pushover.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rreading-glasses-canary
+  namespace: mediastack
+  labels:
+    app: rreading-glasses
+    env: production
+    category: media
+spec:
+  schedule: "41 7 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # Retries absorb a transient Hardcover blip; a dead key fails all three.
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: rreading-glasses
+            env: production
+            category: media
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: canary
+              image: docker.io/curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+              command: ["/bin/sh", "-c"]
+              # Joe Abercrombie is Hardcover author 125359. Asserting on him, not on
+              # "any result", catches an error page or an unrelated-results regression too.
+              args:
+                - |
+                  set -u
+                  url='http://rreading-glasses.mediastack.svc.cluster.local/search?q=the+blade+itself+abercrombie'
+                  body=$(curl -sS -m 60 -w '\n%{http_code}' "$url") || { echo "FAIL: request error"; exit 1; }
+                  code=$(printf '%s' "$body" | tail -n1)
+                  data=$(printf '%s' "$body" | sed '$d')
+                  if [ "$code" != 200 ]; then
+                    echo "FAIL: HTTP $code: $(printf '%s' "$data" | head -c 300)"; exit 1
+                  fi
+                  hits=$(printf '%s' "$data" | grep -o '"author":{"id":125359}' | wc -l)
+                  if [ "$hits" -lt 1 ]; then
+                    echo "FAIL: 200 but no Abercrombie result - Hardcover key dead or search broken: $(printf '%s' "$data" | head -c 300)"; exit 1
+                  fi
+                  echo "OK: $hits Abercrombie results"
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  memory: 32Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
