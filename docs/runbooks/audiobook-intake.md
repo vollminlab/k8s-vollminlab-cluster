@@ -87,6 +87,18 @@ kubectl exec -n mediastack deploy/filebrowser -- ls -la /srv/Audiobooks/_needs-r
 
 `DRY_RUN=true` on the CronJob logs which uploads would be processed without touching anything.
 
+### Alerting
+
+| Failure | Alert |
+|---|---|
+| Run crashes, is evicted, or cannot pull its image | `KubeJobFailed` (Prometheus, generic) |
+| No successful run for 2h / 26h | `CronJobNotSucceeding` / `CronJobNotSucceededRecently` (generic) |
+| Run exits 0 but logged an `ERROR`: an exception on one upload, or the Audiobookshelf scan call failed | `AudiobookIntakeErrors` (Loki ruler, `loki-ruler-rules-configmap.yaml`) |
+
+The last row exists because the job exits 0 on purpose when a single book goes wrong, so one bad
+upload can't block everyone else's. An ordinary "no confident match" is **not** an error. It is
+logged at INFO, the uploader sees it in `_needs-review`, and it does not alert.
+
 If a run is killed mid-copy, the next run deletes the partial `<Title>.intake-partial` folder and
 finishes any book left in `.intake-staging`.
 
