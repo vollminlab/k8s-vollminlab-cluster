@@ -54,16 +54,20 @@ data:
         # dropping the key inherits 4000m rather than removing the limit.
         cpu: null
         memory: 512Mi
-    podLabels:
-      app: readarr
-      env: production
-      category: media
     image:
       repository: ghcr.io/pennydreadful/bookshelf
       tag: hardcover-v0.4.20.129@sha256:388eecc94362580eae31ee0a454be6af516f8a311f8432a521c202fb475f4359
     workload:
       main:
         podSpec:
+          # Pod labels MUST live here, for the same reason as the annotations: the
+          # common chart ignores a top-level podLabels key. Without this the chart
+          # sets app=<chart>-<version> and no category, and a stale category written
+          # by an old Kyverno mutation (security) was never corrected.
+          labels:
+            app: readarr
+            env: production
+            category: media
           # Velero FSB: exclude ephemeral scratch emptyDirs. MUST live under
           # workload.main.podSpec.annotations — the TrueCharts common chart ignores
           # a top-level podAnnotations key, so the annotation never reached the pod.
