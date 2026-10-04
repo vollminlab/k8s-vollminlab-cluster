@@ -20,9 +20,16 @@ A book is usually in the library 5–6 minutes after its upload finishes. Each u
 1. **Normalise the shape.** Extract `.zip` files, put loose audio files into their own folder,
    flatten `CD1/`, `Disc 2/` and similar folders into the book folder, and split a folder that
    holds several book folders into one book each.
-2. **Identify the book.** Run beets with the beets-audible plugin. It tries the files' own tags
-   first, then the folder name as `Author - Title`, then as `Title - Author`. A match is accepted
-   only if beets' distance is at most `MATCH_THRESHOLD` (0.15).
+2. **Identify the book.**
+   - **If the upload names an Audible ASIN,** beets is pinned to exactly that book (`--search-id`)
+     and nothing else is considered. The ASIN can be `[B0XXXXXXXX]` or `[1234567890]` in the
+     folder name or a file name, or the file's own ASIN tag; a name beats a tag. If the files
+     don't fit that book, the upload goes to review rather than being searched.
+   - **Otherwise it searches.** Run beets with the beets-audible plugin, trying the files' own tags
+     first, then the folder name as `Author - Title`, then as `Title - Author`. A match is
+     accepted only if beets' distance is at most `MATCH_THRESHOLD` (0.15) **and** the matched
+     edition's language is in `ALLOWED_LANGUAGES` (`english`). A match in another language is
+     undone (original file names and every original tag restored) and the next attempt is tried.
 3. **File it.** beets retags the files, renames them after the book, and adds `cover.jpg`,
    `desc.txt` and `reader.txt` from Audible. The book is staged in `/incoming/.intake-staging/`,
    then copied to `/audiobooks/<Author>/<Title>/`. Any `.epub`/`.pdf` in the upload goes with it.
@@ -36,6 +43,9 @@ happened.
 
 ## Fixing a book in `_needs-review`
 
+- **Wrong edition, or "only matches were in another language":** add the book's Audible ASIN to
+  the folder name, e.g. `Michael Cheney - Confessions of a Trash Droid [B0GWFGGR9J]`, and move it
+  back up. The ASIN is in the book's Audible URL.
 - **No match:** rename the folder to `Author - Title` (for example `Andy Weir - Artemis`), delete
   `WHY-NOT-FILED.txt`, and move the folder back up into `Audiobooks/`. It is picked up about 5 minutes
   later.
@@ -47,6 +57,26 @@ happened.
   [beets-audible README](https://github.com/Neurrone/beets-audible#importing-non-audible-content).
 
 ## Design decisions
+
+**Why the ASIN wins, and why foreign-language matches are refused.** On 2026-10-04 an upload named
+`Confessions of a Trash Droid [B0GWFGGR9J]`, an English book, was filed as the **German edition**
+`B0HJZV1VGW`. The German listing's title, description, cover and `language: German` tag were all
+written onto the English audio. The cause:
+
+- The file's album tag was very likely *"…The Complete Series in One"*. beets-audible treats a
+  candidate whose title **contains** the tag as a likely match. The German *"…The Complete Series
+  in One (German Edition)"* does; the English *"…The Complete **First** Series in One"* does not.
+- The exact ASIN was in the name, and the intake stripped it as noise.
+
+A title search can't tell editions apart and nothing here can listen to the audio, so a
+foreign edition's metadata on English audio is a silent mislabel, the worst outcome this tool can
+have. Hence the two rules. When the uploader names the edition, it is used, even a foreign one;
+that's the uploader's call. A search may only file an allowed language.
+
+**Why a rejected match restores every tag, not just the ones the intake seeded.** beets has
+already rewritten all of them by then, including the wrong edition's ASIN. Left in place, that
+ASIN would make a re-upload pin the wrong book. Each file's complete tag set is snapshotted before
+beets runs and restored exactly; verified byte-for-byte on a real m4b.
 
 **Why the job tags files from the folder name.** On its own, beets skipped every untagged upload
 in testing, and it searched Audible for `CD1` when a book came as disc folders. Trying both name

@@ -27,7 +27,9 @@ from collections import Counter
 from pathlib import Path
 
 from mediafile import MediaFile
+import mutagen
 from mutagen.mp3 import MP3
+from natsort import os_sorted
 
 log = logging.getLogger("intake")
 
@@ -35,6 +37,11 @@ AUDIO = {".mp3", ".m4b", ".m4a", ".mp4", ".aac", ".flac", ".ogg", ".oga", ".opus
 EBOOK = {".epub", ".pdf", ".mobi", ".azw3"}
 UNSUPPORTED_ARCHIVE = {".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz"}
 DISC_DIR = re.compile(r"(?i)^(cd|dis[ck]|part|vol(ume)?)[\s._-]*\d+$")
+# An Audible ASIN in a file or folder name, the way Libation, OpenAudible and most
+# rippers write it: "[B0GWFGGR9J]", or ten digits/ISBN-style for older titles
+# ("[1980004900]" is Gideon the Ninth). Square brackets required, so a year or a
+# track number can never be mistaken for one.
+ASIN_IN_NAME = re.compile(r"\[(B0[A-Z0-9]{8}|\d{9}[\dX])\]")
 # Release noise that hurts the Audible query: "(Unabridged)", "[B002V5H6F4]", "(2014)".
 NAME_NOISE = re.compile(r"(?i)\s*[\(\[]\s*(un)?abridged\s*[\)\]]|\s*\[[A-Z0-9]{10}\]|\s*\(\d{4}\)")
 
@@ -314,12 +321,79 @@ def write_tags(files, album: str, artist: str) -> None:
         m.save()
 
 
-def restore_tags(original: dict[Path, tuple[str, str, str]]) -> None:
-    for p, (album, artist, albumartist) in original.items():
-        if p.exists():
-            m = MediaFile(p)
-            m.album, m.artist, m.albumartist = album or None, artist or None, albumartist or None
-            m.save()
+def find_asin(book: Path, files: list[Path]) -> str | None:
+    """The uploader's own statement of which edition this is. Names first: a
+    name is what the uploader chose, while a tag may have been written by
+    whatever tool (or earlier mis-match) last touched the file."""
+    for name in [book.name, *(f.name for f in files)]:
+        m = ASIN_IN_NAME.search(name)
+        if m:
+            return m.group(1)
+    for f in files:
+        try:
+            tag = (MediaFile(f).asin or "").strip().upper()
+        except Exception:
+            continue
+        if ASIN_IN_NAME.fullmatch(f"[{tag}]"):
+            return tag
+    return None
+
+
+def lookup_asin(asin: str, region: str) -> tuple[str, str, str] | None:
+    """(author, title, language) for an Audible ASIN, or None if Audible does
+    not know it. Uses the same Audnexus endpoint beets-audible itself uses."""
+    from beetsplug.api import get_book_info
+
+    try:
+        book, _ = get_book_info(asin, region)
+    except Exception as e:
+        log.info("ASIN %s not found on Audible (%s)", asin, e)
+        return None
+    author = ", ".join(a.name for a in book.authors) if book.authors else ""
+    return author, book.title, book.language
+
+
+def snapshot_tags(files: list[Path]) -> dict[Path, list | None]:
+    """Every tag on every file, exactly as uploaded. A rejected beets import has
+    already rewritten all of them — language, description, publisher, and the
+    wrong edition's ASIN, which would make a re-upload pin the wrong book — so
+    restoring only the fields we seeded is not enough."""
+    snap = {}
+    for p in files:
+        try:
+            m = mutagen.File(p)
+        except Exception as e:
+            log.warning("cannot snapshot tags of %s: %s", p, e)
+            continue
+        if m is None:
+            continue
+        if m.tags is None:
+            snap[p] = None
+            continue
+        grouped: dict = {}
+        for k, v in m.tags.items():  # Vorbis comments repeat keys; ID3/MP4 do not
+            grouped.setdefault(k, []).append(v)
+        snap[p] = [(k, vs) for k, vs in grouped.items()]
+    return snap
+
+
+def restore_snapshot(snap: dict[Path, list | None]) -> None:
+    for p, items in snap.items():
+        if not p.exists():
+            continue
+        m = mutagen.File(p)
+        if items is None:
+            if m.tags is not None:
+                m.delete()
+            continue
+        if m.tags is None:
+            m.add_tags()
+        m.tags.clear()
+        vorbis = isinstance(m.tags, mutagen._vorbis.VComment)
+        for k, vs in items:
+            # Vorbis: one key, many values. ID3 frames and MP4 atoms: unique keys.
+            m.tags[k] = vs if vorbis else vs[0]
+        m.save()
 
 
 def seed_attempts(folder_name: str, original: dict) -> list[tuple[str, str]]:
@@ -354,16 +428,22 @@ class Beets:
             BEETS_CONFIG.format(staging=staging, db=self.workdir / "library.db", threshold=threshold, region=region)
         )
 
-    def import_book(self, book: Path) -> None:
+    def import_book(self, book: Path, *, search_id: str | None = None, threshold: float | None = None) -> None:
         # A fresh database per book: beets' duplicate detection only knows what
         # is in its own DB, which never includes the existing library, so a
         # carried-over DB would only make a re-upload "skip" for the wrong reason.
         (self.workdir / "library.db").unlink(missing_ok=True)
         env = {**os.environ, "BEETSDIR": str(self.workdir)}
-        r = subprocess.run(
-            ["beet", "import", str(book)],  # config.yaml is read from BEETSDIR
-            env=env, capture_output=True, text=True, timeout=1800,
-        )
+        cmd = ["beet"]  # config.yaml is read from BEETSDIR
+        if threshold is not None:
+            overlay = self.workdir / "threshold.yaml"
+            overlay.write_text(f"match:\n  strong_rec_thresh: {threshold}\n")
+            cmd += ["-c", str(overlay)]
+        cmd += ["import"]
+        if search_id:
+            # Only this Audible book is considered; beets-audible's album_for_id.
+            cmd += ["--search-id", search_id]
+        r = subprocess.run(cmd + [str(book)], env=env, capture_output=True, text=True, timeout=1800)
         if r.returncode != 0:
             raise RuntimeError(f"beet exited {r.returncode}: {r.stderr.strip()[-500:]}")
 
@@ -373,7 +453,9 @@ class Beets:
 
 class Intake:
     def __init__(self, incoming: Path, library: Path, beets, *, quiet_seconds: int, dry_run: bool = False,
-                 incomplete_giveup_seconds: int = 86400, lock_stale_seconds: int = 3600, on_progress=None):
+                 incomplete_giveup_seconds: int = 86400, lock_stale_seconds: int = 3600, on_progress=None,
+                 allowed_languages: tuple[str, ...] = ("english",), pinned_threshold: float = 0.4,
+                 lookup=None):
         self.incoming = incoming
         self.library = library
         self.staging = incoming / STAGING_NAME
@@ -385,6 +467,9 @@ class Intake:
         self.incomplete_giveup_seconds = incomplete_giveup_seconds
         self.lock_stale_seconds = lock_stale_seconds
         self.on_progress = on_progress or (lambda: None)
+        self.allowed_languages = {lang.strip().lower() for lang in allowed_languages if lang.strip()}
+        self.pinned_threshold = pinned_threshold
+        self.lookup = lookup or (lambda asin: lookup_asin(asin, "us"))
         self.stop_requested = False
         self.filed: list[str] = []
         self.reviewed: list[str] = []
@@ -488,13 +573,74 @@ class Intake:
 
     # -- per book
 
+    def staged_book(self) -> Path | None:
+        books = [b for a in self.staging.iterdir() if a.is_dir() for b in a.iterdir() if b.is_dir()]
+        return books[0] if len(books) == 1 else None
+
+    def staged_language(self, staged: Path) -> str | None:
+        for f in audio_files(staged):
+            try:
+                if lang := MediaFile(f).language:
+                    return str(lang)
+            except Exception:
+                continue
+        return None
+
+    def unstage(self, staged: Path, originals: list[Path]) -> None:
+        """Undo a beets import we will not accept: put the audio back under its
+        original names (beets numbers tracks in natural-sort path order, which is
+        the order `originals` is in) and drop the cover/desc beets fetched."""
+        moved = os_sorted(audio_files(staged))  # "100 - x" must follow "99 - x"
+        if len(moved) != len(originals):
+            raise RuntimeError(f"cannot undo match: {len(moved)} staged files vs {len(originals)} originals")
+        for src, dst in zip(moved, originals):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+        author = staged.parent
+        shutil.rmtree(staged)
+        if not any(author.iterdir()):
+            author.rmdir()
+
+    def _accept(self, book: Path, label: str) -> None:
+        extras = [p for p in book.rglob("*") if p.is_file() and p.suffix.lower() in EBOOK]
+        self.finalize_staged(extras)
+        shutil.rmtree(book, ignore_errors=True)
+        log.info("matched %s using %s", book.name, label)
+
     def process_book(self, book: Path) -> None:
         self.refresh_lock()
-        files = audio_files(book)
+        files = os_sorted(audio_files(book))
         original = read_tags(files)
+        snapshot = snapshot_tags(files)
+
+        # 1. The uploader named the edition: use exactly that one, or nothing.
+        #    2026-10-04: an upload named "[B0GWFGGR9J]" (English) was fuzzy-matched
+        #    to the German edition B0HJZV1VGW, because its album tag was a
+        #    substring of the German title. The ASIN was in the name all along.
+        asin = find_asin(book, files)
+        if asin:
+            info = self.lookup(asin)
+            if info:
+                author, title, language = info
+                write_tags(files, title, author)
+                self.beets.import_book(book, search_id=asin, threshold=self.pinned_threshold)
+                if not audio_files(book):
+                    self._accept(book, f"ASIN {asin} ({title}, {language})")
+                    return
+                restore_snapshot(snapshot)
+                self.to_review(book, f"the upload names Audible book {asin} ({title} by {author}), but its "
+                                     "files did not fit that book (track count or lengths). Check the ASIN.")
+                return
+            log.info("ASIN %s in %s is not on Audible; falling back to search", asin, book.name)
+
+        # 2. Search. Any match must also be in an allowed language, because a
+        #    title search cannot tell editions apart and the audio cannot be
+        #    checked — a foreign edition's metadata on English audio is a silent
+        #    mislabel, the worst outcome this tool can have.
+        rejected: list[str] = []
         for attempt in seed_attempts(book.name, original):
             if attempt is None:
-                restore_tags(original)
+                restore_snapshot(snapshot)
                 label = "file tags"
             else:
                 artist, album = attempt
@@ -502,14 +648,25 @@ class Intake:
                 label = f"artist={artist!r} album={album!r}"
             self.beets.import_book(book)
             if not audio_files(book):
-                extras = [p for p in book.rglob("*") if p.is_file() and p.suffix.lower() in EBOOK]
-                self.finalize_staged(extras)
-                shutil.rmtree(book, ignore_errors=True)
-                log.info("matched %s using %s", book.name, label)
+                staged = self.staged_book()
+                lang = self.staged_language(staged) if staged else None
+                if staged and lang and lang.lower() not in self.allowed_languages:
+                    log.info("rejected %s match for %s using %s: %s edition", staged.name, book.name, label, lang)
+                    rejected.append(f"{staged.parent.name} — {staged.name} ({lang})")
+                    self.unstage(staged, files)
+                    restore_snapshot(snapshot)
+                    continue
+                self._accept(book, label)
                 return
             log.info("no confident match for %s using %s", book.name, label)
-        restore_tags({p: t for p, t in original.items() if p.exists()})
-        self.to_review(book, "no confident Audible match (author/title not recognised)")
+        restore_snapshot(snapshot)
+        if rejected:
+            allowed = "/".join(sorted(self.allowed_languages))
+            self.to_review(book, f"the only matches were in another language: {'; '.join(rejected)}. "
+                                 f"Only {allowed} editions are filed automatically. If one of those IS this "
+                                 "book, add its Audible ASIN to the folder name, e.g. 'Author - Title [B0XXXXXXXX]'.")
+        else:
+            self.to_review(book, "no confident Audible match (author/title not recognised)")
 
     # -- run
 
@@ -662,13 +819,17 @@ def main() -> int:
         return 1
     staging = incoming / STAGING_NAME
     staging.mkdir(exist_ok=True)
-    beets = Beets(staging, float(os.environ.get("MATCH_THRESHOLD", "0.15")), os.environ.get("AUDIBLE_REGION", "us"))
+    region = os.environ.get("AUDIBLE_REGION", "us")
+    beets = Beets(staging, float(os.environ.get("MATCH_THRESHOLD", "0.15")), region)
     intake = Intake(
         incoming, library, beets,
         quiet_seconds=int(os.environ.get("QUIET_SECONDS", "900")),
         dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
         incomplete_giveup_seconds=int(os.environ.get("INCOMPLETE_GIVEUP_SECONDS", "86400")),
         on_progress=lambda: touch(heartbeat),
+        allowed_languages=tuple(os.environ.get("ALLOWED_LANGUAGES", "english").split(",")),
+        pinned_threshold=float(os.environ.get("PINNED_MATCH_THRESHOLD", "0.4")),
+        lookup=lambda asin: lookup_asin(asin, region),
     )
 
     if interval <= 0:  # one-shot (CronJob / manual Job)
