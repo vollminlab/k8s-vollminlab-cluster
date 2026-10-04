@@ -1,0 +1,39 @@
+# Filebrowser authenticates by trusting the X-authentik-username header
+# (FB_AUTH_METHOD=proxy). That is only safe if the header can arrive solely via
+# ingress-nginx, which sets it from the Authentik outpost response. mediastack had
+# no NetworkPolicies, so any pod in the cluster could call this Service directly
+# with an admin's username in that header and receive an admin session token -
+# verified 2026-10-04 (POST /api/login returned a JWT).
+#
+# Scoped to the filebrowser pod only, not the namespace: mediastack has no
+# default-deny, and a namespace-wide one would cut off the arr stack. Selecting the
+# pod with an Ingress policy makes it default-deny for that pod alone.
+#
+# Both external paths arrive through ingress-nginx: LAN via the ingress VIP, and
+# the internet via the shared nginx Cloudflare tunnel, whose origin is
+# ingress-nginx-controller.ingress-nginx.svc:80 (terraform/cloudflare/tunnels.tf).
+# Homepage only reads pod status from the API server and never calls this pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: filebrowser-allow-ingress-nginx
+  namespace: mediastack
+  labels:
+    app: filebrowser
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: filebrowser
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        # containerPort, not the Service port (svc 80 -> targetPort 8080).
+        - protocol: TCP
+          port: 8080
