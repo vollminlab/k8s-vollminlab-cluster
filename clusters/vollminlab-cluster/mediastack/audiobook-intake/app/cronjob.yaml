@@ -36,6 +36,9 @@ spec:
         spec:
           restartPolicy: Never
           automountServiceAccountToken: false
+          # The vollminlab Harbor project is private. Secret lives in mediastack/secrets/.
+          imagePullSecrets:
+            - name: harbor-vollminlab-pull
           containers:
             - name: audiobook-intake
               image: harbor.vollminlab.com/vollminlab/audiobook-intake:0.1.0
