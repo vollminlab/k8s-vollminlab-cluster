@@ -1,0 +1,111 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audiobook-intake
+  namespace: mediastack
+  labels:
+    app: audiobook-intake
+    env: production
+    category: media
+spec:
+  # Files audiobooks that friends upload through FileBrowser (audiobooks-incoming)
+  # into the Audiobookshelf library as <Author>/<Title>/. Source and design:
+  # build/audiobook-intake/intake.py, docs/runbooks/audiobook-intake.md.
+  schedule: "*/10 * * * *"
+  # Two runs must never work the same share at once: they would race on the
+  # same upload. A long run (a large batch) makes the next tick skip, not overlap.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A run is idempotent and recovers a killed predecessor's half-finished
+      # copy, so a hard ceiling is safe. Measured: ~5s per book on Audible lookups,
+      # plus copy time over SMB.
+      activeDeadlineSeconds: 3000
+      ttlSecondsAfterFinished: 3600
+      # The script only exits non-zero when a share is not mounted, so a Failed
+      # job means the pod died externally (eviction). One retry absorbs that.
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: audiobook-intake
+            env: production
+            category: media
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          containers:
+            - name: audiobook-intake
+              image: harbor.vollminlab.com/vollminlab/audiobook-intake:0.1.0
+              env:
+                - name: INCOMING_DIR
+                  value: /incoming
+                - name: LIBRARY_DIR
+                  value: /audiobooks
+                # An upload is only touched once nothing in it has changed for
+                # this long. FileBrowser writes TUS chunks into the final file in
+                # place, so a half-uploaded book looks like a short, valid book.
+                - name: QUIET_SECONDS
+                  value: "900"
+                # beets' distance cutoff for an automatic match (default 0.04).
+                # Correct matches scored 0.00-0.11 in testing; the nearest wrong
+                # book scored 0.23.
+                - name: MATCH_THRESHOLD
+                  value: "0.15"
+                - name: AUDIBLE_REGION
+                  value: us
+                - name: DRY_RUN
+                  value: "false"
+                - name: ABS_URL
+                  value: http://audiobookshelf.mediastack.svc.cluster.local:10223
+                # The "Audiobooks" library (folder /audiobooks).
+                - name: ABS_LIBRARY_ID
+                  value: b9d7cdf3-68f2-40e8-b790-2111379693ed
+                - name: ABS_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: audiobook-intake-abs-apikey
+                      key: api-key
+                - name: HOME
+                  value: /tmp
+              # Root, because the two shares are owned by different forced uids
+              # (incoming 1000, library 568, both 0755) and the job deletes from one
+              # and writes to the other. Everything but the two capabilities that
+              # bypass those mode bits is dropped.
+              securityContext:
+                runAsUser: 0
+                runAsGroup: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                  add: ["DAC_OVERRIDE", "FOWNER"]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: incoming
+                  mountPath: /incoming
+                - name: audiobooks
+                  mountPath: /audiobooks
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+          volumes:
+            - name: incoming
+              persistentVolumeClaim:
+                claimName: pvc-audiobooks-incoming
+            - name: audiobooks
+              persistentVolumeClaim:
+                claimName: pvc-audiobooks
+            # beets' scratch database. Book data never lands here: staging lives
+            # on the incoming share so the beets move is a same-share rename.
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi

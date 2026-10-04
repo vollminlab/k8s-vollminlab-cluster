@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: audiobook-intake-app
+resources:
+  - audiobook-intake-abs-apikey-externalsecret.yaml
+  - cronjob.yaml
