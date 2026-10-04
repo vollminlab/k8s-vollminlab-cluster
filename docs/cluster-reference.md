@@ -1354,6 +1354,19 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Auth | Authentik forward-auth; own Cloudflare tunnel |
 | IaC | Group and policy management via tofu |
 
+### audiobook-intake (FileBrowser → Audiobookshelf filer)
+
+| Parameter | Value |
+|---|---|
+| Kind | CronJob, `*/10 * * * *`, `concurrencyPolicy: Forbid` |
+| Image | `harbor.vollminlab.com/vollminlab/audiobook-intake:0.1.0` (in-house, `build/audiobook-intake/`) |
+| Reads | `pvc-audiobooks-incoming` (`/incoming`) — FileBrowser's `Audiobooks` folder |
+| Writes | `pvc-audiobooks` (`/audiobooks`) as `<Author>/<Title>/`; unmatched uploads to `/incoming/_needs-review/` |
+| Identification | beets 2.14 + beets-audible (Audible + Audnexus, outbound HTTPS), match threshold 0.15 |
+| Runs as | root, capabilities dropped to `DAC_OVERRIDE` + `FOWNER` (the two shares have different forced uids) |
+| Secret | `audiobook-intake-abs-apikey` ← 1P `Audiobookshelf Intake API Key` (triggers a library scan after filing) |
+| Runbook | `docs/runbooks/audiobook-intake.md` |
+
 ### rreading-glasses (Readarr metadata)
 
 | Parameter | Value |
