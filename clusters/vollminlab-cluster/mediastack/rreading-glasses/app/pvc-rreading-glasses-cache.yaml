@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-rreading-glasses-cache
+  namespace: mediastack
+  labels:
+    # Deliberately backed up by nothing. This is rreading-glasses' metadata
+    # cache (one key/value table), rebuilt from Hardcover on demand. A Velero
+    # FSB copy of a live Postgres data dir would be torn anyway. Excluded from
+    # FSB by the pod annotation in deployment.yaml.
+    app: rreading-glasses
+    env: production
+    category: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: longhorn
