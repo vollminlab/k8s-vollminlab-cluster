@@ -7,3 +7,4 @@ resources:
   - rreading-glasses-hardcover-externalsecret.yaml
   - deployment.yaml
   - service.yaml
+  - cronjob-canary.yaml

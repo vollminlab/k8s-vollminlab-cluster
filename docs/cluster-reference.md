@@ -1378,6 +1378,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Auth | Hardcover API key, 1P `vollminlab-readarr-metadata` (API Credential, field `credential`, scope `read:catalog`, no expiry) |
 | Cache PVC | `pvc-rreading-glasses-cache` 2Gi Longhorn RWO — **deliberately unbacked** (rebuildable cache; FSB excluded by pod annotation) |
 | Why self-hosted | Shared `hardcover.bookinfo.pro` returned 429/timeouts on 11 of 11 searches, 2026-10-04 |
+| Canary | `rreading-glasses-canary` CronJob, daily 07:41 UTC — fails if a search returns no Abercrombie result (dead Hardcover key = empty `[]` with HTTP 200). Alerts via the generic `KubeJobFailed` / `CronJobNotSucceededRecently` rules |
 | Known gap | Author pages omit many-edition works (Sanderson: 36 of 208 served); a Readarr author refresh deletes no-file, non-manual books missing from that list |
 
 ### FlareSolverr (Indexer proxy)
