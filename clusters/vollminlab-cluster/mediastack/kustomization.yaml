@@ -6,6 +6,7 @@ resources:
   - namespace.yaml
   - arr-media-dashboard-configmap.yaml
   - ./secrets
+  - ./audiobook-intake/app
   - ./audiobookshelf/app
   - ./bazarr/app
   - ./cloudflared-audiobookshelf/app
