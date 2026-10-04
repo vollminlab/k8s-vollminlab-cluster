@@ -1362,8 +1362,8 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 | Parameter | Value |
 |---|---|
-| Kind | CronJob, `*/10 * * * *`, `concurrencyPolicy: Forbid` |
-| Image | `harbor.vollminlab.com/vollminlab/audiobook-intake:0.1.0` (in-house, `build/audiobook-intake/`) |
+| Kind | Deployment, 1 replica, `Recreate`; polls every 60s (`LOOP_INTERVAL_SECONDS`), 5 min quiet period, structural completeness check |
+| Image | `harbor.vollminlab.com/vollminlab/audiobook-intake:0.2.0` (in-house, `build/audiobook-intake/`) |
 | Reads | `pvc-audiobooks-incoming` (`/incoming`) — FileBrowser's `Audiobooks` folder |
 | Writes | `pvc-audiobooks` (`/audiobooks`) as `<Author>/<Title>/`; unmatched uploads to `/incoming/_needs-review/` |
 | Identification | beets 2.14 + beets-audible (Audible + Audnexus, outbound HTTPS), match threshold 0.15 |

@@ -4,4 +4,4 @@ metadata:
   name: audiobook-intake-app
 resources:
   - audiobook-intake-abs-apikey-externalsecret.yaml
-  - cronjob.yaml
+  - deployment.yaml

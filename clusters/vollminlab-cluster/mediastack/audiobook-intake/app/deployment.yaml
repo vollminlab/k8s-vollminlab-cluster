@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audiobook-intake
+  namespace: mediastack
+  labels:
+    app: audiobook-intake
+    env: production
+    category: media
+spec:
+  # Files audiobooks that friends upload through FileBrowser (audiobooks-incoming)
+  # into the Audiobookshelf library as <Author>/<Title>/. Source and design:
+  # build/audiobook-intake/intake.py, docs/runbooks/audiobook-intake.md.
+  #
+  # An always-on loop rather than a CronJob: polling every 60s as a CronJob would
+  # mint ~1,440 Jobs a day, and trivy-operator scans every Job it sees.
+  #
+  # Exactly one replica, replaced not rolled: two runners must never work the same
+  # upload. The intake also takes a lock file on the share, so an overlap during a
+  # rollout or a manual Job is safe anyway — Recreate just avoids relying on it.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: audiobook-intake
+  template:
+    metadata:
+      labels:
+        app: audiobook-intake
+        env: production
+        category: media
+    spec:
+      automountServiceAccountToken: false
+      # The vollminlab Harbor project is private. Secret lives in mediastack/secrets/.
+      imagePullSecrets:
+        - name: harbor-vollminlab-pull
+      # SIGTERM lets the current book finish (Audible lookup ~5s, copy seconds).
+      # If it is killed anyway, the next start removes the partial copy and
+      # finishes whatever was left in staging.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: audiobook-intake
+          image: harbor.vollminlab.com/vollminlab/audiobook-intake:0.2.0
+          env:
+            - name: INCOMING_DIR
+              value: /incoming
+            - name: LIBRARY_DIR
+              value: /audiobooks
+            - name: LOOP_INTERVAL_SECONDS
+              value: "60"
+            # Nothing in an upload may have changed for this long. This is the
+            # backstop; the primary guard against half-uploaded books is the
+            # structural completeness check (m4b box walk, mp3 length header, zip
+            # directory). A real 963 MB upload finished in ~75s.
+            - name: QUIET_SECONDS
+              value: "300"
+            # A structurally incomplete upload that has not changed for a day is
+            # treated as abandoned and moved to _needs-review.
+            - name: INCOMPLETE_GIVEUP_SECONDS
+              value: "86400"
+            # beets' distance cutoff for an automatic match (default 0.04).
+            # Correct matches scored 0.00-0.11 in testing; the nearest wrong
+            # book scored 0.23.
+            - name: MATCH_THRESHOLD
+              value: "0.15"
+            - name: AUDIBLE_REGION
+              value: us
+            - name: DRY_RUN
+              value: "false"
+            - name: ABS_URL
+              value: http://audiobookshelf.mediastack.svc.cluster.local:10223
+            # The "Audiobooks" library (folder /audiobooks).
+            - name: ABS_LIBRARY_ID
+              value: b9d7cdf3-68f2-40e8-b790-2111379693ed
+            - name: ABS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: audiobook-intake-abs-apikey
+                  key: api-key
+            - name: HEARTBEAT_FILE
+              value: /tmp/intake-heartbeat
+            - name: HOME
+              value: /tmp
+          # The heartbeat is touched after every healthy pass (each minute) and
+          # before every book, and NOT when a share is unmounted. 40 minutes covers
+          # the worst legitimate gap — one beets import is capped at 30 — so a stale
+          # heartbeat means wedged or unmounted, and a restart is the fix.
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os,sys,time; p='/tmp/intake-heartbeat'; sys.exit(0 if os.path.exists(p) and time.time()-os.path.getmtime(p) < 2400 else 1)"
+            initialDelaySeconds: 300
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          # Root, because the two shares are owned by different forced uids
+          # (incoming 1000, library 568, both 0755) and the intake deletes from one
+          # and writes to the other. Everything but the two capabilities that
+          # bypass those mode bits is dropped.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_OVERRIDE", "FOWNER"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: incoming
+              mountPath: /incoming
+            - name: audiobooks
+              mountPath: /audiobooks
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: incoming
+          persistentVolumeClaim:
+            claimName: pvc-audiobooks-incoming
+        - name: audiobooks
+          persistentVolumeClaim:
+            claimName: pvc-audiobooks
+        # beets' scratch database and the heartbeat. Book data never lands here:
+        # staging lives on the incoming share so the beets move is a same-share rename.
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

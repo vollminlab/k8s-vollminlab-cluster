@@ -3,13 +3,19 @@
 Files audiobooks that friends upload through FileBrowser into the Audiobookshelf library.
 
 - **Created:** 2026-10-04
-- **Source:** `build/audiobook-intake/intake.py` (image), `clusters/vollminlab-cluster/mediastack/audiobook-intake/app/` (CronJob)
+- **Source:** `build/audiobook-intake/intake.py` (image), `clusters/vollminlab-cluster/mediastack/audiobook-intake/app/` (Deployment)
 
 ## What it does
 
-Every 10 minutes the `audiobook-intake` CronJob in `mediastack` looks at the top level of the
-`audiobooks-incoming` share, which is FileBrowser's `Audiobooks` folder. For each upload that has not
-changed in 15 minutes:
+The `audiobook-intake` Deployment in `mediastack` checks the top level of the `audiobooks-incoming`
+share every 60 seconds. That share is FileBrowser's `Audiobooks` folder. An upload is processed once
+it is **complete** and **quiet**:
+
+- **Complete:** every file passes a structural check, so a half-uploaded file is held rather than
+  filed. See *Why it checks completeness* below.
+- **Quiet:** nothing in it has changed for 5 minutes.
+
+A book is usually in the library 5–6 minutes after its upload finishes. Each upload is then:
 
 1. **Normalise the shape.** Extract `.zip` files, put loose audio files into their own folder,
    flatten `CD1/`, `Disc 2/` and similar folders into the book folder, and split a folder that
@@ -31,7 +37,7 @@ happened.
 ## Fixing a book in `_needs-review`
 
 - **No match:** rename the folder to `Author - Title` (for example `Andy Weir - Artemis`), delete
-  `WHY-NOT-FILED.txt`, and move the folder back up into `Audiobooks/`. It is picked up 15 minutes
+  `WHY-NOT-FILED.txt`, and move the folder back up into `Audiobooks/`. It is picked up about 5 minutes
   later.
 - **`(duplicate)`:** the library already has `<Author>/<Title>`. Nothing in the library was changed.
   Delete the review copy, or replace the library copy by hand if the upload is better.
@@ -66,47 +72,82 @@ database, which never contains the existing library. The job does its own duplic
 except `DAC_OVERRIDE` and `FOWNER`. `mediastack` enforces PodSecurity `restricted` only in
 warn/audit mode, so this produces a warning, not a rejection.
 
-**Why the job waits 15 minutes.** FileBrowser's TUS upload writes chunks into the final filename
-in place, so a half-uploaded file looks like a short, valid book.
+**Why it checks completeness, not just elapsed time.** FileBrowser's TUS upload writes chunks into
+the final filename in place, so a half-uploaded file looks like a short, valid book. A quiet period
+only catches a stalled upload if the stall lasts the whole period. A laptop that sleeps mid-upload
+beats any timer. So each file must also pass a structural check:
+
+| Format | Check | Measured |
+|---|---|---|
+| m4b / m4a / mp4 | every top-level box declares its length; a truncated file's last box ends past EOF | a real 963 MB m4b whose index (`moov`) sits after the audio: complete at 100 %, incomplete at 99.9 % |
+| mp3 | the Xing/Info header's duration × bitrate vs the file size (minus ID3) | complete 1.000, half-uploaded 0.500 |
+| zip | the central directory at the end of the archive is present | — |
+
+An incomplete upload is **held, not reviewed**, and logged once (`waiting: <name> — <file> is
+incomplete`). It goes to `_needs-review` with "please upload it again" only after 24 hours
+unchanged (`INCOMPLETE_GIVEUP_SECONDS`).
+
+**Known gap:** a CBR mp3 with **no** Xing/Info header can't be checked. mutagen derives its length
+from the file size, so a half file reads as a short complete one. Those rely on the 5-minute quiet
+period alone. Encoders have written the header by default for years, so this mostly means very old
+rips.
+
+**Why a Deployment and not a CronJob.** Polling every minute as a CronJob would create about 1,440
+Jobs a day, and trivy-operator scans every Job it sees. That backlog once made worker04 do 83 % of
+the cluster's writes. A single loop does the same work with no Job churn.
+
+**Why there is a lock file.** Two runners must never work the same upload, or a book gets filed
+twice. `replicas: 1` with `strategy: Recreate` makes an overlap unlikely. The lock covers what's
+left: a manual Job, a replica bump, or a rollout racing an old pod. The lock is
+`/incoming/.intake-lock`, an `O_EXCL` create (atomic on SMB) holding the holder's pod name. It is
+refreshed before every book and broken if it is more than an hour stale.
 
 ## Operating it
 
 ```bash
-# Recent runs and their exit codes
-kubectl get jobs -n mediastack -l app=audiobook-intake --sort-by=.metadata.creationTimestamp
+# Is it running, and when did it last restart?
+kubectl get pods -n mediastack -l app=audiobook-intake
 
-# What the last run filed / reviewed (the last line is a JSON summary)
-kubectl logs -n mediastack -l app=audiobook-intake --tail=50
-
-# Run now instead of waiting for the schedule
-kubectl create job -n mediastack --from=cronjob/audiobook-intake intake-manual-$(date +%s)
+# What it has been doing. Quiet passes log nothing; each pass that files or
+# reviews something ends with a JSON summary line.
+kubectl logs -n mediastack deploy/audiobook-intake --tail=50
 
 # Look at the review folder
 kubectl exec -n mediastack deploy/filebrowser -- ls -la /srv/Audiobooks/_needs-review
+
+# Who holds the lock (normally absent between passes)
+kubectl exec -n mediastack deploy/filebrowser -- cat /srv/Audiobooks/.intake-lock
 ```
 
-`DRY_RUN=true` on the CronJob logs which uploads would be processed without touching anything.
+There is nothing to trigger by hand: it checks every minute. To pause it, scale it to 0.
+`DRY_RUN=true` logs which uploads would be processed without touching anything.
+
+The **liveness probe** checks a heartbeat file. The heartbeat is touched after every healthy pass
+and before every book, and **not** when a share is unmounted. If it is more than 40 minutes stale,
+the pod is restarted.
+
+On SIGTERM it finishes the current book and exits. If a pod is killed mid-copy anyway, the next one
+deletes the partial `<Title>.intake-partial` folder and finishes any book left in
+`.intake-staging`.
 
 ### Alerting
 
 | Failure | Alert |
 |---|---|
-| Run crashes, is evicted, or cannot pull its image | `KubeJobFailed` (Prometheus, generic) |
-| No successful run for 2h / 26h | `CronJobNotSucceeding` / `CronJobNotSucceededRecently` (generic) |
-| Run exits 0 but logged an `ERROR`: an exception on one upload, or the Audiobookshelf scan call failed | `AudiobookIntakeErrors` (Loki ruler, `loki-ruler-rules-configmap.yaml`) |
+| The loop keeps crashing, or the liveness probe keeps restarting it | `KubePodCrashLooping` (generic) |
+| No pod running / not ready | `KubeDeploymentReplicasMismatch`, `KubePodNotReady` (generic) |
+| Image cannot be pulled | `KubeContainerWaiting` (generic, after 1 h) |
+| A pass logged an `ERROR`: an exception on one upload, or the Audiobookshelf scan call failed | `AudiobookIntakeErrors` (Loki ruler, `loki-ruler-rules-configmap.yaml`) |
 
-The last row exists because the job exits 0 on purpose when a single book goes wrong, so one bad
-upload can't block everyone else's. An ordinary "no confident match" is **not** an error. It is
-logged at INFO, the uploader sees it in `_needs-review`, and it does not alert.
-
-If a run is killed mid-copy, the next run deletes the partial `<Title>.intake-partial` folder and
-finishes any book left in `.intake-staging`.
+The last row exists because the intake carries on when a single book goes wrong, so one bad upload
+can't block everyone else's. An ordinary "no confident match" or a held incomplete upload is
+**not** an error. Those are logged at INFO and do not alert.
 
 ## Releasing a new image
 
 Edit `build/audiobook-intake/`. The `Build In-House Images` CI job builds it and runs
-`intake_test.py`. After merge, push a tag, then bump the tag in `cronjob.yaml` in a follow-up PR:
+`intake_test.py`. After merge, push a tag, then bump the tag in `deployment.yaml` in a follow-up PR:
 
 ```bash
-git tag audiobook-intake/v0.1.1 && git push origin audiobook-intake/v0.1.1
+git tag audiobook-intake/v0.2.1 && git push origin audiobook-intake/v0.2.1
 ```
