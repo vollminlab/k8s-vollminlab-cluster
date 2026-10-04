@@ -1351,7 +1351,9 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Ingress | `filebrowser.vollminlab.com` |
 | Config PVC | 1Gi Longhorn |
 | Storage | SMB-backed — audiobooks-incoming, misc-incoming |
-| Auth | Authentik forward-auth; own Cloudflare tunnel |
+| Auth | Authentik forward-auth (`FB_AUTH_METHOD=proxy` on `X-authentik-username`); shared nginx Cloudflare tunnel |
+| NetworkPolicy | `filebrowser-allow-ingress-nginx` — ingress only from `ingress-nginx` on 8080. Required: proxy auth trusts the header, so without it any in-cluster pod could log in as any user |
+| New-user defaults | Upload (`create`) + download only — no delete/rename/modify/share/execute (set 2026-10-04 via `PUT /api/settings`; lives in `database.db`, not git). Users are auto-created on first SSO login |
 | IaC | Group and policy management via tofu |
 
 ### audiobook-intake (FileBrowser → Audiobookshelf filer)

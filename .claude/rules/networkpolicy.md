@@ -90,6 +90,7 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `longhorn-system` | `longhorn-manager` | 9500 | Longhorn manager metrics — chart 1.12.1+ ships its own policies that exclude Prometheus | allow-monitoring-scrape ingress (from monitoring) |
 | `vollmint` | `vollmint` | 8080 | API + SPA (ingress-nginx) | allow-ingress-nginx ingress |
 | `vollmint` | n/a (egress target) | 443 | SimpleFIN Bridge HTTPS (sync CronJob) | allow-external-egress egress |
+| `mediastack` | `filebrowser` | 8080 | Filebrowser HTTP + TUS uploads (svc 80→8080). **Pod-scoped**: mediastack has no default-deny; this policy is the only thing stopping in-cluster pods spoofing the proxy-auth header | filebrowser-allow-ingress-nginx ingress (from ingress-nginx) |
 | `foundry` | `foundryvtt` | 30000 | Foundry VTT HTTP + socket.io (svc 80→named port `http`→30000) | allow-ingress-nginx ingress (from ingress-nginx) |
 | `foundry` | n/a (egress target) | 443 | foundryvtt.com distribution download + licence check, and the VolSync restic mover to B2 | allow-https-egress egress (RFC1918 excluded) |
 
