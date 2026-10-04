@@ -148,6 +148,51 @@ data:
                 A common cause is an incomplete podResources block in the velero-repo-maintenance
                 ConfigMap — velero parses all four fields unconditionally, so omitting one
                 fails with `couldn't parse CPU limit ""`.
+  audiobook-intake-alerts.yaml: |
+    groups:
+      # audiobook-intake problems that do not fail the Job.
+      #
+      # The intake CronJob deliberately exits 0 when a single book goes wrong: the book
+      # is moved to _needs-review/ and the run carries on, so one bad upload cannot block
+      # every other friend's. That means KubeJobFailed and CronJobNotSucceeding — which
+      # cover crashes, evictions and image pulls — never see these:
+      #   "failed on <book>" / "intake error"  — an unexpected exception on one upload
+      #   "audiobookshelf scan request failed" — the ABS API key or URL is broken; books
+      #                                          are filed but ABS only notices at its own scan
+      # All of them, and only they, are logged at ERROR. Warnings (an unreadable tag, a
+      # cleaned-up interrupted copy) are expected and stay out.
+      #
+      # Scoped to namespace="mediastack": Loki logs the text of every query it serves, and
+      # its own logs are in namespace="monitoring", so pinning the namespace keeps the rule
+      # from matching its own query text (the self-reference trap documented above).
+      #
+      # Validated 2026-10-04: the same selector with `|= " INFO "` counted exactly the
+      # INFO lines of the three runs so far (1, 1, 3), and `|= " ERROR "` returned none.
+      - name: audiobook-intake
+        rules:
+          - alert: AudiobookIntakeErrors
+            expr: |
+              sum by (namespace, pod) (
+                count_over_time(
+                  {namespace="mediastack", container="audiobook-intake"}
+                    |= " ERROR "
+                    [1h]
+                )
+              ) > 0
+            # One occurrence is worth a look and these do not appear transiently. The
+            # 1h window keeps the alert up long enough to be seen, then lets it resolve.
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "audiobook-intake logged errors in run {{ $labels.pod }}"
+              description: >-
+                {{ $value | humanize }} ERROR lines from audiobook-intake in the last hour.
+                The run still exited 0, so the affected upload is in _needs-review/ (or, for a
+                scan failure, the book was filed but Audiobookshelf was not told). Read the
+                reason with `kubectl logs -n mediastack {{ $labels.pod }}` — the final line is
+                a JSON summary of what was filed and what went to review.
+                Runbook: docs/runbooks/audiobook-intake.md
   stale-mount-alerts.yaml: |
     groups:
       # A stale Longhorn mount that auto-remediation did not clear.
