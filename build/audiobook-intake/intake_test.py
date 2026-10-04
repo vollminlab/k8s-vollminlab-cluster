@@ -12,11 +12,29 @@ import intake
 MP3 = b"\xff\xfb\x90\x64" + b"\x00" * 413
 MP3 = MP3 * 8
 
-KNOWN = {  # (artist, album) the fake Audible recognises -> canonical (author, title)
-    ("Andy Weir", "Artemis"): ("Andy Weir", "Artemis"),
-    ("George Orwell", "Animal Farm"): ("George Orwell", "Animal Farm"),
-    ("Brandon Sanderson", "Mistborn"): ("Brandon Sanderson", "The Final Empire"),
+KNOWN = {  # (artist, album) the fake Audible's SEARCH finds -> (author, title, language)
+    ("Andy Weir", "Artemis"): ("Andy Weir", "Artemis", "English"),
+    ("George Orwell", "Animal Farm"): ("George Orwell", "Animal Farm", "English"),
+    ("Brandon Sanderson", "Mistborn"): ("Brandon Sanderson", "The Final Empire", "English"),
+    # The 2026-10-04 mislabel: a tag that is a substring of the German edition's title.
+    ("Michael Cheney", "Confessions of a Trash Droid: The Complete Series in One"):
+        ("Michael Cheney", "Confessions of a Trash Droid_ The Complete Series in One (German Edition)", "German"),
+    ("Michael Cheney", "Confessions of a Trash Droid"):
+        ("Michael Cheney", "Confessions of a Trash Droid", "English"),
 }
+ASINS = {  # what --search-id resolves to: asin -> (author, title, language, files it fits)
+    "B0GWFGGR9J": ("Michael Cheney", "Confessions of a Trash Droid: The Complete First Series in One", "English", 1),
+    "B0HJZV1VGW": ("Michael Cheney", "Confessions of a Trash Droid: The Complete Series in One (German Edition)",
+                   "German", 1),
+    "1980004900": ("Tamsyn Muir", "Gideon the Ninth", "English", 1),
+}
+
+
+def fake_lookup(asin):
+    if asin not in ASINS:
+        return None
+    author, title, lang, _ = ASINS[asin]
+    return author, title, lang
 
 
 def mp3(path: Path, album=None, artist=None) -> Path:
@@ -36,25 +54,41 @@ def age(root: Path, seconds=3600) -> None:
 
 
 class FakeBeets:
-    """Moves a book into staging iff its tags name a KNOWN book, like a
-    confident beets-audible match; otherwise leaves it alone, like a skip."""
+    """Moves a book into staging iff it would be a confident beets-audible
+    match, like the real import; otherwise leaves it alone, like a skip.
+    Search uses the files' tags against KNOWN; --search-id uses ASINS."""
 
     def __init__(self, staging: Path):
         self.staging = staging
         self.calls: list[tuple[str, str]] = []
+        self.search_ids: list[str | None] = []
+        self.seen_asin: list[str | None] = []  # the ASIN tag each import was handed
 
-    def import_book(self, book: Path) -> None:
+    def import_book(self, book: Path, *, search_id=None, threshold=None) -> None:
         files = intake.audio_files(book)
         m = MediaFile(files[0])
         key = (m.artist or "", m.album or "")
         self.calls.append(key)
-        if key not in KNOWN:
+        self.search_ids.append(search_id)
+        self.seen_asin.append(m.asin or None)
+        if search_id:
+            if search_id not in ASINS or ASINS[search_id][3] != len(files):
+                return
+            author, title, lang, _ = ASINS[search_id]
+        elif key in KNOWN:
+            author, title, lang = KNOWN[key]
+        else:
             return
-        author, title = KNOWN[key]
-        dest = self.staging / author / title
+        dest = self.staging / author / title.replace(":", "_")
         dest.mkdir(parents=True, exist_ok=True)
-        for i, f in enumerate(files, 1):
-            f.rename(dest / f"{i:02d} - {title}{f.suffix}")
+        for i, f in enumerate(intake.os_sorted(files), 1):
+            target = dest / f"{i:02d} - {title.replace(':', '_')}{f.suffix}"
+            f.rename(target)
+            t = MediaFile(target)
+            t.album, t.artist, t.albumartist, t.language = title, author, author, lang
+            if lang == "German":
+                t.asin = "B0HJZV1VGW"  # the real plugin stamps the matched edition's ASIN
+            t.save()
         (dest / "cover.jpg").write_bytes(b"jpg")
 
 
@@ -65,7 +99,7 @@ def env(tmp_path):
     library.mkdir()
     (incoming / intake.STAGING_NAME).mkdir()
     beets = FakeBeets(incoming / intake.STAGING_NAME)
-    it = intake.Intake(incoming, library, beets, quiet_seconds=900)
+    it = intake.Intake(incoming, library, beets, quiet_seconds=900, lookup=fake_lookup)
     return it, incoming, library, beets
 
 
@@ -440,3 +474,144 @@ def test_loop_stops_promptly_during_sleep(tmp_path):
 def test_run_once_reports_unmounted_share(tmp_path):
     it = intake.Intake(tmp_path / "missing", tmp_path, FakeBeets(tmp_path), quiet_seconds=0)
     assert intake.run_once(it, verbose=False) is False
+
+
+# ---------------------------------------------------- ASIN pin + language guard
+#
+# 2026-10-04: "Confessions of a Trash Droid [B0GWFGGR9J]" (English) was filed as
+# the German edition B0HJZV1VGW. Its album tag "…The Complete Series in One" is a
+# substring of the German title, and the ASIN in the name was stripped as noise.
+
+TD_TAG = "Confessions of a Trash Droid: The Complete Series in One"
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("Confessions of a Trash Droid [B0GWFGGR9J]", "B0GWFGGR9J"),
+    ("Gideon the Ninth [1980004900]", "1980004900"),
+    ("Some Book [123456789X]", "123456789X"),
+    ("Some Book (B0GWFGGR9J)", None),      # brackets are required
+    ("Some Book [2014]", None),            # a year is not an ASIN
+    ("Some Book B0GWFGGR9J", None),
+])
+def test_asin_in_name(name, expected, tmp_path):
+    d = tmp_path / name
+    assert intake.find_asin(d, []) == expected
+
+
+def test_asin_name_beats_tag_and_tag_is_fallback(tmp_path):
+    d = tmp_path / "Book"
+    f = mp3(d / "a.mp3")
+    m = MediaFile(f); m.asin = "B0HJZV1VGW"; m.save()
+    assert intake.find_asin(d, [f]) == "B0HJZV1VGW"
+    assert intake.find_asin(tmp_path / "Book [B0GWFGGR9J]", [f]) == "B0GWFGGR9J"
+    g = mp3(d / "b [1980004900].mp3")
+    assert intake.find_asin(d, [g, f]) == "1980004900"  # a file name also beats a tag
+
+
+def test_incident_replay_asin_in_name_pins_the_english_edition(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Confessions of a Trash Droid [B0GWFGGR9J]" / "book.mp3", album=TD_TAG, artist="Michael Cheney")
+    age(incoming)
+    it.run()
+    assert it.filed == ["Michael Cheney/Confessions of a Trash Droid_ The Complete First Series in One"]
+    assert beets.search_ids == ["B0GWFGGR9J"], "pinned only — the fuzzy search must never run"
+    assert not any("German" in p.name for p in library.rglob("*"))
+
+
+def test_incident_replay_without_asin_refuses_german_edition(env):
+    it, incoming, library, beets = env
+    d = incoming / "Confessions of a Trash Droid"
+    f = mp3(d / "book.mp3", album=TD_TAG, artist="Michael Cheney")
+    age(incoming)
+    it.run()
+    assert not any(library.iterdir()), "a foreign-language match must not reach the library"
+    reviewed = incoming / intake.REVIEW_NAME / "Confessions of a Trash Droid"
+    note = (reviewed / "WHY-NOT-FILED.txt").read_text()
+    assert "German" in note and "ASIN" in note
+    m = MediaFile(reviewed / "book.mp3")  # original name and tags restored, not the German ones
+    assert (m.album, m.artist, m.language) == (TD_TAG, "Michael Cheney", None)
+    assert not m.asin, "the wrong edition's ASIN must not survive, or a re-upload would pin it"
+    assert not any(p for p in (incoming / intake.STAGING_NAME).rglob("*") if p.is_file())
+
+
+def test_rejected_language_match_falls_through_to_next_attempt(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Michael Cheney - Confessions of a Trash Droid" / "book.mp3", album=TD_TAG, artist="Michael Cheney")
+    age(incoming)
+    it.run()
+    assert it.filed == ["Michael Cheney/Confessions of a Trash Droid"]
+    filed = next((library / "Michael Cheney" / "Confessions of a Trash Droid").glob("*.mp3"))
+    assert MediaFile(filed).language == "English"
+    assert beets.calls[0] == ("Michael Cheney", TD_TAG)  # German tried first, rejected
+    assert beets.seen_asin == [None, None], "the next attempt must not inherit the rejected edition's tags"
+
+
+def test_unstage_restores_names_and_tags_in_natural_order(env):
+    it, incoming, library, beets = env
+    d = incoming / "Confessions of a Trash Droid"
+    names = ["1.mp3", "2.mp3", "10.mp3"]
+    for i, n in enumerate(names):
+        f = mp3(d / n, album=TD_TAG, artist="Michael Cheney")
+        m = MediaFile(f); m.title = f"part {n}"; m.save()
+    age(incoming)
+    it.run()
+    reviewed = incoming / intake.REVIEW_NAME / "Confessions of a Trash Droid"
+    assert sorted(p.name for p in reviewed.glob("*.mp3")) == sorted(names)
+    for n in names:
+        assert MediaFile(reviewed / n).title == f"part {n}"  # each file back under its own name
+
+
+def test_pinned_asin_that_does_not_fit_goes_to_review_without_searching(env):
+    it, incoming, library, beets = env
+    for n in ("a.mp3", "b.mp3"):  # ASINS says B0GWFGGR9J is one file
+        mp3(incoming / "Confessions of a Trash Droid [B0GWFGGR9J]" / n, album="x", artist="y")
+    age(incoming)
+    it.run()
+    assert beets.search_ids == ["B0GWFGGR9J"]
+    note = (incoming / intake.REVIEW_NAME / "Confessions of a Trash Droid [B0GWFGGR9J]" / "WHY-NOT-FILED.txt").read_text()
+    assert "did not fit" in note and "B0GWFGGR9J" in note
+    m = MediaFile(incoming / intake.REVIEW_NAME / "Confessions of a Trash Droid [B0GWFGGR9J]" / "a.mp3")
+    assert (m.album, m.artist) == ("x", "y")
+
+
+def test_unknown_asin_falls_back_to_search(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Andy Weir - Artemis [B0ZZZZZZZZ]" / "a.mp3")
+    age(incoming)
+    it.run()
+    assert it.filed == ["Andy Weir/Artemis"]
+    assert beets.search_ids[0] is None
+
+
+def test_explicit_asin_for_foreign_edition_is_honoured(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Trash Droid German [B0HJZV1VGW]" / "a.mp3")
+    age(incoming)
+    it.run()
+    assert len(it.filed) == 1 and "German Edition" in it.filed[0]
+
+
+def test_allowed_languages_is_configurable(env):
+    it, incoming, library, beets = env
+    it.allowed_languages = {"english", "german"}
+    mp3(incoming / "Confessions of a Trash Droid" / "book.mp3", album=TD_TAG, artist="Michael Cheney")
+    age(incoming)
+    it.run()
+    assert len(it.filed) == 1 and "German Edition" in it.filed[0]
+
+
+def test_snapshot_round_trip_is_exact(tmp_path):
+    tagged = mp3(tmp_path / "t.mp3", album="Orig", artist="Who")
+    m = MediaFile(tagged); m.asin = "B0GWFGGR9J"; m.comments = "keep me"; m.save()
+    bare = tmp_path / "bare.mp3"
+    bare.write_bytes(MP3)  # no ID3 at all
+    snap = intake.snapshot_tags([tagged, bare])
+    for f in (tagged, bare):
+        x = MediaFile(f)
+        x.album, x.artist, x.asin, x.language, x.comments = "WRONG", "WRONG", "B0HJZV1VGW", "German", "junk"
+        x.save()
+    intake.restore_snapshot(snap)
+    t = MediaFile(tagged)
+    assert (t.album, t.artist, t.asin, t.comments, t.language) == ("Orig", "Who", "B0GWFGGR9J", "keep me", None)
+    import mutagen
+    assert mutagen.File(bare).tags is None, "a file uploaded without tags must go back to having none"
