@@ -52,12 +52,15 @@ Scott's requirement is that search actually *finds books he is looking for*. Sel
 
 **Who:** Scott, manually. Claude cannot create a Hardcover account token.
 
-- [ ] **Step 1: Create the key.** Scott logs in at https://hardcover.app, goes to Settings → API, and creates a key. Choose the longest available expiry and note the expiry date.
+- [ ] **Step 1: Create the key.** Scott logs in at https://hardcover.app and goes to Settings → Hardcover API → New API Key.
+  - **Name:** `vollminlab-readarr-metadata`
+  - **Permissions:** `read:catalog` **only**. That grants `read:catalog:search` and `read:catalog:data`, which covers every root field rreading-glasses queries: `search`, `books`, `books_by_pk`, `editions`, `editions_by_pk`, `authors`, `authors_by_pk`, `series_by_pk`, `book_series`, `contributions` and `books_trending`. This was mapped 2026-10-04 against `capability-scopes.json` in `hardcoverapp/hardcover-docs`. **Never** choose `all`: per Hardcover's docs, an `all` token can delete the account.
+  - **Expiry:** no expiry, if offered. A `read:catalog` token exposes only public catalog data, so a leak costs at most our rate quota. An expiry, by contrast, is a guaranteed future outage with no alert. Hardcover also says it "may reset tokens without notice while in beta", so detection is needed either way (see Known residuals).
 - [ ] **Step 2: Save it to 1Password.** Create a Homelab vault item:
   - Title: `Hardcover API Key`
   - Tag: `Homelab`
   - Field `token`: the raw token **without** a leading `Bearer `. If Hardcover displays `Bearer eyJ…`, strip the prefix.
-  - Field `expires`: the expiry date
+  - Field `expires`: the expiry date, or `never`
   - Notes: `Referenced by ExternalSecret — do not rename fields`
 - [ ] **Step 3: Verify Claude can read it** (prints the length only, never the value):
 
@@ -163,7 +166,7 @@ for e in errors:
     print("  ERR ", e)
 
 print("\nSCOTT'S RECENT QUERIES (top 5 titles each, verify by eye):")
-for q in ["the blade itself", "before they are hanged", "confessions of a trash"]:
+for q in ["the blade itself", "the blade itself abercrombie", "confessions of a trash droid", "confessions of a trash"]:
     status, res = get("/search?q=" + urllib.parse.quote(q))
     print(f"  [{q}] -> {status}, {len(res or [])} results")
     for r in (res or [])[:5]:
@@ -203,7 +206,7 @@ The baseline is expected to report *low* RECALL even if its search works well. I
 | RECALL < 36/40, errors = 0 | Ranking problem | **Stop.** Show Scott the MISS lines. Check whether a title-only or ISBN query finds them |
 | Author `served` far below `library` | #134 data-side | Not a gate (#134 is client-side), but report it |
 
-Ask Scott which book "confessions of a trash" was meant to find before judging that query.
+Scott's targets (confirmed 2026-10-04): **The Blade Itself** (Joe Abercrombie) and **Confessions of a Trash Droid**. Both must appear in the top 5 for the full title. The truncated `"confessions of a trash"` query, which is what he actually typed, is reported for information only.
 
 - [ ] **Step 6: Tear down.**
 
@@ -569,5 +572,5 @@ Expected: `0`.
 ## Known residuals (state these in the PR, don't fix here)
 
 - **bookshelf #134:** an author's page may omit popular works with 3+ editions after a refresh. Search can still find them, and adding the book directly from search works. Bumping bookshelf to `hardcover-v0.4.21.182` does **not** fix it (nothing in `RefreshAuthorService` changed), so it stays out of this plan.
-- **Hardcover key expiry:** search will fail again on the expiry date. The 1P `expires` field is the only record; nothing alerts on it. Consider a follow-up issue in the shape of `vcenter-credential-age`.
+- **Hardcover token death:** Hardcover may reset tokens without notice during its API beta, and a dead token makes search return `[]` with HTTP 200. That looks exactly like "no books found", not an error. Follow-up issue: alert on rreading-glasses 401s in Loki, or run a canary search CronJob.
 - **No version tags upstream:** Renovate cannot bump a digest-only `hardcover` tag meaningfully. Re-pin by hand when the upstream image changes.
