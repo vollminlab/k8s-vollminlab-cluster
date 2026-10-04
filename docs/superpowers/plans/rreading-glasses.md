@@ -56,16 +56,15 @@ Scott's requirement is that search actually *finds books he is looking for*. Sel
   - **Name:** `vollminlab-readarr-metadata`
   - **Permissions:** `read:catalog` **only**. That grants `read:catalog:search` and `read:catalog:data`, which covers every root field rreading-glasses queries: `search`, `books`, `books_by_pk`, `editions`, `editions_by_pk`, `authors`, `authors_by_pk`, `series_by_pk`, `book_series`, `contributions` and `books_trending`. This was mapped 2026-10-04 against `capability-scopes.json` in `hardcoverapp/hardcover-docs`. **Never** choose `all`: per Hardcover's docs, an `all` token can delete the account.
   - **Expiry:** no expiry, if offered. A `read:catalog` token exposes only public catalog data, so a leak costs at most our rate quota. An expiry, by contrast, is a guaranteed future outage with no alert. Hardcover also says it "may reset tokens without notice while in beta", so detection is needed either way (see Known residuals).
-- [ ] **Step 2: Save it to 1Password.** Create a Homelab vault item:
-  - Title: `Hardcover API Key`
+- [x] **Step 2: Save it to 1Password.** Done 2026-10-04 as an **API Credential** item in Homelab:
+  - Title: `vollminlab-readarr-metadata`
   - Tag: `Homelab`
-  - Field `token`: the raw token **without** a leading `Bearer `. If Hardcover displays `Bearer eyJ…`, strip the prefix.
-  - Field `expires`: the expiry date, or `never`
-  - Notes: `Referenced by ExternalSecret — do not rename fields`
+  - Field `credential`: the raw token, 51 characters, with **no** `Bearer ` prefix. The ExternalSecret template adds the prefix.
+  - Do not rename the item or the field: the ExternalSecret references both.
 - [ ] **Step 3: Verify Claude can read it** (prints the length only, never the value):
 
 ```bash
-op item get "Hardcover API Key" --vault Homelab --fields token --reveal | tr -d '\n' | wc -c
+op item get "vollminlab-readarr-metadata" --vault Homelab --fields credential --reveal | tr -d '\n' | wc -c
 ```
 
 Expected: a number greater than 100. A `0` or an error means the item or field name is wrong.
@@ -80,19 +79,20 @@ docker network create rg-proof
 docker run -d --name rg-pg --network rg-proof \
   -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=rreading-glasses \
   docker.io/library/postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
-op item get "Hardcover API Key" --vault Homelab --fields token --reveal \
+op item get "vollminlab-readarr-metadata" --vault Homelab --fields credential --reveal \
   | tr -d '\n' | sed 's/^/Bearer /' > "$RG_DIR/hc_auth"; chmod 644 "$RG_DIR/hc_auth"
 docker run -d --name rg --network rg-proof -p 127.0.0.1:8788:8788 \
   -v "$RG_DIR/hc_auth:/run/hc_auth:ro" \
   -e HARDCOVER_AUTH_FILE=/run/hc_auth -e POSTGRES_HOST=rg-pg \
   docker.io/blampe/rreading-glasses:hardcover@sha256:3f017a51d9007b715303a20f481c822e4df66485fc9e5f57f6fdf1de840dc02f \
-  serve
+  /main serve
 sleep 10; docker logs rg 2>&1 | tail -20
 ```
 
 Expected: the logs show it listening on `:8788`, with no `400` (which means a missing `Bearer ` prefix, rreading-glasses #592) and no Postgres connection error.
 
-- If it exits saying `serve` is an unknown command, the entrypoint already includes `serve`. Rerun without the trailing `serve` argument, and note which form worked: Task 3 must use the same one.
+- The image has no ENTRYPOINT (`CMD ["/main"]`), so the full command `/main serve` is required. A bare `serve` fails with `exec: "serve": executable file not found` (verified 2026-10-04).
+- A startup `warn problem collecting db stats ... cannot scan NULL` is benign: it is the stats query running against an empty cache.
 - The image is distroless and runs as uid 65532, which is why the auth file is `chmod 644`.
 
 - [ ] **Step 2: Smoke-test one query.**
@@ -111,7 +111,7 @@ The test: for each book that is actually in Scott's library, searching *title + 
 
 ```bash
 K=$(op item get "Readarr API Key" --vault Homelab --fields credential --reveal)
-P=$(kubectl get pod -n mediastack -l app=readarr -o name | head -1)
+P=$(kubectl get pod -n mediastack -l app.kubernetes.io/name=readarr -o name | head -1)
 kubectl exec -n mediastack "$P" -c readarr -- curl -s -H "X-Api-Key: $K" http://localhost:8787/api/v1/book  > "$RG_DIR/books.json"
 kubectl exec -n mediastack "$P" -c readarr -- curl -s -H "X-Api-Key: $K" http://localhost:8787/api/v1/author > "$RG_DIR/authors.json"
 python3 -c "import json;print(len(json.load(open('$RG_DIR/books.json'))))"
@@ -288,14 +288,14 @@ spec:
   data:
     - secretKey: token
       remoteRef:
-        key: "Hardcover API Key"
-        property: token
+        key: "vollminlab-readarr-metadata"
+        property: credential
 ```
 
 - [ ] **Step 4: Create `deployment.yaml`.** Notes on the choices here:
   - Postgres is a sidecar listening on `127.0.0.1` only, so `trust` auth is unreachable from the pod network.
   - `PGDATA` is a subdirectory to avoid Longhorn's `lost+found`.
-  - If Task 1 needed no `serve` argument, delete the `args` line.
+  - `command: ["/main", "serve"]` is the full command: the image has no ENTRYPOINT, so `args: ["serve"]` alone fails.
 
 ```yaml
 apiVersion: apps/v1
@@ -334,7 +334,7 @@ spec:
       containers:
         - name: rreading-glasses
           image: docker.io/blampe/rreading-glasses:hardcover@sha256:3f017a51d9007b715303a20f481c822e4df66485fc9e5f57f6fdf1de840dc02f
-          args: ["serve"]
+          command: ["/main", "serve"]
           env:
             - name: POSTGRES_HOST
               value: "127.0.0.1"
@@ -465,7 +465,7 @@ Expected: `BUILD-OK`, and the rreading-glasses objects listed as `created (serve
 | Sidecar | `postgres:17.11` (digest-pinned), `127.0.0.1` only, trust auth — cache store, not data |
 | Service | `rreading-glasses.mediastack.svc:80` → 8788, internal only |
 | Consumer | Readarr (`bookshelf:hardcover`) — `metadataSource` set in Readarr's DB, see plan Task 6 |
-| Auth | Hardcover API key, 1P `Hardcover API Key` (field `token`, **expires** — see field `expires`) |
+| Auth | Hardcover API key, 1P `vollminlab-readarr-metadata` (API Credential, field `credential`, scope `read:catalog`, no expiry) |
 | Cache PVC | `pvc-rreading-glasses-cache` 2Gi Longhorn RWO — **deliberately unbacked** (rebuildable cache) |
 | Why self-hosted | Shared `hardcover.bookinfo.pro` returned 429/timeouts on 11 of 11 searches, 2026-10-04 |
 ```
@@ -520,11 +520,21 @@ Expected:
 - the ExternalSecret shows `SecretSynced` / `Ready=True`
 - the curl returns a non-empty JSON list
 
+- [ ] **Step 2a: Take a Readarr backup first.** Author refresh *deletes* books missing from the author's served works list, if they were not manually added and have no files (`RefreshBookService.ShouldDelete`). Phase 0 measured that the self-hosted author lists omit most popular works (see Known residuals). The backup makes any prune reversible.
+
+```bash
+kubectl exec -n mediastack "$P" -c readarr -- curl -s -X POST -H "X-Api-Key: $K" -H 'Content-Type: application/json' \
+  -d '{"name":"Backup"}' http://localhost:8787/api/v1/command
+kubectl exec -n mediastack "$P" -c readarr -- curl -s -H "X-Api-Key: $K" http://localhost:8787/api/v1/system/backup | python3 -m json.tool | head -12
+```
+
+Expected: a new `manual` backup timestamped now.
+
 - [ ] **Step 2: Switch the saved source.**
 
 ```bash
 K=$(op item get "Readarr API Key" --vault Homelab --fields credential --reveal)
-P=$(kubectl get pod -n mediastack -l app=readarr -o name | head -1)
+P=$(kubectl get pod -n mediastack -l app.kubernetes.io/name=readarr -o name | head -1)
 kubectl exec -n mediastack "$P" -c readarr -- sh -c "
   curl -s -H 'X-Api-Key: $K' http://localhost:8787/api/v1/config/development \
   | sed 's#\"metadataSource\": *\"[^\"]*\"#\"metadataSource\": \"http://rreading-glasses.mediastack.svc.cluster.local\"#' \
@@ -569,7 +579,33 @@ Expected: `0`.
 
 ---
 
+## Phase 0 result (2026-10-04): PASSED
+
+- **Recall:** 38/40 library books found by title + author, with 0 errors and 1-2s per search. The shared server took 100s or returned a 429 on 11 of 11.
+  - Misses: *Moll Flanders* (Claire Luckham's play adaptation, 0 results) and *Glory Road* (Heinlein, wrong work returned).
+- **Scott's targets:**
+  - *The Blade Itself*: in the top 5 for both the plain and the `+ abercrombie` query.
+  - *Confessions of a Trash Droid*: this is a 7-book series by Michael Cheney, not a single title. All 7 volumes come back, for the full name and for the truncated query alike.
+- **Author pages are incomplete (the residual below).** For Sanderson, the server fetched 208 works but served only 36, without *Oathbringer*, *Rhythm of War* or *Skyward*. A direct `/work/459452` does return *Oathbringer*, credited to 204214 with 32 editions. Christie hit `stopping refresh, too many editions` at 1,034 editions.
+
+| Author | Library | Served |
+|---|---|---|
+| King | 100 | 54 |
+| Christie | 92 | 89 |
+| Sanderson | 82 | 36 |
+| Pratchett | 69 | 85 |
+| Koontz | 68 | 29 |
+| Card | 48 | 1 |
+
+  In every case almost none of the *library's* IDs appear in the served list.
+
 ## Known residuals (state these in the PR, don't fix here)
+
+- **Author refresh can prune wanted books.**
+  - **Why:** served author lists omit many-edition works, and on refresh bookshelf deletes local books that are absent from the list, *not manually added*, and *without files*.
+  - **What is safe:** books with files are never deleted, and books added via "Add New" search are `Manual`, so they are safe too.
+  - **What is at risk:** the ~1,076 monitored-without-files entries that were auto-added from author monitoring.
+  - **Not new:** this is the same server software as `hardcover.bookinfo.pro`, so it is not a regression introduced by self-hosting. Task 6 Step 2a takes a backup first; count `Deleting N` in the Readarr debug log after the first refresh.
 
 - **bookshelf #134:** an author's page may omit popular works with 3+ editions after a refresh. Search can still find them, and adding the book directly from search works. Bumping bookshelf to `hardcover-v0.4.21.182` does **not** fix it (nothing in `RefreshAuthorService` changed), so it stays out of this plan.
 - **Hardcover token death:** Hardcover may reset tokens without notice during its API beta, and a dead token makes search return `[]` with HTTP 200. That looks exactly like "no books found", not an error. Follow-up issue: alert on rreading-glasses 401s in Loki, or run a canary search CronJob.
