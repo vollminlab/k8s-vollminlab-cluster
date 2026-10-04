@@ -75,6 +75,10 @@ data:
             main:
               env:
                 LSIO_NON_ROOT_USER: "true"
+                # Fallback only. Readarr's DB value (/settings/development) wins
+                # over this; both point at the self-hosted rreading-glasses. Set
+                # here so a rebuilt Readarr doesn't revert to the shared server.
+                METADATA_URL: "http://rreading-glasses.mediastack.svc.cluster.local"
             # The exportarr sidecar comes from the chart, and its 512Mi default limit
             # was never ours. Measured 2026-08-19 over 14d, every exportarr instance in
             # the cluster peaks between 14Mi and 49Mi. Normalised to 64Mi/256Mi across
