@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nut-exporter
+  namespace: monitoring
+  labels:
+    app: nut-exporter
+    env: production
+    category: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nut-exporter
+  template:
+    metadata:
+      labels:
+        app: nut-exporter
+        env: production
+        category: observability
+    spec:
+      containers:
+        - name: nut-exporter
+          image: ghcr.io/druggeri/nut_exporter:3.3.0
+          ports:
+            - name: metrics
+              containerPort: 9199
+          env:
+            # upsd on the TrueNAS box, which owns the USB-HID connection to the
+            # CyberPower unit. Addressed by IP: this is the storage VLAN and the
+            # NAS is the one host that must be reachable without DNS, since a
+            # power event is exactly when DNS may be gone.
+            - name: NUT_EXPORTER_SERVER
+              value: "192.168.150.2"
+            - name: NUT_EXPORTER_SERVERPORT
+              value: "3493"
+            # No credentials. NUT permits reading variables unauthenticated, and
+            # this was verified from a pod in this namespace before the exporter
+            # was written:
+            #   VAR ups ups.status "OL"
+            #   VAR ups battery.voltage "25.6"
+            # Keeping it unauthenticated means no ExtraUsers edit on TrueNAS and
+            # no fourth copy of a NUT password to rotate.
+            #
+            # battery.voltage is the load-bearing one. battery.runtime on this
+            # unit is a pure linear function of battery.charge (~13.8 s per
+            # point, measured across 39/42/100 %), so charge and runtime are the
+            # same measurement twice. Voltage is the only independent signal, and
+            # it is what distinguishes a sagging gauge from a depleted pack.
+            - name: NUT_EXPORTER_VARIABLES
+              value: "battery.charge,battery.voltage,battery.runtime,battery.runtime.low,ups.load,ups.status,ups.realpower.nominal,input.voltage,output.voltage"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
