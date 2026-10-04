@@ -219,6 +219,27 @@ resource "authentik_application" "readarr" {
   open_in_new_tab = false
 }
 
+resource "authentik_application" "readarr_audio" {
+  name            = "Readarr Audio"
+  slug            = "readarr-audio"
+  meta_launch_url = "https://readarr-audio.vollminlab.com"
+  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/readarr.png"
+  open_in_new_tab = false
+}
+
+# Admin tool: bound so it is not reachable by every account (see #1301, where an
+# Application with no binding is open to all authenticated users).
+data "authentik_group" "admins" {
+  name          = "authentik Admins"
+  include_users = false
+}
+
+resource "authentik_policy_binding" "readarr_audio_admins" {
+  target = authentik_application.readarr_audio.uuid
+  group  = data.authentik_group.admins.id
+  order  = 0
+}
+
 resource "authentik_application" "sabnzbd" {
   name            = "SABnzbd"
   slug            = "sabnzbd"

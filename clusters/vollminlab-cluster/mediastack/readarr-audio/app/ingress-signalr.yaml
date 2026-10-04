@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: readarr-audio-signalr-ingress
+  namespace: mediastack
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  labels:
+    app: readarr-audio
+    env: production
+    category: media
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: readarr-audio.vollminlab.com
+      http:
+        paths:
+          - path: /signalr
+            pathType: Prefix
+            backend:
+              service:
+                name: readarr-audio
+                port:
+                  number: 8787
+  tls:
+    - hosts:
+        - readarr-audio.vollminlab.com
+      secretName: wildcard-tls

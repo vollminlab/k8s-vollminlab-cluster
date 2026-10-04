@@ -1,31 +1,30 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: readarr-values
+  name: readarr-audio-values
   namespace: mediastack
   labels:
-    app: readarr
+    app: readarr-audio
     env: production
     category: media
 data:
   values.yaml: |
     persistence:
+      # Audiobooks-only instance. Deliberately NO /books mount: the ebook
+      # instance (readarr) owns /books, and each Readarr tracks one file per book,
+      # so the same title can exist once as an ebook there and once as audio here.
       config:
         enabled: true
-        existingClaim: pvc-readarr-config
+        existingClaim: pvc-readarr-audio-config
         mountPath: /config
       downloads:
         enabled: true
         existingClaim: pvc-completed-downloads
         mountPath: /downloads
-      # No /audiobooks mount: this instance is ebooks-only. Audiobooks belong to
-      # readarr-audio. Unmounting also means this instance can never upgrade-delete
-      # an M4B (its eBook profile ranks any EPUB above audio) and lets its stale
-      # audio bookfile records clean up as MissingFromDisk without touching disk.
-      books:
+      audiobooks:
         enabled: true
-        existingClaim: pvc-books
-        mountPath: /books
+        existingClaim: pvc-audiobooks
+        mountPath: /audiobooks
     terminationGracePeriodSeconds: 60
     lifecycle:
       preStop:
@@ -45,7 +44,7 @@ data:
               topologyKey: kubernetes.io/hostname
     resources:
       requests:
-        # VPA target ~35m / upperBound ~50m. Request 100m→50m.
+        # Starting point copied from readarr (VPA target ~35m there); re-measure.
         cpu: 50m
         memory: 256Mi
       limits:
@@ -65,7 +64,7 @@ data:
           # sets app=<chart>-<version> and no category, and a stale category written
           # by an old Kyverno mutation (security) was never corrected.
           labels:
-            app: readarr
+            app: readarr-audio
             env: production
             category: media
           # Velero FSB: exclude ephemeral scratch emptyDirs. MUST live under
@@ -79,10 +78,17 @@ data:
             main:
               env:
                 LSIO_NON_ROOT_USER: "true"
-                # Fallback only. Readarr's DB value (/settings/development) wins
-                # over this; both point at the self-hosted rreading-glasses. Set
-                # here so a rebuilt Readarr doesn't revert to the shared server.
+                # Same self-hosted metadata server (and Hardcover key, and cache) as
+                # the ebook instance. A fresh DB has no saved metadataSource, so this
+                # env value is the one in effect.
                 METADATA_URL: "http://rreading-glasses.mediastack.svc.cluster.local"
+                # Pre-set so tofu (readarr-audio-config) and Prowlarr can authenticate
+                # from the first boot. 1P "Readarr Audio API Key".
+                READARR__AUTH__APIKEY:
+                  secretKeyRef:
+                    expandObjectName: false
+                    name: readarr-audio-apikey
+                    key: api_key
             # The exportarr sidecar comes from the chart, and its 512Mi default limit
             # was never ours. Measured 2026-08-19 over 14d, every exportarr instance in
             # the cluster peaks between 14Mi and 49Mi. Normalised to 64Mi/256Mi across
