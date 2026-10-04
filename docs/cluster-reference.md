@@ -498,6 +498,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-sabnzbd-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-prowlarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-bazarr-config` | mediastack | 5Gi | longhorn | RWO |
+| `pvc-rreading-glasses-cache` | mediastack | 2Gi | longhorn | RWO |
 | `pvc-jellyfin-config` | mediastack | 20Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
@@ -1352,6 +1353,19 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Storage | SMB-backed — audiobooks-incoming, misc-incoming |
 | Auth | Authentik forward-auth; own Cloudflare tunnel |
 | IaC | Group and policy management via tofu |
+
+### rreading-glasses (Readarr metadata)
+
+| Parameter | Value |
+|---|---|
+| Image | `docker.io/blampe/rreading-glasses:hardcover` (digest-pinned; upstream publishes no version tags) |
+| Sidecar | `postgres:17.11` (digest-pinned), `127.0.0.1` only, trust auth — cache store, not data |
+| Service | `rreading-glasses.mediastack.svc:80` → 8788, internal only |
+| Consumer | Readarr (`bookshelf:hardcover`) — `metadataSource` is stored in Readarr's DB and beats `METADATA_URL` |
+| Auth | Hardcover API key, 1P `vollminlab-readarr-metadata` (API Credential, field `credential`, scope `read:catalog`, no expiry) |
+| Cache PVC | `pvc-rreading-glasses-cache` 2Gi Longhorn RWO — **deliberately unbacked** (rebuildable cache; FSB excluded by pod annotation) |
+| Why self-hosted | Shared `hardcover.bookinfo.pro` returned 429/timeouts on 11 of 11 searches, 2026-10-04 |
+| Known gap | Author pages omit many-edition works (Sanderson: 36 of 208 served); a Readarr author refresh deletes no-file, non-manual books missing from that list |
 
 ### FlareSolverr (Indexer proxy)
 

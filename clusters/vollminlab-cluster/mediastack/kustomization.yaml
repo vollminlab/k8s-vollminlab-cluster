@@ -20,6 +20,7 @@ resources:
   - ./prowlarr/app
   - ./qbittorrent/app
   - ./readarr/app
+  - ./rreading-glasses/app
   - ./radarr/app
   - ./sabnzbd/app
   - ./sonarr/app
