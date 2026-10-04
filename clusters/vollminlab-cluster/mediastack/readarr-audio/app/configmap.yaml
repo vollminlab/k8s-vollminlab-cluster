@@ -97,6 +97,16 @@ data:
             # later one silently wins, which is how the first attempt at this dropped
             # the override without any error.
             exportarr:
+              # The API key comes from READARR__AUTH__APIKEY, so Readarr never writes
+              # it to config.xml -- which is where exportarr looks by default. Without
+              # this it exits "ApiKey is required to not be empty", the pod sits at 1/2,
+              # and the Service has no endpoints (tofu/Prowlarr/Homepage all fail).
+              env:
+                API_KEY:
+                  secretKeyRef:
+                    expandObjectName: false
+                    name: readarr-audio-apikey
+                    key: api_key
               resources:
                 requests:
                   cpu: 10m
