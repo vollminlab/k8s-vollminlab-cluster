@@ -499,6 +499,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-prowlarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-bazarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-rreading-glasses-cache` | mediastack | 2Gi | longhorn | RWO |
+| `pvc-readarr-audio-config` | mediastack | 2Gi | longhorn | RWO |
 | `pvc-jellyfin-config` | mediastack | 20Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
@@ -1066,6 +1067,7 @@ Terraform/OpenTofu modules reconciled in-cluster by tofu-controller, one `Terraf
 | Prowlarr | `prowlarr-config` | `./terraform/prowlarr` | auto |
 | Radarr | `radarr-config` | `./terraform/radarr` | auto |
 | Readarr | `readarr-config` | `./terraform/readarr` | auto |
+| Readarr Audio | `readarr-audio-config` | `./terraform/readarr-audio` | auto |
 | Sonarr | `sonarr-config` | `./terraform/sonarr` | auto |
 | Tailscale | `tailscale-config` | `./terraform/tailscale` | auto |
 
@@ -1369,6 +1371,25 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Secret | `audiobook-intake-abs-apikey` ← 1P `Audiobookshelf Intake API Key` (triggers a library scan after filing) |
 | Runbook | `docs/runbooks/audiobook-intake.md` |
 
+### Readarr — ebooks (`readarr`) and audiobooks (`readarr-audio`)
+
+Two instances of the same chart (`readarr-repo`, `ghcr.io/pennydreadful/bookshelf:hardcover`), split 2026-10-04. One Readarr tracks one file per book, so a title can exist once as an ebook and once as an audiobook only across two instances.
+
+| | `readarr` | `readarr-audio` |
+|---|---|---|
+| Ingress | `readarr.vollminlab.com` | `readarr-audio.vollminlab.com` (Authentik, bound to `authentik Admins`) |
+| Library mount | `/books` (`pvc-books`) only — **no `/audiobooks` mount** | `/audiobooks` (`pvc-audiobooks`, Audiobookshelf's library) only |
+| Quality profile | eBook (EPUB/MOBI/AZW3) | Spoken (M4B/MP3/FLAC) |
+| Renaming | on | **off** — never reorganises Audiobookshelf's Author/Book layout (`readarr_naming` in tofu) |
+| Prowlarr categories | 7000–7060 | 3030 only |
+| Download category | SABnzbd/qBittorrent `books` | SABnzbd `audio`, qBittorrent `audiobooks` |
+| Monitoring | root folder + all authors `none`; only explicitly added books download | same |
+| Config PVC | `pvc-readarr-config` 5Gi (VolSync) | `pvc-readarr-audio-config` 2Gi (VolSync) |
+| API key | 1P `Readarr API Key` | 1P `Readarr Audio API Key`, injected as `READARR__AUTH__APIKEY` so tofu/Prowlarr/Homepage work from first boot |
+| Tofu | `terraform/readarr` | `terraform/readarr-audio` |
+
+**Why the ebook instance must not mount `/audiobooks`:** its eBook profile ranks any EPUB above an M4B, so a monitored audiobook could be "upgraded" — and with no recycle bin, the M4B deleted permanently.
+
 ### rreading-glasses (Readarr metadata)
 
 | Parameter | Value |
@@ -1376,7 +1397,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Image | `docker.io/blampe/rreading-glasses:hardcover` (digest-pinned; upstream publishes no version tags) |
 | Sidecar | `postgres:17.11` (digest-pinned), `127.0.0.1` only, trust auth — cache store, not data |
 | Service | `rreading-glasses.mediastack.svc:80` → 8788, internal only |
-| Consumer | Readarr (`bookshelf:hardcover`) — `metadataSource` is stored in Readarr's DB and beats `METADATA_URL` |
+| Consumers | `readarr` (ebooks) and `readarr-audio` (audiobooks), both `bookshelf:hardcover` — one Hardcover key and one cache serve both. `metadataSource` is stored in each Readarr's DB and beats `METADATA_URL` |
 | Auth | Hardcover API key, 1P `vollminlab-readarr-metadata` (API Credential, field `credential`, scope `read:catalog`, no expiry) |
 | Cache PVC | `pvc-rreading-glasses-cache` 2Gi Longhorn RWO — **deliberately unbacked** (rebuildable cache; FSB excluded by pod annotation) |
 | Why self-hosted | Shared `hardcover.bookinfo.pro` returned 429/timeouts on 11 of 11 searches, 2026-10-04 |
@@ -1419,7 +1440,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 | Group | Services |
 |---|---|
-| Media Stack | Jellyfin, Jellystat, Seerr, Sonarr, Radarr, Readarr, Bazarr, Prowlarr, SABnzbd, qBittorrent, Audiobookshelf |
+| Media Stack | Jellyfin, Jellystat, Seerr, Sonarr, Radarr, Readarr, Readarr Audio, Bazarr, Prowlarr, SABnzbd, qBittorrent, Audiobookshelf |
 | Infrastructure | Pi-hole, TrueNAS, vCenter, Portainer, Nginx Proxy Manager, UDM, HAProxy stats |
 | Monitoring | Grafana, Prometheus |
 | Documentation | BookStack, Homepage, GitHub repo, ChatGPT, Reddit, Chocolatey |

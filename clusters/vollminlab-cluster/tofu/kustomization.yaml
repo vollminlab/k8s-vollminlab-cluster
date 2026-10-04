@@ -17,6 +17,7 @@ resources:
   - minio-config/app
   - prowlarr-config/app
   - radarr-config/app
+  - readarr-audio-config/app
   - readarr-config/app
   - sonarr-config/app
   - tailscale-config/app

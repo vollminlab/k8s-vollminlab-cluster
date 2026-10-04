@@ -11,12 +11,22 @@ resource "prowlarr_application_radarr" "radarr" {
 }
 
 resource "prowlarr_application_readarr" "readarr" {
-  name            = "Readarr"
+  name         = "Readarr"
+  sync_level   = "fullSync"
+  prowlarr_url = "http://prowlarr.mediastack.svc.cluster.local:9696"
+  base_url     = "http://readarr.mediastack.svc.cluster.local:8787"
+  api_key      = var.readarr_api_key
+  # Ebooks only (7xxx). Audiobooks (3030) go to readarr-audio.
+  sync_categories = [7000, 7010, 7020, 7030, 7040, 7050, 7060]
+}
+
+resource "prowlarr_application_readarr" "readarr_audio" {
+  name            = "Readarr Audio"
   sync_level      = "fullSync"
   prowlarr_url    = "http://prowlarr.mediastack.svc.cluster.local:9696"
-  base_url        = "http://readarr.mediastack.svc.cluster.local:8787"
-  api_key         = var.readarr_api_key
-  sync_categories = [3030, 7000, 7010, 7020, 7030, 7040, 7050, 7060]
+  base_url        = "http://readarr-audio.mediastack.svc.cluster.local:8787"
+  api_key         = var.readarr_audio_api_key
+  sync_categories = [3030]
 }
 
 resource "prowlarr_application_sonarr" "sonarr" {

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-readarr-audio-config
+  namespace: mediastack
+  labels:
+    # Protected by VolSync (offsite-first, restic to B2). Velero FSB skips it via
+    # the pvcLabels rule in velero-skip-smb-policy, so it is copied once a night
+    # rather than three or four times. Remove this label if VolSync stops
+    # covering the volume, or it becomes backed up by nothing.
+    backup.vollminlab.com/volsync: "true"
+    app: readarr-audio
+    env: production
+    category: media
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # readarr's DB is 23 MB with 1,491 books; 2Gi is ample.
+      storage: 2Gi
+  storageClassName: longhorn

@@ -10,6 +10,7 @@ resources:
   - qbittorrent-config-replicationsource.yaml
   - radarr-config-replicationsource.yaml
   - readarr-config-replicationsource.yaml
+  - readarr-audio-config-replicationsource.yaml
   - sabnzbd-config-replicationsource.yaml
   - seerr-config-replicationsource.yaml
   - sonarr-config-replicationsource.yaml
@@ -22,6 +23,7 @@ resources:
   - volsync-qbittorrent-config-restic-externalsecret.yaml
   - volsync-radarr-config-restic-externalsecret.yaml
   - volsync-readarr-config-restic-externalsecret.yaml
+  - volsync-readarr-audio-config-restic-externalsecret.yaml
   - volsync-sabnzbd-config-restic-externalsecret.yaml
   - volsync-seerr-config-restic-externalsecret.yaml
   - volsync-sonarr-config-restic-externalsecret.yaml

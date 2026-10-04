@@ -21,6 +21,7 @@ resources:
   - ./prowlarr/app
   - ./qbittorrent/app
   - ./readarr/app
+  - ./readarr-audio/app
   - ./rreading-glasses/app
   - ./radarr/app
   - ./sabnzbd/app
