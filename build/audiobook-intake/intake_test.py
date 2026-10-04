@@ -266,3 +266,177 @@ def test_beets_config_renders():
     assert parsed["match"]["strong_rec_thresh"] == 0.15
     assert parsed["import"]["quiet_fallback"] == "skip"
     assert "tracktotal" in parsed["item_fields"]["book_file"]
+
+
+# ------------------------------------------------------------ completeness
+
+TESTDATA = Path(__file__).parent / "testdata"
+
+
+def box(kind: bytes, payload_len: int, declared: int | None = None) -> bytes:
+    import struct
+    return struct.pack(">I", declared if declared is not None else 8 + payload_len) + kind + b"\0" * payload_len
+
+
+def test_mp4_complete_and_truncated(tmp_path):
+    f = tmp_path / "book.m4b"
+    f.write_bytes(box(b"ftyp", 16) + box(b"moov", 100) + box(b"mdat", 5000))
+    assert intake.mp4_boxes_complete(f)
+    # Same bytes, as seen halfway through an upload.
+    assert not intake.mp4_boxes_complete(f, size=f.stat().st_size // 2)
+    # moov-at-end layout, mid-upload: still inside mdat, moov not yet written.
+    f.write_bytes(box(b"ftyp", 16) + box(b"mdat", 5000)[:2000])
+    assert not intake.mp4_boxes_complete(f)
+
+
+def test_mp4_largesize_and_to_eof_boxes(tmp_path):
+    import struct
+    f = tmp_path / "big.m4b"
+    payload = b"\0" * 64
+    f.write_bytes(box(b"ftyp", 8) + struct.pack(">I", 1) + b"mdat" + struct.pack(">Q", 16 + 64) + payload)
+    assert intake.mp4_boxes_complete(f)
+    f.write_bytes(box(b"ftyp", 8) + struct.pack(">I", 0) + b"mdat" + payload)  # size 0 = runs to EOF
+    assert intake.mp4_boxes_complete(f)
+
+
+def test_mp4_garbage_is_not_complete(tmp_path):
+    f = tmp_path / "junk.m4b"
+    f.write_bytes(b"\x00\x00\x00\x02" + b"x" * 100)  # box smaller than its own header
+    assert not intake.mp4_boxes_complete(f)
+
+
+def test_mp3_with_info_header_complete_and_truncated(tmp_path):
+    src = TESTDATA / "cbr-info-header.mp3"
+    assert intake.mp3_complete(src)
+    half = tmp_path / "half.mp3"
+    half.write_bytes(src.read_bytes()[: src.stat().st_size // 2])
+    assert not intake.mp3_complete(half)
+
+
+def test_zip_complete_and_truncated(tmp_path):
+    z = tmp_path / "a.zip"
+    with zipfile.ZipFile(z, "w") as f:
+        f.writestr("book/a.mp3", MP3 * 50)
+    assert intake.file_complete(z)
+    z.write_bytes(z.read_bytes()[:-30])  # lose the central directory
+    assert not intake.file_complete(z)
+
+
+def test_incomplete_upload_waits_instead_of_review(env, caplog):
+    it, incoming, library, beets = env
+    d = incoming / "Andy Weir - Artemis"
+    d.mkdir()
+    (d / "a.m4b").write_bytes(box(b"ftyp", 16) + box(b"mdat", 5000)[:1000])
+    age(incoming)  # quiet for an hour, but structurally unfinished
+    caplog.set_level("INFO")
+    it.run()
+    it.run()
+    assert beets.calls == []
+    assert (d / "a.m4b").exists()
+    assert not (incoming / intake.REVIEW_NAME).exists()
+    waits = [r for r in caplog.records if "is incomplete" in r.getMessage()]
+    assert len(waits) == 1, "a held upload must be logged once, not every pass"
+
+
+def test_incomplete_upload_goes_to_review_after_giveup(env):
+    it, incoming, library, beets = env
+    it.incomplete_giveup_seconds = 3600
+    d = incoming / "Andy Weir - Artemis"
+    d.mkdir()
+    (d / "a.m4b").write_bytes(box(b"ftyp", 16) + box(b"mdat", 5000)[:1000])
+    age(incoming, seconds=7200)
+    it.run()
+    note = (incoming / intake.REVIEW_NAME / "Andy Weir - Artemis" / "WHY-NOT-FILED.txt").read_text()
+    assert "upload it again" in note
+    assert beets.calls == []
+
+
+# --------------------------------------------------------------------- lock
+
+
+def test_run_skips_while_another_holds_the_lock(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Andy Weir - Artemis" / "a.mp3")
+    age(incoming)
+    (incoming / intake.LOCK_NAME).write_text("other-pod pid=1")  # fresh: written after age()
+    it.run()
+    assert beets.calls == []
+    assert (incoming / intake.LOCK_NAME).read_text() == "other-pod pid=1"  # not ours to remove
+
+
+def test_stale_lock_is_broken(env):
+    it, incoming, library, beets = env
+    lock = incoming / intake.LOCK_NAME
+    lock.write_text("dead-pod pid=1")
+    os.utime(lock, (time.time() - 7200, time.time() - 7200))
+    mp3(incoming / "Andy Weir - Artemis" / "a.mp3")
+    age(incoming)
+    it.run()
+    assert it.filed == ["Andy Weir/Artemis"]
+    assert not lock.exists()  # released after the run
+
+
+def test_lock_released_even_if_run_raises(env, monkeypatch):
+    it, incoming, library, beets = env
+    monkeypatch.setattr(it, "recover", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError):
+        it.run()
+    assert not (incoming / intake.LOCK_NAME).exists()
+
+
+def test_stop_request_leaves_remaining_uploads(env):
+    it, incoming, library, beets = env
+    mp3(incoming / "Andy Weir - Artemis" / "a.mp3")
+    mp3(incoming / "George Orwell - Animal Farm" / "a.mp3")
+    age(incoming)
+    original = it.process_book
+
+    def process_then_stop(book):
+        original(book)
+        it.stop_requested = True
+
+    it.process_book = process_then_stop
+    it.run()
+    assert len(it.filed) == 1
+    assert len([p for p in incoming.iterdir() if not p.name.startswith((".", "_"))]) == 1
+
+
+# --------------------------------------------------------------------- loop
+
+
+def test_loop_heartbeat_only_after_healthy_pass(tmp_path):
+    hb = tmp_path / "hb"
+    results = iter([False, RuntimeError("boom"), True])
+
+    def once():
+        r = next(results)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    seen = []
+    intake.loop(once, interval=0, heartbeat=hb, should_stop=lambda: False,
+                sleep=lambda s: None, max_iterations=2)
+    seen.append(hb.exists())
+    intake.loop(once, interval=0, heartbeat=hb, should_stop=lambda: False,
+                sleep=lambda s: None, max_iterations=1)
+    seen.append(hb.exists())
+    assert seen == [False, True]  # unhealthy and raising passes never touch it
+
+
+def test_loop_stops_promptly_during_sleep(tmp_path):
+    calls, slept = [], []
+    stop = {"now": False}
+
+    def sleep(s):
+        slept.append(s)
+        stop["now"] = True  # SIGTERM arrives while sleeping
+
+    intake.loop(lambda: calls.append(1) or True, interval=60, heartbeat=tmp_path / "hb",
+                should_stop=lambda: stop["now"], sleep=sleep)
+    assert calls == [1] and len(slept) == 1
+
+
+def test_run_once_reports_unmounted_share(tmp_path):
+    it = intake.Intake(tmp_path / "missing", tmp_path, FakeBeets(tmp_path), quiet_seconds=0)
+    assert intake.run_once(it, verbose=False) is False
