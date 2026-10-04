@@ -14,6 +14,9 @@ import logging
 import os
 import re
 import shutil
+import signal
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -24,6 +27,7 @@ from collections import Counter
 from pathlib import Path
 
 from mediafile import MediaFile
+from mutagen.mp3 import MP3
 
 log = logging.getLogger("intake")
 
@@ -37,6 +41,12 @@ NAME_NOISE = re.compile(r"(?i)\s*[\(\[]\s*(un)?abridged\s*[\)\]]|\s*\[[A-Z0-9]{1
 STAGING_NAME = ".intake-staging"
 REVIEW_NAME = "_needs-review"
 PARTIAL_SUFFIX = ".intake-partial"
+LOCK_NAME = ".intake-lock"
+
+MP4_FAMILY = {".m4b", ".m4a", ".mp4"}
+# A complete mp3 measured 1.000 (VBR Xing and CBR Info headers alike) and a
+# half-uploaded one 0.500, so 0.97 only leaves room for odd trailing tags.
+MP3_COMPLETE_RATIO = 0.97
 
 BEETS_CONFIG = """\
 plugins: audible fromfilename scrub inline
@@ -126,6 +136,72 @@ def copy_tree_plain(src: Path, dst: Path) -> None:
             shutil.copyfile(item, dst / item.name)
             if (dst / item.name).stat().st_size != item.stat().st_size:
                 raise OSError(f"size mismatch copying {item}")
+
+
+# ------------------------------------------------------------ completeness
+#
+# FileBrowser's TUS upload writes into the final filename and grows it, so a
+# half-uploaded book is a real-looking file under its real name. The quiet
+# period catches a stalled upload only if it stays stalled for the whole period;
+# these checks catch it structurally, however long the stall.
+
+
+def mp4_boxes_complete(path: Path, size: int | None = None) -> bool:
+    """Every top-level MP4 box declares its own length, so a truncated file is
+    one whose last box ends past EOF — whether moov sits before or after mdat.
+    `size` overrides the real length (for testing against a real file)."""
+    size = path.stat().st_size if size is None else size
+    off = 0
+    with open(path, "rb") as f:
+        while off < size:
+            f.seek(off)
+            head = f.read(16)
+            if len(head) < 8:
+                return False
+            n = struct.unpack(">I", head[:4])[0]
+            if n == 1:  # 64-bit "largesize" follows the type
+                if len(head) < 16:
+                    return False
+                n = struct.unpack(">Q", head[8:16])[0]
+            elif n == 0:  # box extends to EOF by definition
+                return True
+            if n < 8:
+                return False  # not a valid box: corrupt or not MP4 at all
+            off += n
+    return off == size
+
+
+def mp3_complete(path: Path) -> bool:
+    """A VBR Xing or CBR Info header records the whole stream's length, so a
+    truncated file is smaller than duration x bitrate predicts. Without such a
+    header mutagen estimates the length FROM the size, the ratio is always ~1,
+    and truncation is undetectable — those rely on the quiet period alone."""
+    m = MP3(path)
+    expected = m.info.length * m.info.bitrate / 8
+    if not expected:
+        return True
+    tag_bytes = m.tags.size if m.tags is not None else 0
+    return (path.stat().st_size - tag_bytes) / expected >= MP3_COMPLETE_RATIO
+
+
+def file_complete(p: Path) -> bool:
+    suffix = p.suffix.lower()
+    try:
+        if suffix in MP4_FAMILY:
+            return mp4_boxes_complete(p)
+        if suffix == ".mp3":
+            return mp3_complete(p)
+        if suffix == ".zip":
+            return zipfile.is_zipfile(p)  # needs the end-of-archive directory
+    except Exception as e:
+        log.debug("cannot parse %s yet: %s", p, e)
+        return False  # unparseable mid-upload is the common case; retry later
+    return True
+
+
+def incomplete_files(upload: Path) -> list[Path]:
+    files = [upload] if upload.is_file() else sorted(p for p in upload.rglob("*") if p.is_file())
+    return [p for p in files if not file_complete(p)]
 
 
 # ---------------------------------------------------------- normalisation
@@ -296,16 +372,65 @@ class Beets:
 
 
 class Intake:
-    def __init__(self, incoming: Path, library: Path, beets, *, quiet_seconds: int, dry_run: bool = False):
+    def __init__(self, incoming: Path, library: Path, beets, *, quiet_seconds: int, dry_run: bool = False,
+                 incomplete_giveup_seconds: int = 86400, lock_stale_seconds: int = 3600, on_progress=None):
         self.incoming = incoming
         self.library = library
         self.staging = incoming / STAGING_NAME
         self.review = incoming / REVIEW_NAME
+        self.lock = incoming / LOCK_NAME
         self.beets = beets
         self.quiet_seconds = quiet_seconds
         self.dry_run = dry_run
+        self.incomplete_giveup_seconds = incomplete_giveup_seconds
+        self.lock_stale_seconds = lock_stale_seconds
+        self.on_progress = on_progress or (lambda: None)
+        self.stop_requested = False
         self.filed: list[str] = []
         self.reviewed: list[str] = []
+        # Why each upload is being held back, so a loop polling every minute logs
+        # the reason once rather than every pass.
+        self._waiting: dict[str, str] = {}
+
+    # -- lock
+    #
+    # Two runs must never work the same upload. A Deployment with Recreate makes
+    # that unlikely, but a rollout racing the old CronJob, a manual Job, or a
+    # replica bump would all break it, and the cost is a double-filed book. The
+    # lock lives on the share itself because that is the only thing every
+    # possible runner has in common. O_EXCL create is atomic on SMB.
+
+    def acquire_lock(self) -> bool:
+        me = f"{socket.gethostname()} pid={os.getpid()}"
+        for _ in range(2):
+            try:
+                fd = os.open(self.lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                try:
+                    age = time.time() - self.lock.stat().st_mtime
+                    holder = self.lock.read_text().strip()
+                except FileNotFoundError:
+                    continue  # released between our create and our stat: try again
+                if age < self.lock_stale_seconds:
+                    log.info("another intake run holds the lock (%s, %ds old); skipping this pass", holder, age)
+                    return False
+                log.warning("breaking stale intake lock held by %s (%ds old)", holder, age)
+                self.lock.unlink(missing_ok=True)
+                continue
+            with os.fdopen(fd, "w") as f:
+                f.write(me)
+            return True
+        return False
+
+    def refresh_lock(self) -> None:
+        try:
+            os.utime(self.lock)
+        except FileNotFoundError:
+            pass
+        self.on_progress()
+
+    def release_lock(self) -> None:
+        self.lock.unlink(missing_ok=True)
 
     # -- review
 
@@ -364,6 +489,7 @@ class Intake:
     # -- per book
 
     def process_book(self, book: Path) -> None:
+        self.refresh_lock()
         files = audio_files(book)
         original = read_tags(files)
         for attempt in seed_attempts(book.name, original):
@@ -387,22 +513,55 @@ class Intake:
 
     # -- run
 
+    def _hold(self, p: Path, why: str) -> None:
+        if self._waiting.get(p.name) != why:
+            log.info("waiting: %s — %s", p.name, why)
+        self._waiting[p.name] = why
+
     def uploads(self) -> list[Path]:
-        cutoff = time.time() - self.quiet_seconds
+        now = time.time()
         out = []
+        present = set()
         for p in sorted(self.incoming.iterdir()):
             if p.name.startswith((".", "_")) or is_junk(p):
                 continue
-            if newest_mtime(p) > cutoff:
-                log.info("waiting: %s changed in the last %ds (upload may be in progress)", p.name, self.quiet_seconds)
+            present.add(p.name)
+            age = now - newest_mtime(p)
+            if age < self.quiet_seconds:
+                self._hold(p, f"changed in the last {self.quiet_seconds}s (upload in progress)")
                 continue
+            bad = incomplete_files(p)
+            if bad:
+                if age >= self.incomplete_giveup_seconds and not self.dry_run:
+                    self._waiting.pop(p.name, None)
+                    self.to_review(p, f"{bad[0].name} is incomplete and has not changed for {int(age // 3600)}h; "
+                                      "the upload was probably interrupted. Please upload it again.")
+                    continue
+                self._hold(p, f"{bad[0].name} is incomplete (upload interrupted or still arriving)")
+                continue
+            self._waiting.pop(p.name, None)
             out.append(p)
+        for gone in set(self._waiting) - present:
+            del self._waiting[gone]
         return out
 
     def run(self) -> None:
+        self.filed, self.reviewed = [], []
+        if not self.acquire_lock():
+            return
+        try:
+            self._run_locked()
+        finally:
+            self.release_lock()
+
+    def _run_locked(self) -> None:
         self.staging.mkdir(exist_ok=True)
         self.recover()
         for upload in self.uploads():
+            if self.stop_requested:
+                log.info("stop requested; leaving remaining uploads for the next start")
+                return
+            self.refresh_lock()
             if self.dry_run:
                 log.info("dry-run: would process %s", upload.name)
                 continue
@@ -443,14 +602,64 @@ def trigger_abs_scan(url: str, library_id: str, api_key: str) -> None:
         log.info("audiobookshelf scan requested: HTTP %s", r.status)
 
 
+def run_once(intake: "Intake", *, verbose: bool) -> bool:
+    """One pass. Returns False when the shares are not usable, so the caller
+    can withhold the heartbeat and let the liveness probe restart the pod."""
+    for d in (intake.incoming, intake.library):
+        if not d.is_dir():
+            log.error("%s is not mounted", d)
+            return False
+    intake.run()
+    if verbose or intake.filed or intake.reviewed:
+        log.info("summary: filed=%d review=%d", len(intake.filed), len(intake.reviewed))
+        print(json.dumps({"filed": intake.filed, "review": intake.reviewed}), flush=True)
+    if intake.filed and os.environ.get("ABS_API_KEY"):
+        try:
+            trigger_abs_scan(os.environ["ABS_URL"], os.environ["ABS_LIBRARY_ID"], os.environ["ABS_API_KEY"])
+        except Exception as e:
+            # Non-fatal: Audiobookshelf's own scan still picks the books up.
+            # Logged at ERROR so the AudiobookIntakeErrors alert sees it.
+            log.error("audiobookshelf scan request failed: %s", e)
+    return True
+
+
+def touch(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    os.utime(path)
+
+
+def loop(once, *, interval: int, heartbeat: Path, should_stop, sleep=time.sleep, max_iterations=None) -> None:
+    """Run `once` every `interval` seconds until `should_stop()`. A pass that
+    raises is logged and the loop carries on; the heartbeat is only touched
+    after a healthy pass, so a wedged or unmounted pod gets restarted."""
+    n = 0
+    while not should_stop():
+        try:
+            healthy = once()
+        except Exception:
+            log.exception("intake pass failed")
+            healthy = False
+        if healthy:
+            touch(heartbeat)
+        n += 1
+        if max_iterations is not None and n >= max_iterations:
+            return
+        for _ in range(interval):
+            if should_stop():
+                return
+            sleep(1)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     incoming = Path(os.environ.get("INCOMING_DIR", "/incoming"))
     library = Path(os.environ.get("LIBRARY_DIR", "/audiobooks"))
-    for d in (incoming, library):
-        if not d.is_dir():
-            log.error("%s is not mounted", d)
-            return 1
+    interval = int(os.environ.get("LOOP_INTERVAL_SECONDS", "0"))
+    heartbeat = Path(os.environ.get("HEARTBEAT_FILE", "/tmp/intake-heartbeat"))
+    if not incoming.is_dir():
+        log.error("%s is not mounted", incoming)
+        return 1
     staging = incoming / STAGING_NAME
     staging.mkdir(exist_ok=True)
     beets = Beets(staging, float(os.environ.get("MATCH_THRESHOLD", "0.15")), os.environ.get("AUDIBLE_REGION", "us"))
@@ -458,18 +667,22 @@ def main() -> int:
         incoming, library, beets,
         quiet_seconds=int(os.environ.get("QUIET_SECONDS", "900")),
         dry_run=os.environ.get("DRY_RUN", "false").lower() == "true",
+        incomplete_giveup_seconds=int(os.environ.get("INCOMPLETE_GIVEUP_SECONDS", "86400")),
+        on_progress=lambda: touch(heartbeat),
     )
-    intake.run()
-    log.info("summary: filed=%d review=%d", len(intake.filed), len(intake.reviewed))
-    print(json.dumps({"filed": intake.filed, "review": intake.reviewed}))
 
-    if intake.filed and os.environ.get("ABS_API_KEY"):
-        try:
-            trigger_abs_scan(os.environ["ABS_URL"], os.environ["ABS_LIBRARY_ID"], os.environ["ABS_API_KEY"])
-        except Exception as e:
-            # Non-fatal: Audiobookshelf's own watcher or nightly scan still picks
-            # the books up. Log the reason so a broken key isn't invisible.
-            log.error("audiobookshelf scan request failed: %s", e)
+    if interval <= 0:  # one-shot (CronJob / manual Job)
+        return 0 if run_once(intake, verbose=True) else 1
+
+    def request_stop(signum, _frame):
+        log.info("received signal %d; finishing the current book and stopping", signum)
+        intake.stop_requested = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    log.info("watching %s every %ds (quiet period %ds)", incoming, interval, intake.quiet_seconds)
+    loop(lambda: run_once(intake, verbose=False), interval=interval, heartbeat=heartbeat,
+         should_stop=lambda: intake.stop_requested)
     return 0
 
 
