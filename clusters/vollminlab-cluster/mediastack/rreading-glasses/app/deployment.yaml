@@ -31,6 +31,45 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: postgres
+          image: docker.io/library/postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
+          # Native sidecar (restartPolicy: Always in initContainers): the kubelet
+          # holds the main container until this startupProbe passes. As a plain
+          # second container, rreading-glasses raced it and exited
+          # "dial tcp 127.0.0.1:5432: connect: connection refused" twice per start.
+          restartPolicy: Always
+          args: ["-c", "listen_addresses=127.0.0.1"]
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+            periodSeconds: 2
+            failureThreshold: 30
+          env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
+            - name: POSTGRES_DB
+              value: rreading-glasses
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: pgrun
+              mountPath: /var/run/postgresql
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: rreading-glasses
           image: docker.io/blampe/rreading-glasses:hardcover@sha256:3f017a51d9007b715303a20f481c822e4df66485fc9e5f57f6fdf1de840dc02f
@@ -67,34 +106,6 @@ spec:
             runAsUser: 65532
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-        - name: postgres
-          image: docker.io/library/postgres:17.11@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
-          args: ["-c", "listen_addresses=127.0.0.1"]
-          env:
-            - name: POSTGRES_HOST_AUTH_METHOD
-              value: trust
-            - name: POSTGRES_DB
-              value: rreading-glasses
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-          volumeMounts:
-            - name: pgdata
-              mountPath: /var/lib/postgresql/data
-            - name: pgrun
-              mountPath: /var/run/postgresql
-          resources:
-            requests:
-              cpu: 20m
-              memory: 64Mi
-            limits:
-              memory: 256Mi
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 999
-            runAsGroup: 999
-            allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
       volumes:
