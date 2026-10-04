@@ -1,0 +1,2 @@
+beets==2.14.1
+beets-audible==1.7.1
