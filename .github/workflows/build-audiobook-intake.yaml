@@ -1,0 +1,33 @@
+name: Build audiobook-intake
+
+on:
+  push:
+    tags:
+      - 'audiobook-intake/v*'
+
+jobs:
+  build:
+    runs-on: vollminlab
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to Harbor
+        uses: docker/login-action@v4
+        with:
+          registry: harbor.vollminlab.com
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Compute semver tag
+        run: |
+          REF="${{ github.ref_name }}"
+          echo "SEMVER=${REF#audiobook-intake/v}" >> "$GITHUB_ENV"
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: build/audiobook-intake
+          push: true
+          tags: |
+            harbor.vollminlab.com/vollminlab/audiobook-intake:v${{ env.SEMVER }}
+            harbor.vollminlab.com/vollminlab/audiobook-intake:${{ env.SEMVER }}
