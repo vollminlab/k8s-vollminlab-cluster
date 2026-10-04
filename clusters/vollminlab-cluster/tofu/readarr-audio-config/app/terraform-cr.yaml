@@ -10,9 +10,7 @@ metadata:
     category: core
 spec:
   interval: 10m
-  # New module: its first plan is read and approved out of band
-  # (docs/runbooks/tofu-provider-bumps.md), then a follow-up sets this to auto.
-  approvePlan: ""
+  approvePlan: auto
   path: ./terraform/readarr-audio
   sourceRef:
     kind: GitRepository
