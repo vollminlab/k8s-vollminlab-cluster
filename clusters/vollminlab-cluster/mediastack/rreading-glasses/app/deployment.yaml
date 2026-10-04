@@ -39,7 +39,11 @@ spec:
           # second container, rreading-glasses raced it and exited
           # "dial tcp 127.0.0.1:5432: connect: connection refused" twice per start.
           restartPolicy: Always
-          args: ["-c", "listen_addresses=127.0.0.1"]
+          # shared_buffers 128MB (the default) is shared memory, charged to this
+          # container's cgroup on top of ~31 pool connections. It OOM-killed the
+          # sidecar twice on 2026-10-04 (working set peaked 254Mi of 256Mi while RSS
+          # was 97Mi). The whole cache DB is 7.5MB, so 32MB still holds it 4x over.
+          args: ["-c", "listen_addresses=127.0.0.1", "-c", "shared_buffers=32MB"]
           startupProbe:
             exec:
               command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
@@ -62,7 +66,7 @@ spec:
               cpu: 20m
               memory: 64Mi
             limits:
-              memory: 256Mi
+              memory: 384Mi
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
