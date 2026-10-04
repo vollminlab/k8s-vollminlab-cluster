@@ -1,0 +1,85 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nut-exporter-rules
+  namespace: monitoring
+  labels:
+    app: nut-exporter
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # DELIBERATELY ABSENT: on-battery, low-battery and FSD alerts.
+    #
+    # Those are owned by scripts/ups-shutdown/ups-watch.sh in
+    # homelab-infrastructure, which runs from a TrueNAS cron job and pushes
+    # straight to Pushover. That independence is the point: a power event is
+    # exactly when the cluster hosting Alertmanager is what is at risk, so the
+    # acute path must not run here. Duplicating it would page twice and would
+    # add a second, weaker path that looks like cover.
+    #
+    # What follows is only what the watcher CANNOT see -- slow degradation and
+    # the health of this metrics path itself.
+    - name: nut.battery-health
+      rules:
+        - alert: UpsReplaceBatteryFlag
+          # The UPS's own replace-battery indicator. Nothing else in the estate
+          # surfaces this: ups-watch.sh reads OB/LB/FSD only, and
+          # `ups.test.result` stayed "Done and passed" throughout the
+          # 2026-09-20 investigation, so the self-test does not catch it either.
+          expr: network_ups_tools_ups_status{flag="RB"} == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "UPS is asking for a battery replacement"
+            description: >-
+              The UPS has raised its RB (replace battery) flag for >5m. This is
+              the device's own assessment, independent of charge or runtime
+              readings. See homelab-infrastructure#45.
+
+        - alert: UpsRuntimeDegradedAtFullCharge
+          # Degradation trend. battery.runtime on this unit is a linear function
+          # of battery.charge (~13.8 s per point, measured at 39/42/100 %), so
+          # comparing runtime AT FULL CHARGE over months is the way to see the
+          # pack ageing: the constant shrinks as capacity falls.
+          #
+          # PROVISIONAL THRESHOLD. 1325 s at 100 % charge and 30 % load is the
+          # only baseline that exists (2026-09-20), so 600 s is set at roughly
+          # half of it rather than derived from a trend. Revisit once there are
+          # a few months of history -- which is the reason this exporter exists.
+          expr: |
+            network_ups_tools_battery_charge >= 95
+            and network_ups_tools_ups_status{flag="OL"} == 1
+            and network_ups_tools_battery_runtime < 600
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "UPS projected runtime at full charge has halved"
+            description: >-
+              battery.runtime reads {{ $value | printf "%.0f" }}s at >=95% charge
+              on mains, against a 1325s baseline measured 2026-09-20. Note this
+              is the UPS's own projection, not a measurement -- validating it is
+              homelab-infrastructure#45.
+
+    - name: nut.exporter-health
+      rules:
+        - alert: NutExporterNoData
+          # A scrape that returns 200 with no UPS series looks identical to a
+          # healthy one on the Prometheus target page. This repo has shipped
+          # that shape three times (Kyverno foreach, Longhorn trim, an empty
+          # Velero schedule), so the metric's ABSENCE is what is alerted on,
+          # not the target's up-ness.
+          expr: absent(network_ups_tools_battery_charge)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No UPS metrics are being collected"
+            description: >-
+              network_ups_tools_battery_charge has been absent for 15m. Either
+              the exporter cannot reach upsd on 192.168.150.2:3493, or the
+              ServiceMonitor lost its `ups=ups` query parameter, which makes the
+              exporter return no UPS series while still answering 200.

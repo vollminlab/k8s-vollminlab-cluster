@@ -1205,6 +1205,39 @@ expiry monitors; the credentials behind the 78 `ExternalSecret` CRs are not cove
 | Exposes | Backblaze B2 bucket statistics as Prometheus metrics |
 | Consumed by | Homepage prometheus widget |
 
+### nut-exporter
+
+| Parameter | Value |
+|---|---|
+| Namespace | `monitoring` |
+| Image | `ghcr.io/druggeri/nut_exporter:3.3.0` |
+| Exposes | UPS telemetry from `upsd` on TrueNAS (`192.168.150.2:3493`) as `network_ups_tools_*` |
+| Scrape | ServiceMonitor, **15s** interval, `/ups_metrics?ups=ups` |
+| Auth | none — NUT permits reading variables unauthenticated |
+| Alerts | `UpsReplaceBatteryFlag`, `UpsRuntimeDegradedAtFullCharge`, `NutExporterNoData` |
+
+Added 2026-10-04 so that the **next real power event measures its own discharge curve**. Until
+now nothing scraped the UPS, which is why a ~20 minute outage in August left no data to analyse
+and a 74-second manual pull had to be extrapolated from — badly (see
+`homelab-infrastructure` #45).
+
+Three things about it are deliberate:
+
+- **The `ups=ups` query parameter is required.** Without it the exporter answers HTTP 200 with no
+  UPS series at all, so the Prometheus target looks healthy while collecting nothing.
+- **15s, not 60s.** A discharge is over in minutes — the 2026-09-20 pull moved `battery.charge`
+  from 100 to 36 in 74 seconds. At 60s that curve is one or two samples.
+- **No on-battery, low-battery or FSD alerts here.** Those belong to `ups-watch.sh` on the NAS,
+  which pages via Pushover independently of this cluster — a power event is precisely when the
+  cluster hosting Alertmanager is what is at risk. This rule set covers only what that watcher
+  cannot see: the UPS's own replace-battery flag, runtime degradation at full charge, and the
+  health of this metrics path.
+
+`battery.voltage` is the one worth watching. `battery.runtime` on this unit is a pure linear
+function of `battery.charge` (~13.8 s per point, measured at 39/42/100 %), so charge and runtime
+are the same measurement twice; voltage is the only independent signal, and it is what separates a
+sagging gauge from a depleted pack.
+
 ### bazarr-exportarr
 
 | Parameter | Value |

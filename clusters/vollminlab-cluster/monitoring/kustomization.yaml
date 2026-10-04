@@ -14,6 +14,7 @@ resources:
   - karma/app
   - kube-prometheus-stack/app
   - loki/app
+  - nut-exporter/app
   - promtail/app
   - vcenter-credential-age/app
   - victoria-metrics/app

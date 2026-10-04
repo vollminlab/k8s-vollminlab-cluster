@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nut-exporter
+  namespace: monitoring
+  labels:
+    app: nut-exporter
+    env: production
+    category: observability
+spec:
+  selector:
+    matchLabels:
+      app: nut-exporter
+  endpoints:
+    - port: metrics
+      # The `ups` query parameter is REQUIRED. Without it the exporter returns
+      # no UPS series at all and the scrape still succeeds with HTTP 200 -- the
+      # inert-success shape this repo keeps running into. "ups" is the local
+      # identifier, matching `upsc ups` on the NAS.
+      path: /ups_metrics
+      params:
+        ups:
+          - ups
+      # 15s, not the 60s used elsewhere in this namespace. A discharge is the
+      # event worth capturing and it is over in minutes: the 2026-09-20 mains
+      # pull moved battery.charge 100 -> 36 in 74 seconds. At 60s intervals that
+      # whole curve is one or two samples.
+      interval: 15s
+      scheme: http
