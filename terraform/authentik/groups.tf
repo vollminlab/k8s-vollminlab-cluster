@@ -52,3 +52,13 @@ resource "authentik_group" "portainer_admins" {
   name  = "Portainer Admins"
   users = [authentik_user.vollmin.id]
 }
+
+resource "authentik_group" "slate_builder_admins" {
+  name  = "Slate Builder Admins"
+  users = [authentik_user.vollmin.id]
+}
+
+resource "authentik_group" "slate_builder_users" {
+  name  = "Slate Builder Users"
+  users = [authentik_user.vollmin.id]
+}
