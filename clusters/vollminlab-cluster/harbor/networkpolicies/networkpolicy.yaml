@@ -126,7 +126,8 @@ spec:
         - protocol: TCP
           port: 8000
 ---
-# Allow Prometheus scraping from monitoring namespace
+# Scrape targets: the harbor ServiceMonitor's http-metrics (8001 on core, jobservice,
+# registry, exporter) and the harbor-db CNPG instances' metrics (9187).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -137,7 +138,11 @@ metadata:
     env: production
     category: security
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [harbor, harbor-db]
   policyTypes:
     - Ingress
   ingress:
@@ -145,6 +150,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 9187
 ---
 # Allow GitHub ARC runners to push images (CI/CD)
 apiVersion: networking.k8s.io/v1

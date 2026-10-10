@@ -86,7 +86,8 @@ spec:
         - protocol: TCP
           port: 9090
 ---
-# Allow Prometheus scraping from monitoring namespace
+# Scope: tofu-controller's http-prom port only. Nothing scrapes it today; the runner
+# pods, which hold provider credentials, get no monitoring ingress at all.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -97,7 +98,9 @@ metadata:
     env: production
     category: security
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app: tofu-controller
   policyTypes:
     - Ingress
   ingress:
@@ -105,6 +108,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
 ---
 # Allow egress to Kubernetes API server (tofu-controller manages cluster resources)
 apiVersion: networking.k8s.io/v1
