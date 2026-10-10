@@ -28,13 +28,16 @@ The Authentik outpost (2026.2.2+) uses `X-Forwarded-Host` to match the incoming 
 
 ## Architecture: how forward-auth works here
 
-- **`vollminlab-forward-auth`** — a single `forward_domain` ProxyProvider covering all `*.vollminlab.com`. The only provider assigned to the `vollminlab-proxy` outpost.
+- **`vollminlab-forward-auth`** — a single `forward_domain` ProxyProvider covering all `*.vollminlab.com`. Serves every host that has no `forward_single` provider of its own.
 - **Critical**: `external_host` for this provider must be `https://authentik.vollminlab.com`. This controls the OAuth2 callback URL (`https://authentik.vollminlab.com/outpost.goauthentik.io/callback`), which already has an ingress. Do NOT set it to the root domain (`vollminlab.com`) — that domain has no ingress and no TLS cert, so the OAuth2 callback would be unreachable.
 - **Domain matching uses `cookie_domain`, not `external_host`**: The outpost matches `*.vollminlab.com` requests because `cookie_domain=vollminlab.com`. Changing `external_host` to `vollminlab.com` is wrong and breaks OAuth2 callbacks.
 - Every host protected by Authentik nginx annotations **must have an Application entry** in Authentik, even if that Application has `provider_id=None`. Without it the outpost returns 400 → nginx converts to 500.
 - Applications using native SSO (Grafana, Harbor, Headlamp, Jellyfin, MinIO, Portainer, Audiobookshelf) have dedicated OAuth2/OIDC providers (`provider_id != None`).
 - Applications using forward-proxy auth only (Alertmanager, Bazarr, Homepage, Longhorn, Policy Reporter, Prometheus, Prowlarr, Radarr, SABnzbd, Shlink, Sonarr, Seerr, Tautulli) have `provider_id=None` — they rely on the domain-wide `vollminlab-forward-auth`.
-- **Never use `forward_single` ProxyProviders for services behind nginx forward-auth.** The OAuth callback URL (`https://<service>/outpost.goauthentik.io/callback`) hits the auth-annotated ingress, nginx tries to authenticate the callback, gets 401, and loops. Stick to `forward_domain` (`vollminlab-forward-auth`) for all nginx forward-auth services.
+- **A PolicyBinding on a `provider_id=None` Application restricts nothing.** The outpost's nginx check accepts any valid `vollminlab-forward-auth` session cookie, and that cookie covers the whole domain. Policies run only when a provider's own Application authorizes, which for the domain-wide provider is `vollminlab-forward-auth` itself. Verified 2026-10-10 against outpost source 2026.2.2 and with a no-group test account, which reached both FileBrowser and Foundry while both had a group binding.
+- **To restrict a forward-auth app to a group, give it a `forward_single` provider** (tofu: `terraform/authentik/providers_proxy.tf`), set it as the Application's `protocol_provider`, add it to the outpost, and bind the group to the Application. The outpost prefers an exact host match over the cookie-domain match, so that host gets its own cookie and its own authorization. FileBrowser and Foundry work this way. Two more pieces are required:
+  - The app's Ingress `auth-signin` must be `https://$http_host/outpost.goauthentik.io/start?rd=https://$http_host$escaped_request_uri`, on the app's own host.
+  - `/outpost.goauthentik.io` on that host must route to the outpost, via a rule in `clusters/vollminlab-cluster/authentik/authentik-proxy/app/ingress.yaml`. Without it the callback loops: the outpost lets `/outpost.goauthentik.io` paths through the auth check without serving them, so nginx proxies the callback to the app. That loop is why this rule used to say never to use `forward_single`.
 
 ## Known limitation: skip_path_regex does not work for forward-auth
 

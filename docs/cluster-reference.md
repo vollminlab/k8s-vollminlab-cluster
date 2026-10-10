@@ -985,7 +985,8 @@ can materialize nothing.
 | Namespace | `authentik` |
 | Image | `ghcr.io/goauthentik/proxy:2026.2.2` |
 | Container port | 9000 (Service 9000 → 9000) |
-| Provider | Single `forward_domain` ProxyProvider `vollminlab-forward-auth`, covering all `*.vollminlab.com` |
+| Providers | `forward_domain` `vollminlab-forward-auth` for all `*.vollminlab.com`, plus `forward_single` `filebrowser-forward-auth` and `foundry-forward-auth` for the group-restricted hosts (an exact host match wins) |
+| Ingress | `authentik-proxy-callback-ingress` — path-split `/outpost.goauthentik.io` on each `forward_single` host, so its start and callback URLs reach the outpost |
 
 Every protected Ingress **must** carry `nginx.ingress.kubernetes.io/auth-snippet` setting
 `X-Forwarded-Host`. nginx always sends `Host: authentik-proxy.authentik.svc.cluster.local` in
@@ -1357,7 +1358,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Ingress | `filebrowser.vollminlab.com` |
 | Config PVC | 1Gi Longhorn |
 | Storage | SMB-backed — audiobooks-incoming, misc-incoming |
-| Auth | Authentik forward-auth (`FB_AUTH_METHOD=proxy` on `X-authentik-username`); shared nginx Cloudflare tunnel |
+| Auth | Authentik forward-auth via its own `forward_single` provider, so the `FileBrowser Users` binding is enforced (`FB_AUTH_METHOD=proxy` on `X-authentik-username`); shared nginx Cloudflare tunnel |
 | NetworkPolicy | `filebrowser-allow-ingress-nginx` — ingress only from `ingress-nginx` on 8080. Required: proxy auth trusts the header, so without it any in-cluster pod could log in as any user |
 | New-user defaults | Upload (`create`) + download only — no delete/rename/modify/share/execute (set 2026-10-04 via `PUT /api/settings`; lives in `database.db`, not git). Users are auto-created on first SSO login |
 | IaC | Group and policy management via tofu |
@@ -1479,7 +1480,7 @@ Two instances of the same chart (`readarr-repo`, `ghcr.io/pennydreadful/bookshel
 | Image | `felddy/foundryvtt` |
 | Ingress | `foundry.vollminlab.com` |
 | PVC | 10Gi Longhorn |
-| Auth | Authentik forward-auth (domain-wide provider); per-world Foundry passwords left blank |
+| Auth | Authentik forward-auth via its own `forward_single` provider, so the `Foundry Users` binding is enforced; per-world Foundry passwords left blank |
 | External | Shared `nginx` Cloudflare tunnel |
 | Backup | VolSync clone-based restic to B2 |
 
