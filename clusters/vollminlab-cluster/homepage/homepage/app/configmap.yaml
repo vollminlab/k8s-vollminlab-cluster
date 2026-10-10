@@ -404,6 +404,12 @@ data:
                 icon: mdi-cash-multiple
                 namespace: vollmint
                 app: vollmint
+            - Slate Builder:
+                description: Internal analytics app
+                href: https://slate.vollminlab.com
+                icon: mdi-chart-line
+                namespace: slate-builder
+                app: slate-builder
             - Foundry VTT:
                 description: Virtual tabletop for tabletop RPG sessions
                 href: https://foundry.vollminlab.com
