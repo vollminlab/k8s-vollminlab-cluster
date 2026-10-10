@@ -80,11 +80,17 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `1password` | `connect-api` | 8080 | 1Password Connect API + `/metrics`; svc targetPort is numeric 8080 and the container declares **no** ports, so 8080 is the container port | onepassword-connect ingress (from monitoring; also from external-secrets) |
 | `authentik` | `server` | 9000 | authentik-server HTTP (homepage widget) | allow-homepage ingress (from homepage) |
 | `authentik` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
+| `authentik` | `proxy` (ak-outpost-vollminlab-proxy, `app: authentik-outpost`) | 9300 | outpost `http-metrics` (ServiceMonitor) | allow-monitoring-scrape ingress (from monitoring) |
+| `authentik` | `postgres` (`app: authentik-db`) | 9187 | CNPG metrics (PodMonitor) | allow-monitoring-scrape ingress (from monitoring) |
 | `authentik` | n/a (egress target) | 7844 | Cloudflare tunnel edge (QUIC UDP + http2 TCP) | allow-external-egress egress |
 | `authentik` | n/a (egress target → ingress-nginx) | 80 | cloudflared tunnel **origin** — `ingress-nginx-controller.ingress-nginx.svc:80`; svc 80→targetPort `http`→containerPort 80 | allow-cloudflared-nginx-egress egress (`app: cloudflared-authentik` only) |
 | `harbor` | n/a (ingress target) | 8000 | CNPG instance status API | allow-cnpg-operator ingress |
+| `harbor` | core, jobservice, registry, exporter (`app: harbor`) | 8001 | `http-metrics` (ServiceMonitor); not declared as a containerPort on core/jobservice, but listening | allow-monitoring-scrape ingress (from monitoring) |
+| `harbor` | `postgres` (`app: harbor-db`) | 9187 | CNPG metrics (PodMonitor) | allow-monitoring-scrape ingress (from monitoring) |
+| `minio` | `minio` | 9000 | `/minio/v2/metrics/*` on the S3 port (ServiceMonitor) | allow-monitoring-scrape ingress (from monitoring) |
 | `minio` | `minio` | 9000 | S3 API — reached by the Helm post-upgrade hook pod (`app: minio-job`) to create buckets/users | allow-post-job-egress (from hook) + allow-post-job-ingress (to minio); intra-namespace |
 | `minio` | `minio` | 9000 | S3 API — reached by the `cnpg-b2-mirror` CronJob (`app: cnpg-b2-mirror`) reading the `cnpg-backups` bucket. Its other hop, Backblaze B2 on 443, needs no rule: `allow-https-egress` has `podSelector: {}` | allow-cnpg-b2-mirror-egress + allow-cnpg-b2-mirror-ingress; intra-namespace |
+| `tofu` | `tofu-controller` | 8080 | `http-prom` metrics; not scraped today. `app: tf-runner` pods get no monitoring ingress | allow-monitoring-scrape ingress (from monitoring) |
 | `tofu` | n/a (egress target → mediastack) | 7878/8989/8787/9696 | radarr/sonarr/readarr/prowlarr API (arr Terraform providers) | allow-mediastack-arr-egress egress |
 | `tofu` | n/a (egress target → harbor) | 8443 | Harbor API; svc 443→**8443**, egress evaluated post-DNAT so 443 ≠ enough | allow-harbor-egress egress |
 | `longhorn-system` | `longhorn-manager` | 9500 | Longhorn manager metrics — chart 1.12.1+ ships its own policies that exclude Prometheus | allow-monitoring-scrape ingress (from monitoring) |
@@ -150,7 +156,7 @@ instead, and give each one its own rule with a `podSelector` — the way `dmz/ma
 - [ ] Default-deny policy exists in the namespace before allow rules are added (never add only allow rules without a deny)
 - [ ] DNS egress (UDP/TCP 53 to kube-dns) included if pods do any DNS lookups
 - [ ] Kube-apiserver egress (TCP 6443) included if the workload is a controller/operator watching CRDs
-- [ ] Monitoring ingress (from `monitoring` namespace) included for any pods with metrics endpoints
+- [ ] Monitoring ingress (from `monitoring` namespace) included for any pods with metrics endpoints — **scoped to those pods and their metrics port**, never `podSelector: {}` with no `ports:`. That shape admitted every monitoring pod to every port in seven namespaces; in `slate-builder` and `vollmint` it let an in-cluster pod bypass ingress-nginx and forge the Authentik identity headers (#1329/#1330). Enumerate targets with `kubectl get podmonitor,servicemonitor -n <ns>` and Prometheus `up{namespace="<ns>"}`
 - [ ] Any namespace with CNPG databases: `allow-cnpg-operator` must include both port 5432 AND port 8000
 
 ## When adding a new namespace with default-deny

@@ -159,7 +159,8 @@ spec:
         - protocol: TCP
           port: 9000
 ---
-# Allow Prometheus scraping from monitoring namespace
+# Scrape target: the minio ServiceMonitor hits /minio/v2/metrics/{cluster,node,bucket} on the S3 port
+# (9000). The console (9001) is not needed by monitoring.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -170,7 +171,9 @@ metadata:
     env: production
     category: security
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app: minio
   policyTypes:
     - Ingress
   ingress:
@@ -178,6 +181,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9000
 ---
 # Allow egress to Kubernetes API server
 apiVersion: networking.k8s.io/v1

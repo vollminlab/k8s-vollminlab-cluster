@@ -69,7 +69,9 @@ spec:
         - protocol: TCP
           port: 9443
 ---
-# Allow Prometheus scraping from monitoring namespace
+# Scope: the operator's metrics port only. Nothing scrapes it today (no PodMonitor),
+# so this keeps the port documented in networkpolicy.md reachable and nothing else --
+# in particular not the webhook (9443), which has its own policy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -80,7 +82,9 @@ metadata:
     env: production
     category: security
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app: cnpg
   policyTypes:
     - Ingress
   ingress:
@@ -88,6 +92,9 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
 ---
 # Allow egress to Kubernetes API server (operator watches/manages CRDs cluster-wide)
 apiVersion: networking.k8s.io/v1
