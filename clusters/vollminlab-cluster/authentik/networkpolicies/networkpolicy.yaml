@@ -145,7 +145,9 @@ spec:
         - protocol: TCP
           port: 8000
 ---
-# Allow Prometheus scraping from monitoring namespace
+# Scrape targets: the vollminlab-proxy outpost's http-metrics (9300) and the
+# authentik-db CNPG instances' metrics (9187). Pod- and port-scoped so monitoring
+# cannot reach the outpost's auth endpoint or Postgres directly.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -156,7 +158,11 @@ metadata:
     env: production
     category: security
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [authentik-outpost, authentik-db]
   policyTypes:
     - Ingress
   ingress:
@@ -164,6 +170,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9300
+        - protocol: TCP
+          port: 9187
 ---
 # Allow egress to Kubernetes API server (controller operations, CRD management)
 apiVersion: networking.k8s.io/v1
