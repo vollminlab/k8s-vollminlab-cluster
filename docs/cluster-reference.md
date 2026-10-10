@@ -398,7 +398,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | renovate-repo | OCIRepository | oci://ghcr.io/renovatebot/charts/renovate |
 | sabnzbd-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sabnzbd |
 | shlink-repo | HelmRepository | https://charts.christianhuth.de |
-| slate-builder-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/slate-builder (tag: 0.2.0) |
+| slate-builder-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/slate-builder (tag: 0.2.1) |
 | smb-csi-driver-repo | HelmRepository | https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts |
 | sonarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sonarr |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
