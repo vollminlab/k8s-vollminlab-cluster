@@ -398,7 +398,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | renovate-repo | OCIRepository | oci://ghcr.io/renovatebot/charts/renovate |
 | sabnzbd-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sabnzbd |
 | shlink-repo | HelmRepository | https://charts.christianhuth.de |
-| slate-builder-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/slate-builder (tag: 0.1.1) |
+| slate-builder-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/slate-builder (tag: 0.2.0) |
 | smb-csi-driver-repo | HelmRepository | https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts |
 | sonarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sonarr |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
@@ -1506,10 +1506,10 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Category | `apps` |
 | Components | FastAPI + React SPA (`slate serve`), `slate tick` CronJob every 10 min, CNPG `slate-builder-db` |
 | Container port | 8080 (API + SPA, via ingress-nginx) |
-| Ingress | `slate.vollminlab.com` (shlink slug `slate`) — LAN-only, no Cloudflare tunnel |
+| Ingress | `slate.vollminlab.com` (shlink slug `slate`) — LAN-only, no Cloudflare tunnel; `proxy-body-size: 8m` for screenshot uploads (≤ 5 MB image, base64) |
 | Auth | Authentik forward-auth, restricted to `Slate Builder Users`; admin actions need `Slate Builder Admins` |
-| Egress | 443 to its upstream data API, RFC1918 excluded |
-| Secrets | `slate-builder-apikey` ← 1Password `Slate Builder API Key` / `credential` |
+| Egress | 443 to its upstream data APIs and the Claude API (serve + tick), RFC1918 excluded; covered by the existing `allow-external-egress` |
+| Secrets | `slate-builder-apikey` ← 1Password `Slate Builder API Key` / `credential`; `slate-builder-llm-apikey` ← `Slate Builder LLM API Key` / `credential` (web pod only, `optional: true`, so a missing key only switches off screenshot import) |
 | Backup | CNPG barman to MinIO; quotes purged 120 days after kickoff (`quote_retention_days`) |
 
 Repo: `vollminlab/slate-builder` (private).
