@@ -10,6 +10,8 @@ metadata:
 data:
   values.yaml: |
     adminGroup: "Slate Builder Admins"
+    llm:
+      secretName: slate-builder-llm-apikey
     resources:
       requests:
         cpu: 100m

@@ -4,5 +4,6 @@ resources:
   - helmrelease.yaml
   - configmap.yaml
   - slate-builder-apikey-externalsecret.yaml
+  - slate-builder-llm-apikey-externalsecret.yaml
   - harbor-vollminlab-pull-externalsecret.yaml
   - ingress.yaml

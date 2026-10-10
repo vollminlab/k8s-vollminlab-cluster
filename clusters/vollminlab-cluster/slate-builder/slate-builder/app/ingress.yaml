@@ -17,6 +17,8 @@ metadata:
     # 20 s client timeout; a slow-but-responding API can take ~320 s. (Two consecutive
     # no-response calls end the run early.)
     nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
+    # Screenshot uploads: the app caps an image at 5 MB, base64 inflates that by a third.
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
     nginx.ingress.kubernetes.io/auth-snippet: |
       proxy_set_header X-Forwarded-Host $http_host;
     shlink.vollminlab.com/slug: slate
