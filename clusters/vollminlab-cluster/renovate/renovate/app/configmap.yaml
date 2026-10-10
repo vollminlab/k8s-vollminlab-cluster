@@ -71,6 +71,7 @@ data:
             "vollminlab/k8s-vollminlab-cluster",
             "vollminlab/masters-league",
             "vollminlab/vollmint",
+            "vollminlab/slate-builder",
             "vollminlab/shlink-ingress-controller",
             "vollminlab/longhorn-rebalancing-controller"
           ],

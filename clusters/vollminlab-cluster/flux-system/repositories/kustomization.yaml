@@ -46,6 +46,7 @@ resources:
   - sabnzbd-ocirepository.yaml
   - seerr-ocirepository.yaml
   - shlink-helmrepository.yaml
+  - slate-builder-ocirepository.yaml
   - smb-csi-driver-helmrepository.yaml
   - sonarr-ocirepository.yaml
   - tailscale-operator-helmrepository.yaml

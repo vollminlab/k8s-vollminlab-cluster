@@ -1,0 +1,14 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: slate-builder-db-backup
+  namespace: slate-builder
+  labels:
+    app: slate-builder-db
+    env: production
+    category: apps
+spec:
+  schedule: "0 15 21 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: slate-builder-db
