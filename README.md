@@ -123,6 +123,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   reloader/                             # Restarts workloads on ConfigMap/Secret change
   renovate/                             # Automated dependency updates
   shlink/                               # Short URL service + ingress annotation controller
+  slate-builder/                        # Internal analytics app
   tailscale/                            # Tailscale operator
   tailscale-connector/                  # Subnet router / connector
   tofu/                                 # tofu-controller (OpenTofu IaC reconciliation)
