@@ -352,6 +352,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | `portainer` | `./clusters/vollminlab-cluster/portainer` | |
 | `renovate` | `./clusters/vollminlab-cluster/renovate` | |
 | `shlink` | `./clusters/vollminlab-cluster/shlink` | |
+| `slate-builder` | `./clusters/vollminlab-cluster/slate-builder` | |
 | `velero` | `./clusters/vollminlab-cluster/velero` | |
 | `vollmint` | `./clusters/vollminlab-cluster/vollmint` | |
 
@@ -397,6 +398,7 @@ All Kustomizations use `interval: 10m`, `prune: true`, source `flux-system` GitR
 | renovate-repo | OCIRepository | oci://ghcr.io/renovatebot/charts/renovate |
 | sabnzbd-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sabnzbd |
 | shlink-repo | HelmRepository | https://charts.christianhuth.de |
+| slate-builder-repo | OCIRepository | oci://harbor.vollminlab.com/vollminlab/charts/slate-builder (tag: 0.1.0) |
 | smb-csi-driver-repo | HelmRepository | https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts |
 | sonarr-repo | OCIRepository | oci://oci.trueforge.org/truecharts/sonarr |
 | velero-repo | HelmRepository | https://vmware-tanzu.github.io/helm-charts |
@@ -458,6 +460,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `vollm.in` | shlink-shlink-backend | 8080 | shlink | vollm-in-tls (Let's Encrypt) |
 | `minio.vollminlab.com` | minio | 9001 | minio | wildcard-tls |
 | `vollmint.vollminlab.com` | vollmint | 8080 | vollmint | wildcard-tls |
+| `slate.vollminlab.com` | slate-builder | 8080 | slate-builder | wildcard-tls |
 
 ---
 
@@ -646,7 +649,7 @@ CronJob in the `minio` namespace that mirrors the `cnpg-backups` bucket to Backb
 **Why it exists.** CloudNativePG writes base backups and WAL to exactly one object store.
 `spec.backup.barmanObjectStore` is a single object, and the newer barman-cloud plugin does not
 fan out either: its second `ObjectStore` is a *recovery source* for a replica cluster, not a
-second backup destination. All five clusters therefore archive only to MinIO, which puts every
+second backup destination. All six clusters therefore archive only to MinIO, which puts every
 restorable Postgres backup on one Longhorn PVC in one rack.
 
 Velero's `daily-b2` does copy each `pgdata` volume to B2 nightly, but that is a filesystem walk
@@ -1084,7 +1087,7 @@ Never use Terraform `import` blocks in these modules — see the Harbor robot-ac
 
 ## CNPG (CloudNative-PG)
 
-Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink, vollmint — `vollmint-db`, 2 instances × 5Gi, barman backup to MinIO at 01:45).
+Operator deployed in `cnpg-system`. Manages PostgreSQL clusters in other namespaces (authentik, harbor, mediastack/jellystat, shlink, vollmint — `vollmint-db`, 2 instances × 5Gi, barman backup to MinIO at 01:45 — and slate-builder — `slate-builder-db`, 2 instances × 5Gi).
 
 ### Container ports — cnpg-system operator pod
 
@@ -1116,15 +1119,16 @@ All use the MinIO barman object store via the scoped `cnpg-svc` user, plus WAL a
 | `shlink-db` | `shlink` | 2 | 5Gi | `0 30 1 * * *` |
 | `jellystat-db` | `mediastack` | 2 | 5Gi | `0 0 3 * * *` |
 | `vollmint-db` | `vollmint` | 2 | 5Gi | see Applications |
+| `slate-builder-db` | `slate-builder` | 2 | 5Gi | `0 15 21 * * *` |
 
-All five run 2 instances. The three that were at 1 were raised on 2026-09-20: with a single
+All six run 2 instances. The three that were at 1 were raised on 2026-09-20: with a single
 instance there is no replica to promote, so a node reboot is a full outage for that database —
 k8sworker04's reboot took authentik down for ~6 minutes while the pod rescheduled and its Longhorn
 volume detached and reattached, while `harbor-db` and `vollmint-db` stayed serving on `READY=1`
 through the same event.
 
-**All five are single-sited in MinIO** — there is no offsite copy of any database. Tracked as an
-open issue.
+**All six archive only to MinIO.** The offsite copy is the `cnpg-b2-mirror` CronJob described above,
+which mirrors the whole `cnpg-backups` bucket to B2, so a new cluster is covered without changes.
 
 Any namespace hosting a CNPG cluster needs an `allow-cnpg-operator` NetworkPolicy admitting **both**
 port 5432 and port 8000 (the instance status API). Omitting the peer is silent: `vollmint-db` went
@@ -1493,6 +1497,22 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Egress | 443 to SimpleFIN Bridge (sync CronJob) |
 | Auth | Authentik SSO |
 | NetworkPolicy | Default-deny with explicit allows |
+
+### slate-builder (internal analytics app)
+
+| Parameter | Value |
+|---|---|
+| Namespace | `slate-builder` |
+| Category | `apps` |
+| Components | FastAPI + React SPA (`slate serve`), `slate tick` CronJob every 10 min, CNPG `slate-builder-db` |
+| Container port | 8080 (API + SPA, via ingress-nginx) |
+| Ingress | `slate.vollminlab.com` (shlink slug `slate`) — LAN-only, no Cloudflare tunnel |
+| Auth | Authentik forward-auth, restricted to `Slate Builder Users`; admin actions need `Slate Builder Admins` |
+| Egress | 443 to its upstream data API, RFC1918 excluded |
+| Secrets | `slate-builder-apikey` ← 1Password `Slate Builder API Key` / `credential` |
+| Backup | CNPG barman to MinIO; quotes purged 120 days after kickoff (`quote_retention_days`) |
+
+Repo: `vollminlab/slate-builder` (private).
 
 ### auction-board (Fantasy Hockey Auction Board)
 

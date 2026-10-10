@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slate-builder-values
+  namespace: slate-builder
+  labels:
+    app: slate-builder
+    env: production
+    category: apps
+data:
+  values.yaml: |
+    adminGroup: "Slate Builder Admins"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 768Mi
+    tick:
+      schedule: "*/10 * * * *"
+      suspend: false

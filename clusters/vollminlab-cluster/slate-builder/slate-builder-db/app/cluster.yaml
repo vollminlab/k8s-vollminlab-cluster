@@ -1,0 +1,51 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: slate-builder-db
+  namespace: slate-builder
+  labels:
+    app: slate-builder-db
+    env: production
+    category: apps
+spec:
+  # 2 instances: a single instance has nothing to promote on a node reboot.
+  instances: 2
+  # Starting point copied from vollmint-db (measured p95 173Mi). Re-size from Goldilocks
+  # after two weeks of real refreshes; a full props pull inserts ~100k quote rows.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  inheritedMetadata:
+    labels:
+      app: slate-builder-db
+      env: production
+      category: apps
+  # ~80 MB of quotes per weekend at default markets; 120-day retention keeps a season
+  # well under 5Gi. Longhorn resizes online if it is ever needed.
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+  monitoring:
+    enablePodMonitor: true
+  bootstrap:
+    initdb:
+      database: slate_builder
+      owner: slate_builder
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/slate-builder-db
+      endpointURL: http://minio.minio.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-minio-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-minio-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+    retentionPolicy: "14d"
