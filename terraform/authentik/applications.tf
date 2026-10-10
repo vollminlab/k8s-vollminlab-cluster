@@ -266,6 +266,23 @@ resource "authentik_application" "shlink_web" {
   open_in_new_tab = false
 }
 
+resource "authentik_application" "slate_builder" {
+  name             = "Slate Builder"
+  slug             = "slate-builder"
+  meta_description = "Internal analytics app"
+  meta_launch_url  = "https://slate.vollminlab.com"
+  open_in_new_tab  = false
+}
+
+# Bound so only the Users group can open it; without a binding every account
+# could (#1301). The app itself gates admin actions on the Admins group, which
+# it reads from the X-authentik-groups header.
+resource "authentik_policy_binding" "slate_builder_users" {
+  target = authentik_application.slate_builder.uuid
+  group  = authentik_group.slate_builder_users.id
+  order  = 0
+}
+
 resource "authentik_application" "sonarr" {
   name            = "Sonarr"
   slug            = "sonarr"
