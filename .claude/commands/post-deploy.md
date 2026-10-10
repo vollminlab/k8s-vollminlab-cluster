@@ -176,35 +176,33 @@ only 2 of 33 Applications had a binding. Accounts on this Authentik are not all
 family — some belong to friends and league opponents — so "behind Authentik" is
 not by itself a statement about *who* can get in.
 
-For anything not meant for everyone, create a Group and bind it:
+For anything not meant for everyone, a group binding alone is **not enough**. On
+an Application with `provider_id=None`, the domain-wide forward-auth provider
+admits any logged-in account and never evaluates the binding. Verified
+2026-10-10 with a no-group account, which reached two group-bound apps. The app
+needs its own `forward_single` provider. Do it in tofu (`terraform/authentik/`),
+copying FileBrowser and Foundry:
 
-```python
-from authentik.core.models import Application, Group, User
-from authentik.policies.models import PolicyBinding
+1. `groups.tf` — the `<Service> Users` group and its members.
+2. `providers_proxy.tf` — an `authentik_provider_proxy` with
+   `mode = "forward_single"` and `external_host = "https://<host>.vollminlab.com"`.
+3. `applications.tf` — `protocol_provider` on the Application, plus an
+   `authentik_policy_binding` of the group to it.
+4. `outpost.tf` — add the provider to `protocol_providers`.
 
-group, _ = Group.objects.get_or_create(name='<Service> Users')
-for username in ('vollmin', '<other>'):
-    User.objects.get(username=username).ak_groups.add(group)
+Two cluster changes go in the same PR:
 
-app, _ = Application.objects.get_or_create(
-    slug='<slug>',
-    defaults=dict(name='<Display Name>',
-                  meta_launch_url='https://<host>.vollminlab.com',
-                  meta_description='<description>', open_in_new_tab=False))
+- On the app's Ingress, set `auth-signin` to
+  `https://$http_host/outpost.goauthentik.io/start?rd=https://$http_host$escaped_request_uri`.
+- Add the host to `clusters/vollminlab-cluster/authentik/authentik-proxy/app/ingress.yaml`,
+  so `/outpost.goauthentik.io` on it reaches the outpost.
 
-PolicyBinding.objects.get_or_create(
-    target=app, group=group,
-    defaults=dict(order=0, enabled=True, negate=False,
-                  timeout=30, failure_result=False))
-```
+If the app reads `X-authentik-groups` itself, a group check in the app is an
+alternative. Slate Builder does this.
 
-Then read it back — `get_or_create` silently no-ops on an existing object, so
-confirm the binding and its membership rather than trusting the call:
-
-```python
-print([(str(b.group), b.enabled) for b in PolicyBinding.objects.filter(target=app)])
-print(sorted(u.username for u in group.users.all()))
-```
+The tofu CR is `approvePlan: auto`, so merging applies it. Then prove the
+restriction with an account that is **not** in the group: log in and confirm
+Authentik denies it. A member reaching the app proves nothing.
 
 ---
 

@@ -4,3 +4,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - authentik-proxy-token-externalsecret.yaml
+  - ingress.yaml

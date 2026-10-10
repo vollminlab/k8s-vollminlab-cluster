@@ -4,6 +4,8 @@ resource "authentik_outpost" "vollminlab_proxy" {
 
   protocol_providers = [
     authentik_provider_proxy.vollminlab_forward_auth.id,
+    authentik_provider_proxy.filebrowser.id,
+    authentik_provider_proxy.foundry.id,
   ]
 
   config = jsonencode({

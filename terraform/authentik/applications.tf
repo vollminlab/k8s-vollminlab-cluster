@@ -24,11 +24,12 @@ resource "authentik_application" "bazarr" {
 }
 
 resource "authentik_application" "filebrowser" {
-  name            = "FileBrowser"
-  slug            = "filebrowser"
-  meta_launch_url = "https://filebrowser.vollminlab.com"
-  meta_icon       = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/filebrowser.svg"
-  open_in_new_tab = false
+  name              = "FileBrowser"
+  slug              = "filebrowser"
+  protocol_provider = authentik_provider_proxy.filebrowser.id
+  meta_launch_url   = "https://filebrowser.vollminlab.com"
+  meta_icon         = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/filebrowser.svg"
+  open_in_new_tab   = false
 }
 
 resource "authentik_policy_binding" "filebrowser_users" {
@@ -38,11 +39,12 @@ resource "authentik_policy_binding" "filebrowser_users" {
 }
 
 resource "authentik_application" "foundry" {
-  name             = "Foundry VTT"
-  slug             = "foundry"
-  meta_description = "Virtual tabletop for online tabletop RPG sessions"
-  meta_launch_url  = "https://foundry.vollminlab.com"
-  open_in_new_tab  = false
+  name              = "Foundry VTT"
+  slug              = "foundry"
+  protocol_provider = authentik_provider_proxy.foundry.id
+  meta_description  = "Virtual tabletop for online tabletop RPG sessions"
+  meta_launch_url   = "https://foundry.vollminlab.com"
+  open_in_new_tab   = false
 }
 
 resource "authentik_policy_binding" "foundry_users" {
