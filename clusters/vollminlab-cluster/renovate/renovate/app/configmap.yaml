@@ -73,7 +73,9 @@ data:
             "vollminlab/vollmint",
             "vollminlab/slate-builder",
             "vollminlab/shlink-ingress-controller",
-            "vollminlab/longhorn-rebalancing-controller"
+            "vollminlab/longhorn-rebalancing-controller",
+            "vollminlab/pihole-flask-api",
+            "vollminlab/groupme-exporter"
           ],
           "gitAuthor": "Renovate Bot <bot@renovateapp.com>",
           "onboarding": false,
