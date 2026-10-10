@@ -270,7 +270,7 @@ resource "authentik_application" "slate_builder" {
   name             = "Slate Builder"
   slug             = "slate-builder"
   meta_description = "Internal analytics app"
-  meta_launch_url  = "https://slate.vollminlab.com"
+  meta_launch_url  = "https://slatebuilder.vollminlab.com"
   open_in_new_tab  = false
 }
 

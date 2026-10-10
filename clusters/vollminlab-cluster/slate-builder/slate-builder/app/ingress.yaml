@@ -26,10 +26,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - slate.vollminlab.com
+        - slatebuilder.vollminlab.com
       secretName: wildcard-tls
   rules:
-    - host: slate.vollminlab.com
+    - host: slatebuilder.vollminlab.com
       http:
         paths:
           - path: /

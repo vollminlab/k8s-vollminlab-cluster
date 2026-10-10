@@ -460,7 +460,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `vollm.in` | shlink-shlink-backend | 8080 | shlink | vollm-in-tls (Let's Encrypt) |
 | `minio.vollminlab.com` | minio | 9001 | minio | wildcard-tls |
 | `vollmint.vollminlab.com` | vollmint | 8080 | vollmint | wildcard-tls |
-| `slate.vollminlab.com` | slate-builder | 8080 | slate-builder | wildcard-tls |
+| `slatebuilder.vollminlab.com` | slate-builder | 8080 | slate-builder | wildcard-tls |
 
 ---
 
@@ -1506,7 +1506,7 @@ plugin — so VolSync `copyMethod: Clone` is the only viable backup route.
 | Category | `apps` |
 | Components | FastAPI + React SPA (`slate serve`), `slate tick` CronJob every 10 min, CNPG `slate-builder-db` |
 | Container port | 8080 (API + SPA, via ingress-nginx) |
-| Ingress | `slate.vollminlab.com` (shlink slug `slate`) — LAN-only, no Cloudflare tunnel; `proxy-body-size: 8m` for screenshot uploads (≤ 5 MB image, base64) |
+| Ingress | `slatebuilder.vollminlab.com` (shlink slug `slate`; was `slate.vollminlab.com` until 2026-10-10) — LAN-only, no Cloudflare tunnel; `proxy-body-size: 8m` for screenshot uploads (≤ 5 MB image, base64) |
 | Auth | Authentik forward-auth, restricted to `Slate Builder Users`; admin actions need `Slate Builder Admins` |
 | Egress | 443 to its upstream data APIs and the Claude API (serve + tick), RFC1918 excluded; covered by the existing `allow-external-egress` |
 | Secrets | `slate-builder-apikey` ← 1Password `Slate Builder API Key` / `credential`; `slate-builder-llm-apikey` ← `Slate Builder LLM API Key` / `credential` (web pod only, `optional: true`, so a missing key only switches off screenshot import) |
