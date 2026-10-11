@@ -36,7 +36,8 @@ def parse_policy(raw: dict) -> Policy:
             raise ValueError(f"class {name!r}: mode must be shadow or live, got {mode!r}")
     deadline = int(raw["job_deadline_seconds"])
     if deadline < 600:
-        # investigate.py reserves 300s of the deadline for publish to run afterwards.
+        # investigate.py reserves 300s for publish and 120s for pod startup, and will
+        # not start claude with 60s or less left.
         raise ValueError(f"job_deadline_seconds must be at least 600, got {deadline}")
     return Policy(
         model=str(raw["model"]),

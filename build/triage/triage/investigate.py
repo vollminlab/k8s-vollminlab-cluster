@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -22,13 +23,20 @@ REPO_URL = "https://github.com/{repo}.git"
 CLONE_TIMEOUT = 300
 # Seconds of the Job's activeDeadlineSeconds left for publish after claude.
 PUBLISH_RESERVE_SECONDS = 300
+# activeDeadlineSeconds counts from the Job starting, not this process: pod scheduling
+# and the image pull happen before investigate() is ever called.
+STARTUP_MARGIN_SECONDS = 120
+# Not worth starting claude with less than this left.
+MIN_CLAUDE_SECONDS = 60
 
 
 def render_prompt(inc: Incident, policy) -> str:
     if inc.source == "sweep":
         return (PROMPTS / "sweep.md").read_text().replace("{{CHECKLIST}}", policy.sweep_checklist)
-    return (PROMPTS / "incident.md").read_text().replace(
-        "{{INCIDENT}}", json.dumps(asdict(inc), indent=2, sort_keys=True))
+    # The incident is untrusted (label values come from workloads). Escaping < and >
+    # keeps it valid JSON while making it impossible to close the <incident> block.
+    data = json.dumps(asdict(inc), indent=2, sort_keys=True).replace("<", "\\u003c").replace(">", "\\u003e")
+    return (PROMPTS / "incident.md").read_text().replace("{{INCIDENT}}", data)
 
 
 def claude_command(prompt: str, policy) -> list:
@@ -50,15 +58,25 @@ def _denials(out: dict) -> list:
             for d in out.get("permission_denials") or []]
 
 
-def interpret(stdout: str, stderr: str) -> dict:
+def _cost(out: dict):
+    v = out.get("total_cost_usd")
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def interpret(stdout: str, stderr: str, per_run_cap: float) -> dict:
+    """Map the CLI's JSON to a result record. Where the CLI's cost is unknown on an
+    invalid_output failure, the run is charged `per_run_cap` (cost_estimated) so the
+    daily budget sees it."""
     try:
         out = json.loads(stdout)
     except ValueError:
         out = None
     if not isinstance(out, dict):
         return failure("invalid_output",
-                       f"claude did not print a JSON object. stdout={stdout[:1500]!r} stderr={stderr[-1500:]!r}")
-    cost = float(out.get("total_cost_usd") or 0.0)
+                       f"claude did not print a JSON object. stdout={stdout[:1500]!r} stderr={stderr[-1500:]!r}",
+                       per_run_cap, cost_estimated=True)
+    known = _cost(out)
+    cost = known or 0.0
     subtype = out.get("subtype")
     errors = "; ".join(str(e) for e in out.get("errors") or [])
     if subtype == "error_max_turns":
@@ -71,11 +89,14 @@ def interpret(stdout: str, stderr: str) -> dict:
     structured = out.get("structured_output")
     problems = validate_agent_output(structured)
     if problems:
-        return failure("invalid_output", "; ".join(problems), cost)
+        if known is None:
+            return failure("invalid_output", "; ".join(problems), per_run_cap, cost_estimated=True)
+        return failure("invalid_output", "; ".join(problems), known)
     return success(structured, cost, _denials(out))
 
 
-def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run) -> dict:
+def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run, clock=time.monotonic) -> dict:
+    started = clock()
     repo = work / "repo"
     try:
         # Blobless, not shallow: renovate-breakage needs the file's git history.
@@ -88,31 +109,45 @@ def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run) ->
         return failure("setup_failed", f"git clone failed: {e}")
     for name in ("settings.json", "settings.local.json"):
         if (repo / ".claude" / name).exists():
-            return failure("invalid_output",
+            return failure("setup_failed",
                            f".claude/{name} exists in the checkout; refusing to run, because "
                            f"claude -p would execute its hooks without a trust prompt")
     # HOME (/work/home in the Job) must exist and be writable: the root filesystem is
     # read-only, and claude and kubectl both write their config and caches under it.
     (work / "home").mkdir(exist_ok=True)
     (work / "scratch").mkdir(exist_ok=True)
-    budget = policy.job_deadline_seconds - PUBLISH_RESERVE_SECONDS
+    elapsed = clock() - started
+    budget = int(policy.job_deadline_seconds - PUBLISH_RESERVE_SECONDS - STARTUP_MARGIN_SECONDS - elapsed)
+    if budget <= MIN_CLAUDE_SECONDS:
+        return failure("timeout", f"only {budget}s of the Job deadline left after {elapsed:.0f}s of setup; "
+                                  f"claude not started")
     try:
         cp = run(claude_command(render_prompt(inc, policy), policy),
                  cwd=str(repo), capture_output=True, text=True, timeout=budget)
     except subprocess.TimeoutExpired:
-        return failure("timeout", f"claude did not finish within {budget}s")
+        # Killed mid-run: the CLI never reported its cost, and it very likely spent some.
+        return failure("timeout", f"claude did not finish within {budget}s",
+                       policy.per_run_budget_usd, cost_estimated=True)
     except OSError as e:
         return failure("setup_failed", f"could not start claude: {e}")
-    return interpret(cp.stdout, cp.stderr)
+    return interpret(cp.stdout, cp.stderr, policy.per_run_budget_usd)
 
 
 def main() -> int:
     try:
         inc = Incident.from_json(os.environ["TRIAGE_INCIDENT"])
-        result = investigate(inc, load_policy())
+        result = investigate(inc, load_policy(), work=WORK)
     except Exception as e:
         result = failure("setup_failed", f"{type(e).__name__}: {e}")
-    (WORK / "result.json").write_text(json.dumps(result, indent=2))
+    text = json.dumps(result, indent=2)
+    try:
+        (WORK / "result.json").write_text(text)
+    except Exception as e:
+        # Still exit 0: publish then finds no result.json and files that as an
+        # agent-error; the record itself survives in this container's log.
+        print(f"investigate: could not write result.json ({type(e).__name__}: {e}); result follows",
+              file=sys.stderr)
+        print(text, file=sys.stderr)
     print(f"investigate: status={result['status']} reason={result['failure_reason']} "
           f"cost=${result['cost_usd']:.2f} denials={len(result.get('tool_denials', []))}")
     return 0
