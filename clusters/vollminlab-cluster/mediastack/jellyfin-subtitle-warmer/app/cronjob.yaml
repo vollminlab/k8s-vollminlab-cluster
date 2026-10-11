@@ -1,0 +1,91 @@
+# Nightly pre-extraction of embedded subtitles, so first play of a movie starts
+# immediately instead of after a full-file read over CIFS. See warm.py for the
+# mechanism and measurements.
+#
+# The first runs backfill the library (~9 TB, ~13h at observed NAS throughput),
+# spread over about three nights by MAX_RUNTIME_SECONDS. Each run walks newest
+# items first and already-warm items cost ~40ms, so it resumes on its own.
+#
+# No alert rule of its own: warm.py exits 1 only when every request failed
+# (auth, Jellyfin down), which fires KubeJobFailed; a CronJob that stops
+# succeeding fires CronJobNotSucceededRecently at 26h. Per-file failures are
+# logged with their reason.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jellyfin-subtitle-warmer
+  namespace: mediastack
+  labels:
+    app: jellyfin-subtitle-warmer
+    env: production
+    category: media
+spec:
+  # 02:00 US Eastern; the 5h budget ends the run by ~07:00 so the NAS is free
+  # for daytime playback.
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Budget (18000) + one in-flight request's timeout (3600) + margin. The
+      # script stops starting work at the budget; this only kills a hung run.
+      activeDeadlineSeconds: 22200
+      ttlSecondsAfterFinished: 86400
+      # A retry is cheap: everything the failed attempt warmed is now cached.
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: jellyfin-subtitle-warmer
+            env: production
+            category: media
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: warm
+              image: docker.io/library/python:3.13.15-alpine
+              command: ["python3", "-u", "/scripts/warm.py"]
+              env:
+                - name: JELLYFIN_URL
+                  value: "http://jellyfin.mediastack.svc.cluster.local:8096"
+                - name: JELLYFIN_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: jellyfin-subtitle-warmer-apikey
+                      key: api_key
+                - name: MAX_RUNTIME_SECONDS
+                  value: "18000"
+                # Largest file is 81 GB (2026-10-11); at ~200 MB/s that is ~7 min.
+                - name: REQUEST_TIMEOUT_SECONDS
+                  value: "3600"
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  # The full item listing (4.8k items with media streams) is
+                  # held for the run: 111 MB peak RSS measured 2026-10-11.
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: script
+              configMap:
+                name: jellyfin-subtitle-warmer-script
