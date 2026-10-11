@@ -115,7 +115,7 @@ def test_connection_errors_give_up_after_retries():
     s = FakeSession(requests.ConnectionError("a"), requests.ConnectionError("b"), requests.ConnectionError("c"))
     gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
     with pytest.raises(requests.ConnectionError):
-        gh.comment("o/r", 1, "x")
+        gh.add_labels("o/r", 1, ["x"])      # idempotent, so retried; a comment is not
     assert len(s.calls) == 3
 
 
@@ -138,6 +138,8 @@ def test_retry_after_is_capped_at_60s_and_garbage_falls_back():
 @pytest.mark.parametrize("call", [
     lambda gh: gh.create_issue("o/r", "t", "b", []),
     lambda gh: gh.create_pull("o/r", "t", "h", "main", "b"),
+    # A comment is a create too: a re-POST after a 502 posts the report twice.
+    lambda gh: gh.comment("o/r", 1, "b"),
 ])
 @pytest.mark.parametrize("first", [Resp(502), Resp(503, headers={"Retry-After": "1"}),
                                    requests.Timeout("read timed out"), requests.ConnectionError("reset")])

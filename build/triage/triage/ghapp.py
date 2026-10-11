@@ -153,7 +153,8 @@ class GitHub:
                              json={"title": title, "body": body, "labels": labels})
 
     def comment(self, repo, number, body):
-        return self._request("POST", f"/repos/{repo}/issues/{number}/comments", json={"body": body})
+        return self._request("POST", f"/repos/{repo}/issues/{number}/comments", retry_unsafe=False,
+                             json={"body": body})
 
     def add_labels(self, repo, number, labels):
         return self._request("POST", f"/repos/{repo}/issues/{number}/labels", json={"labels": labels})
