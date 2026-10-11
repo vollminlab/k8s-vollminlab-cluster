@@ -37,6 +37,11 @@ Each deviation was forced by something found while planning. Task 41 folds them 
 | 8 | Prerequisite: "enable the chart's ServiceMonitors" | The existing top-level `serviceMonitor: enabled: true` is **silently ignored** by chart 3.9.0. The working keys are per-controller. | Verified by rendering the chart (`helm template` with each key). |
 | 9 | — | `result.json` carries **`tool_denials`** (the CLI's `permission_denials`) | The injection red-team (Task 39) needs evidence that the denied calls happened. |
 | 10 | Live check 4: "no outside connection in the canary's or agent's flow logs" | Verified by the denied-tool-call record plus "no PR, no changed file" | Calico open source has no flow logs here. The denial record shows that the attempt was blocked before any network call. |
+| 11 | investigate and publish share `/work` (the checkout, `HOME` and `result.json`) | **publish trusts only `result.json`.** It clones the repo itself into its own `/publish` volume; `result` is the only volume both containers mount (read-only in publish); every publish subprocess gets a minimal environment; both containers run `python -I` from an installed package | Verified 2026-10-11: the agent's then-allowed `git log --output=<path> --pretty=format:...` writes arbitrary bytes, e.g. a `filter.<x>.clean` command into the shared `.git/config`, which publish's `git add` would have run beside the GitHub App key; a `.pth` file in the shared `HOME` runs at Python startup. Filtering inputs cannot close that class; separating the filesystems does. See the spec, Security, "Containment". |
+| 12 | renovate-breakage: the agent finds the previous value in the file's git history | **The agent cannot run git** (`Bash(git *)` denied, as are curl's file-writing flags). It reads the previous version from the HelmRelease's `status.history`, Flux events or the previous ReplicaSet; publish checks it against the file's history in its own clone | Same finding as 11: `git log` was the write primitive. |
+
+The code listings in Tasks 8 to 28 predate deviations 11 and 12. Where they differ from
+`build/triage/`, the source and its tests are authoritative.
 
 ## PR sequence
 
@@ -5742,7 +5747,13 @@ sweep_checklist: |
 
 - [ ] **Step 2: Job template.** The dispatcher adds the name, fingerprint labels, incident env, `suspend`, `backoffLimit` and the deadline, so none of those belong here.
 
-`job-template.yaml`:
+`job-template.yaml`. The volume layout is the containment boundary (spec, Security,
+"Containment"), and `jobs.check_template` refuses to start the dispatcher if it drifts:
+`result` must be the only volume both containers mount (an emptyDir, writable in
+investigate, `readOnly` in publish; a read-only ConfigMap such as `policy` is the one
+exception, since the kubelet mounts it read-only everywhere), publish's `HOME` must be on a
+volume only publish mounts, and both containers must run `python -I`.
+
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -5774,13 +5785,18 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # Claude Code. Holds the Anthropic key; holds NO GitHub credential.
+        # Claude Code. Holds the Anthropic key; holds NO GitHub credential. Its checkout,
+        # HOME and scratch are on investigate-work, which publish never mounts; the only
+        # thing it hands over is /result/result.json.
         - name: investigate
           image: harbor.vollminlab.com/vollminlab/triage:0.1.0
-          command: ["python", "-m", "triage.investigate"]
+          # -I: isolated mode. No cwd, PYTHONPATH or user site-packages on sys.path.
+          command: ["python", "-I", "-u", "-m", "triage.investigate"]
           env:
             - name: HOME
               value: /work/home
+            - name: PYTHONNOUSERSITE
+              value: "1"
           resources:
             requests:
               cpu: 200m
@@ -5793,9 +5809,11 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: work
+            - name: investigate-work
               mountPath: /work
-            - name: tmp
+            - name: result
+              mountPath: /result
+            - name: investigate-tmp
               mountPath: /tmp
             - name: policy
               mountPath: /etc/triage
@@ -5804,13 +5822,17 @@ spec:
               mountPath: /var/run/secrets/triage/anthropic
               readOnly: true
       containers:
-        # Plain Python, no LLM. Holds the GitHub App key and Pushover; never the Anthropic key.
+        # Plain Python, no LLM. Holds the GitHub App key and Pushover; never the Anthropic
+        # key. Reads result.json from a read-only mount, clones the repo itself into its
+        # own /publish, and never sees investigate's checkout, HOME or /tmp.
         - name: publish
           image: harbor.vollminlab.com/vollminlab/triage:0.1.0
-          command: ["python", "-m", "triage.publish"]
+          command: ["python", "-I", "-u", "-m", "triage.publish"]
           env:
             - name: HOME
-              value: /work/home
+              value: /publish/home
+            - name: PYTHONNOUSERSITE
+              value: "1"
           resources:
             requests:
               cpu: 100m
@@ -5823,9 +5845,12 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: work
-              mountPath: /work
-            - name: tmp
+            - name: result
+              mountPath: /result
+              readOnly: true
+            - name: publish-work
+              mountPath: /publish
+            - name: publish-tmp
               mountPath: /tmp
             - name: policy
               mountPath: /etc/triage
@@ -5837,9 +5862,16 @@ spec:
               mountPath: /var/run/secrets/triage/pushover
               readOnly: true
       volumes:
-        - name: work
+        - name: investigate-work      # investigate only: checkout, HOME, scratch
           emptyDir: {}
-        - name: tmp
+        - name: result                # the ONE shared volume: result.json
+          emptyDir:
+            sizeLimit: 8Mi
+        - name: publish-work          # publish only: its own clone and HOME
+          emptyDir: {}
+        - name: investigate-tmp
+          emptyDir: {}
+        - name: publish-tmp
           emptyDir: {}
         - name: policy
           configMap:
@@ -5899,7 +5931,7 @@ spec:
       containers:
         - name: dispatcher
           image: harbor.vollminlab.com/vollminlab/triage:0.1.0
-          command: ["python", "-m", "triage.server"]
+          command: ["python", "-I", "-u", "-m", "triage.server"]
           ports:
             - name: http
               containerPort: 8080
@@ -6043,7 +6075,7 @@ spec:
           containers:
             - name: sweep
               image: harbor.vollminlab.com/vollminlab/triage:0.1.0
-              command: ["python", "-m", "triage.sweep_tick"]
+              command: ["python", "-I", "-u", "-m", "triage.sweep_tick"]
               env:
                 - name: DISPATCHER_URL
                   value: http://triage-dispatcher.triage.svc:8080/sweep
