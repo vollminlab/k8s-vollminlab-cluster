@@ -23,6 +23,10 @@ spec:
   # 02:00 US Eastern; the 5h budget ends the run by ~07:00 so the NAS is free
   # for daytime playback.
   schedule: "0 6 * * *"
+  # Suspended 2026-10-11: the first run filled pvc-jellyfin-config (20Gi) to 100%,
+  # 13 GB of it PGS image subtitles. Stays off until the full library's cache size
+  # is measured and the PVC and the warmer are sized to match.
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

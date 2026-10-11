@@ -17,4 +17,7 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi
+      # 20Gi -> 30Gi on 2026-10-11: the subtitle warmer's first night filled it to 100%
+      # (13 GB of the 14 GB subtitle cache is PGS image subtitles, ~25 MB each). 30Gi was
+      # the most two of the three replica disks could schedule with headroom left.
+      storage: 30Gi

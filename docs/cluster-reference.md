@@ -503,7 +503,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-bazarr-config` | mediastack | 5Gi | longhorn | RWO |
 | `pvc-rreading-glasses-cache` | mediastack | 2Gi | longhorn | RWO |
 | `pvc-readarr-audio-config` | mediastack | 2Gi | longhorn | RWO |
-| `pvc-jellyfin-config` | mediastack | 20Gi | longhorn | RWO |
+| `pvc-jellyfin-config` | mediastack | 30Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
 | `minio` | minio | 75Gi | longhorn | RWO |
@@ -1342,7 +1342,7 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | App version | 10.11.8 |
 | Ingress | `jellyfin.vollminlab.com` |
 | Port | 8096 |
-| Config PVC | `pvc-jellyfin-config` 20Gi Longhorn RWO |
+| Config PVC | `pvc-jellyfin-config` 30Gi Longhorn RWO (was 20Gi; the subtitle cache filled it 2026-10-11) |
 | Volumes | `pvc-movies` at `/movies` (RWX), `pvc-tv` at `/tv` (RWX) |
 | UID/GID | 568 |
 | External access | Cloudflare Tunnel via `cloudflared-jellyfin` Deployment (one of four independent tunnels) |
@@ -1354,7 +1354,8 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 
 | Parameter | Value |
 |---|---|
-| Kind | CronJob `0 6 * * *` (02:00 US Eastern), `concurrencyPolicy: Forbid`, 5h budget (`MAX_RUNTIME_SECONDS`) |
+| Kind | CronJob `0 6 * * *` (02:00 US Eastern), `concurrencyPolicy: Forbid`, 5h budget (`MAX_RUNTIME_SECONDS`). **Suspended** since 2026-10-11 |
+| Status | Its first run (846 extracted, 528 cached, 1205 failed) filled `pvc-jellyfin-config` to 100%. 13 GB of the 14 GB cache is PGS image subtitles (`.sup`, ~25 MB each). Suspended until the cache is sized; the PVC went to 30Gi |
 | Image | `docker.io/library/python:3.13.15-alpine`; script `warm.py` via `configMapGenerator`, tests in `warm_test.py` (`python3 warm_test.py`, not wired into CI) |
 | Why | First play of an item stalls while Jellyfin extracts its embedded subtitles. That reads the **whole mkv** over CIFS: 74s for GoldenEye (20 GB), 2m25s for Hoppers (24 GB, 46 tracks), measured 2026-10-11. The result is cached in `/config/data/subtitles` |
 | What it does | Walks Movies + Episodes newest first and requests one embedded text subtitle per media source, which makes Jellyfin extract and cache all of that file's tracks. Already-cached items take ~40ms, so each run resumes the backfill where the last one stopped |
