@@ -10,8 +10,9 @@ from triage.ghapp import CachedToken, GitHub, GitHubApp
 
 
 class Resp:
-    def __init__(self, status, body=None):
+    def __init__(self, status, body=None, headers=None):
         self.status_code = status
+        self.headers = headers or {}
         self._body = body
         self.content = b"" if body is None else json.dumps(body).encode()
 
@@ -30,7 +31,10 @@ class FakeSession:
 
     def request(self, method, url, **kw):
         self.calls.append((method, url, kw))
-        return self.responses.pop(0)
+        r = self.responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
 
     def post(self, url, **kw):
         return self.request("POST", url, **kw)
@@ -89,10 +93,92 @@ def test_gives_up_after_retries():
     s = FakeSession(Resp(503), Resp(503), Resp(503))
     gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
     with pytest.raises(requests.HTTPError):
-        gh.create_issue("o/r", "t", "b", [])
+        gh.find_open_issue("o/r", "x")      # creates are not retried on 5xx at all
     assert len(s.calls) == 3
 
 
 def test_no_open_issue_returns_none():
     gh = GitHub(lambda: "t", session=FakeSession(Resp(200, [])), sleep=lambda _: None)
     assert gh.find_open_issue("o/r", "x") is None
+
+
+@pytest.mark.parametrize("exc", [requests.ConnectionError("reset"), requests.Timeout("read timed out")])
+def test_connection_errors_and_timeouts_are_retried_on_safe_calls(exc):
+    sleeps = []
+    s = FakeSession(exc, Resp(200, []))
+    gh = GitHub(lambda: "t", session=s, sleep=sleeps.append)
+    assert gh.find_open_issue("o/r", "x") is None
+    assert sleeps == [1] and len(s.calls) == 2
+
+
+def test_connection_errors_give_up_after_retries():
+    s = FakeSession(requests.ConnectionError("a"), requests.ConnectionError("b"), requests.ConnectionError("c"))
+    gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
+    with pytest.raises(requests.ConnectionError):
+        gh.comment("o/r", 1, "x")
+    assert len(s.calls) == 3
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_retry_after_is_honoured(status):
+    sleeps = []
+    s = FakeSession(Resp(status, headers={"Retry-After": "7"}), Resp(200, []))
+    GitHub(lambda: "t", session=s, sleep=sleeps.append).find_open_issue("o/r", "x")
+    assert sleeps == [7]
+
+
+def test_retry_after_is_capped_at_60s_and_garbage_falls_back():
+    sleeps = []
+    s = FakeSession(Resp(429, headers={"Retry-After": "3600"}),
+                    Resp(429, headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}), Resp(200, []))
+    GitHub(lambda: "t", session=s, sleep=sleeps.append).find_open_issue("o/r", "x")
+    assert sleeps == [60, 2]
+
+
+@pytest.mark.parametrize("call", [
+    lambda gh: gh.create_issue("o/r", "t", "b", []),
+    lambda gh: gh.create_pull("o/r", "t", "h", "main", "b"),
+])
+@pytest.mark.parametrize("first", [Resp(502), Resp(503, headers={"Retry-After": "1"}),
+                                   requests.Timeout("read timed out"), requests.ConnectionError("reset")])
+def test_creates_are_never_reposted_after_an_ambiguous_failure(call, first):
+    # GitHub can 502 (or the connection drop) AFTER creating the object; a re-POST duplicates it.
+    s = FakeSession(first, Resp(201, {"number": 1}))
+    gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
+    with pytest.raises((requests.HTTPError, requests.RequestException)):
+        call(gh)
+    assert len(s.calls) == 1
+
+
+def test_creates_still_retry_429():
+    sleeps = []
+    s = FakeSession(Resp(429, headers={"Retry-After": "3"}), Resp(201, {"number": 5}))
+    gh = GitHub(lambda: "t", session=s, sleep=sleeps.append)
+    assert gh.create_issue("o/r", "t", "b", []) == {"number": 5}
+    assert sleeps == [3] and len(s.calls) == 2
+
+
+@pytest.mark.parametrize("first", [Resp(502), Resp(429), requests.ConnectionError("reset")])
+def test_token_minting_retries(first):
+    _, pem = _pem()
+    sleeps = []
+    s = FakeSession(first, Resp(201, {"token": "ghs_y"}))
+    app = GitHubApp("123", "456", pem, session=s, sleep=sleeps.append)
+    assert app.token(["r"], {}) == "ghs_y"
+    assert len(s.calls) == 2 and len(sleeps) == 1
+
+
+def test_token_minting_does_not_retry_4xx():
+    _, pem = _pem()
+    s = FakeSession(Resp(401), Resp(201, {"token": "x"}))
+    with pytest.raises(requests.HTTPError):
+        GitHubApp("123", "456", pem, session=s, sleep=lambda _: None).token(["r"], {})
+    assert len(s.calls) == 1
+
+
+@pytest.mark.parametrize("retries", [0, -1])
+def test_retries_must_be_at_least_one(retries):
+    with pytest.raises(ValueError):
+        GitHub(lambda: "t", session=FakeSession(), retries=retries)
+    with pytest.raises(ValueError):
+        GitHubApp("1", "2", "pem", session=FakeSession(), retries=retries)

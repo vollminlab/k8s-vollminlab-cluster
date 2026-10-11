@@ -6,14 +6,57 @@ import requests
 
 API = "https://api.github.com"
 SECRET_DIR = "/var/run/secrets/triage/github"
+MAX_RETRY_AFTER = 60
+
+
+def _check_retries(retries: int) -> int:
+    if retries < 1:
+        raise ValueError(f"retries must be >= 1, got {retries}")
+    return retries
+
+
+def _backoff(r, attempt: int) -> float:
+    """Retry-After (seconds, capped) on 429/503, else exponential."""
+    if r is not None and r.status_code in (429, 503):
+        after = str((r.headers or {}).get("Retry-After", "")).strip()
+        if after.isascii() and after.isdigit():
+            return min(int(after), MAX_RETRY_AFTER)
+    return 2 ** attempt
+
+
+def send_with_retries(send, retries: int, sleep, retry_unsafe: bool = True):
+    """Call `send()` until it returns a non-retryable response, and return it.
+
+    Retried: 429 always; 5xx, timeouts and connection errors only when
+    `retry_unsafe` is true. A non-idempotent create passes False, because GitHub can
+    fail (502, dropped connection) AFTER creating the object, and a re-POST would
+    duplicate it; 429 is a refusal before processing, so it is always safe.
+    """
+    for attempt in range(retries):
+        last = attempt == retries - 1
+        try:
+            r = send()
+        except (requests.ConnectionError, requests.Timeout):
+            if last or not retry_unsafe:
+                raise
+            sleep(_backoff(None, attempt))
+            continue
+        if r.status_code == 429 or (r.status_code >= 500 and retry_unsafe):
+            if not last:
+                sleep(_backoff(r, attempt))
+                continue
+        return r
 
 
 class GitHubApp:
-    def __init__(self, app_id: str, installation_id: str, private_key_pem: str, session=None):
+    def __init__(self, app_id: str, installation_id: str, private_key_pem: str, session=None,
+                 retries: int = 3, sleep=time.sleep):
         self.app_id = str(app_id)
         self.installation_id = str(installation_id)
         self.private_key = private_key_pem
         self.session = session or requests.Session()
+        self.retries = _check_retries(retries)
+        self.sleep = sleep
 
     @classmethod
     def from_dir(cls, path: str = SECRET_DIR, session=None) -> "GitHubApp":
@@ -33,12 +76,14 @@ class GitHubApp:
         The App itself can write to the public cluster repo; a token minted here
         for the dispatcher carries only issues:write on triage-reports.
         """
-        r = self.session.post(
+        # Minting is idempotent (each call just issues a fresh token), so every
+        # transient failure is retried; the JWT is re-signed per attempt.
+        r = send_with_retries(lambda: self.session.post(
             f"{API}/app/installations/{self.installation_id}/access_tokens",
             headers={"Authorization": f"Bearer {self._jwt()}", "Accept": "application/vnd.github+json"},
             json={"repositories": repositories, "permissions": permissions},
             timeout=30,
-        )
+        ), self.retries, self.sleep)
         r.raise_for_status()
         return r.json()["token"]
 
@@ -62,22 +107,17 @@ class GitHub:
     def __init__(self, token_provider, session=None, retries: int = 3, sleep=time.sleep):
         self.token_provider = token_provider
         self.session = session or requests.Session()
-        self.retries = retries
+        self.retries = _check_retries(retries)
         self.sleep = sleep
 
-    def _request(self, method, path, **kwargs):
-        last = None
-        for attempt in range(self.retries):
+    def _request(self, method, path, retry_unsafe: bool = True, **kwargs):
+        def send():
             headers = {"Authorization": f"Bearer {self.token_provider()}",
                        "Accept": "application/vnd.github+json"}
-            r = self.session.request(method, f"{API}{path}", headers=headers, timeout=30, **kwargs)
-            if r.status_code < 500 and r.status_code != 429:
-                r.raise_for_status()
-                return r.json() if r.content else None
-            last = r
-            if attempt < self.retries - 1:
-                self.sleep(2 ** attempt)
-        last.raise_for_status()
+            return self.session.request(method, f"{API}{path}", headers=headers, timeout=30, **kwargs)
+        r = send_with_retries(send, self.retries, self.sleep, retry_unsafe)
+        r.raise_for_status()
+        return r.json() if r.content else None
 
     def find_open_issue(self, repo: str, fp12: str):
         items = self._request("GET", f"/repos/{repo}/issues",
@@ -85,7 +125,7 @@ class GitHub:
         return items[0] if items else None
 
     def create_issue(self, repo, title, body, labels):
-        return self._request("POST", f"/repos/{repo}/issues",
+        return self._request("POST", f"/repos/{repo}/issues", retry_unsafe=False,
                              json={"title": title, "body": body, "labels": labels})
 
     def comment(self, repo, number, body):
@@ -98,5 +138,5 @@ class GitHub:
         return self._request("PATCH", f"/repos/{repo}/issues/{number}", json={"state": "closed"})
 
     def create_pull(self, repo, title, head, base, body):
-        return self._request("POST", f"/repos/{repo}/pulls",
+        return self._request("POST", f"/repos/{repo}/pulls", retry_unsafe=False,
                              json={"title": title, "head": head, "base": base, "body": body})
