@@ -7,6 +7,8 @@ an `agent-error` issue.
 """
 import json
 import os
+import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -141,19 +143,63 @@ def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run, cl
     return interpret(cp.stdout, cp.stderr, policy.per_run_budget_usd)
 
 
-def write_result(path: Path, text: str) -> None:
-    """Write via a temporary file and rename, so a symlink or FIFO planted at the path
-    during the run is replaced rather than written through (publish then refuses
-    anything that is not a regular file)."""
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+def clear_dir(d: Path) -> list:
+    """Remove every entry in `d`: files, FIFOs, directories (recursively) and symlinks,
+    never following a symlink. Returns a description of each entry that could not be
+    removed. The volume is shared with publish, so nothing left in it may be trusted:
+    a result.json planted there (by an earlier run, or by the model during this one)
+    must never survive to be read in place of the real record."""
+    errors = []
+    with os.scandir(d) as it:
+        entries = list(it)
+    for e in entries:
+        try:
+            if e.is_dir(follow_symlinks=False):
+                shutil.rmtree(e.path)       # fd-based on Linux: does not follow symlinks inside
+            else:
+                os.unlink(e.path)
+        except OSError as err:
+            errors.append(f"{e.name}: {type(err).__name__}: {err}")
+    return errors
+
+
+def write_result(path: Path, text: str, token=lambda: secrets.token_hex(16)) -> None:
+    """Empty the directory, write a fresh file under a random name, rename it over
+    `path`. A symlink, FIFO or file planted at `path` (or at a predictable temp name)
+    during the run is removed or replaced, never written through; a directory that
+    cannot be removed makes the rename fail, loudly."""
+    try:
+        clear_dir(path.parent)
+    except OSError:
+        pass                            # the rename below still decides
+    for _ in range(16):
+        tmp = path.with_name(f".result-{token()}.tmp")
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        except FileExistsError:
+            continue
+        break
+    else:
+        raise FileExistsError(f"no free temporary name in {path.parent}")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def main() -> int:
     try:
+        # Before claude runs: nothing already on the shared volume may be read as
+        # this run's result.
+        leftovers = clear_dir(RESULT.parent)
+        if leftovers:
+            raise RuntimeError(f"could not empty {RESULT.parent}: {'; '.join(leftovers)[:1000]}")
         inc = Incident.from_json(os.environ["TRIAGE_INCIDENT"])
         result = investigate(inc, load_policy(), work=WORK)
     except Exception as e:

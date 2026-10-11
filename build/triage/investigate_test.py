@@ -231,3 +231,136 @@ def test_main_survives_an_unwritable_work_dir(tmp_path, monkeypatch, capsys):
     assert investigate.main() == 0
     err = capsys.readouterr().err
     assert '"failure_reason": "setup_failed"' in err
+
+
+# --- /result is emptied before claude runs and again before the final write ----------
+
+OK_JSON = json.dumps({"status": "ok", "planted": True})
+
+
+@pytest.fixture
+def result_dir(tmp_path, monkeypatch):
+    d = tmp_path / "result"
+    d.mkdir()
+    monkeypatch.setattr(investigate, "WORK", tmp_path / "work")
+    monkeypatch.setattr(investigate, "RESULT", d / "result.json")
+    monkeypatch.setenv("TRIAGE_INCIDENT", INC.to_json())
+    monkeypatch.setattr(investigate, "load_policy", lambda: make_policy())
+    return d
+
+
+def _plant(d, outside):
+    outside.mkdir(exist_ok=True)
+    (outside / "keep.txt").write_text("untouched")
+    (d / "result.json").write_text(OK_JSON)
+    (d / ".result-0123456789abcdef.tmp").write_text(OK_JSON)
+    (d / ".result.json.1.tmp").write_text(OK_JSON)
+    (d / "nested").mkdir()
+    (d / "nested" / "deep").mkdir()
+    (d / "nested" / "deep" / "f").write_text("x")
+    (d / "link-to-outside").symlink_to(outside)
+    (d / "dangling").symlink_to(outside / "nope")
+
+
+def test_planted_entries_are_gone_before_claude_runs(result_dir, tmp_path, monkeypatch):
+    _plant(result_dir, tmp_path / "outside")
+    seen = []
+
+    def fake(inc, policy, work):
+        seen.append(sorted(p.name for p in result_dir.iterdir()))
+        return investigate.failure("timeout", "fake")
+    monkeypatch.setattr(investigate, "investigate", fake)
+    assert investigate.main() == 0
+    assert seen == [[]]
+    assert (tmp_path / "outside" / "keep.txt").read_text() == "untouched"     # symlinks not followed
+    assert sorted(p.name for p in result_dir.iterdir()) == ["result.json"]
+    assert json.loads((result_dir / "result.json").read_text())["failure_reason"] == "timeout"
+
+
+@pytest.mark.parametrize("plant", ["file", "symlink", "directory", "fifo"])
+def test_anything_planted_during_the_run_is_replaced_by_the_real_record(result_dir, tmp_path, monkeypatch, plant):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("untouched")
+
+    def fake(inc, policy, work):
+        target = result_dir / "result.json"
+        if plant == "file":
+            target.write_text(OK_JSON)
+        elif plant == "symlink":
+            target.symlink_to(outside)
+        elif plant == "directory":
+            target.mkdir()
+            (target / "x").write_text(OK_JSON)
+        else:
+            __import__("os").mkfifo(target)
+        (result_dir / ".result-feedfacefeedface.tmp").write_text(OK_JSON)
+        (result_dir / "other").mkdir()
+        return investigate.failure("max_turns", "fake", 1.0)
+    monkeypatch.setattr(investigate, "investigate", fake)
+    assert investigate.main() == 0
+    assert sorted(p.name for p in result_dir.iterdir()) == ["result.json"]
+    r = result_dir / "result.json"
+    assert r.is_file() and not r.is_symlink()
+    assert json.loads(r.read_text())["failure_reason"] == "max_turns"
+    assert outside.read_text() == "untouched"
+
+
+def test_write_result_retries_a_temp_name_taken_in_a_race(tmp_path):
+    names = iter(["aaaa", "aaaa", "bbbb"])
+
+    def token():
+        name = next(names)
+        if name == "aaaa":
+            (tmp_path / ".result-aaaa.tmp").write_text("planted")      # appears after the clean
+        return name
+    investigate.write_result(tmp_path / "result.json", '{"status": "failed"}', token=token)
+    assert (tmp_path / "result.json").read_text() == '{"status": "failed"}'
+    assert (tmp_path / ".result-aaaa.tmp").read_text() == "planted"        # never written through
+
+
+def test_write_result_temp_names_are_random(tmp_path, monkeypatch):
+    made = []
+    real = investigate.os.open
+
+    def spy(path, flags, *a):
+        made.append((str(path), flags))
+        return real(path, flags, *a)
+    monkeypatch.setattr(investigate.os, "open", spy)
+    investigate.write_result(tmp_path / "result.json", "{}")
+    investigate.write_result(tmp_path / "result.json", "{}")
+    names = [p.rsplit("/", 1)[-1] for p, _ in made]
+    assert len(set(names)) == 2 and all(n.startswith(".result-") and len(n) >= 40 for n in names)
+    flags = made[0][1]
+    for f in (investigate.os.O_CREAT, investigate.os.O_EXCL, investigate.os.O_NOFOLLOW):
+        assert flags & f
+
+
+def test_an_uncleanable_result_dir_is_setup_failed_but_still_written(result_dir, monkeypatch):
+    (result_dir / "stuck").mkdir()
+    (result_dir / "stuck" / "f").write_text("x")
+    real_rmtree = investigate.shutil.rmtree
+
+    def refuse(path, *a, **kw):
+        if str(path).endswith("stuck"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_rmtree(path, *a, **kw)
+    monkeypatch.setattr(investigate.shutil, "rmtree", refuse)
+    called = []
+    monkeypatch.setattr(investigate, "investigate", lambda *a, **k: called.append(1))
+    assert investigate.main() == 0
+    assert called == []                                          # claude never started
+    r = json.loads((result_dir / "result.json").read_text())
+    assert r["failure_reason"] == "setup_failed" and "stuck" in r["detail"]
+
+
+def test_an_unremovable_planted_result_json_is_reported_not_trusted(result_dir, monkeypatch, capsys):
+    # If even the final clean cannot remove a planted result.json directory, the write
+    # fails loudly (publish then finds no regular file and files an agent-error).
+    (result_dir / "result.json").mkdir()
+    (result_dir / "result.json" / "x").write_text(OK_JSON)
+    monkeypatch.setattr(investigate.shutil, "rmtree",
+                        lambda p, *a, **k: (_ for _ in ()).throw(PermissionError(13, "denied", str(p))))
+    monkeypatch.setattr(investigate, "investigate", lambda *a, **k: investigate.failure("timeout", "x"))
+    assert investigate.main() == 0
+    assert (result_dir / "result.json").is_dir()
+    assert "could not write result.json" in capsys.readouterr().err
