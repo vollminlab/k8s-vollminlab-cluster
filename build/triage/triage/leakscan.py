@@ -21,9 +21,18 @@ def scan(texts: dict, run=subprocess.run) -> dict:
                   "--exit-code", "0", "--no-banner"], capture_output=True, text=True, timeout=120)
         if cp.returncode != 0 or not report.exists():
             raise LeakScanError(f"gitleaks exited {cp.returncode}: {cp.stderr[-500:]}")
-        findings = json.loads(report.read_text() or "[]")
+        try:
+            findings = json.loads(report.read_text() or "[]")
+        except ValueError as e:
+            raise LeakScanError(f"gitleaks report is not JSON: {e}") from None
+    # A report we cannot read is a failed scan, never "no findings": an unexpected
+    # shape must stop the publish, not let unscanned text through.
+    if not isinstance(findings, list):
+        raise LeakScanError(f"gitleaks report is a {type(findings).__name__}, not a list")
     hits = {}
     for f in findings:
+        if not (isinstance(f, dict) and isinstance(f.get("File"), str) and isinstance(f.get("Secret"), str)):
+            raise LeakScanError("gitleaks report has an entry without string File and Secret")
         hits.setdefault(Path(f["File"]).stem, []).append(f["Secret"])
     return hits
 
