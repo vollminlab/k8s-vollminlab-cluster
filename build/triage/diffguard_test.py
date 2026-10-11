@@ -553,3 +553,29 @@ def test_renovate_pair_may_change_only_the_value(removed, added):
 ])
 def test_renovate_pair_changing_only_the_value_passes_the_line_rules(removed, added):
     assert line_violation("renovate-breakage", [("f.yaml", [removed], [added])]) is None
+
+
+# ---- app_dir is validated here too, not only by the schema upstream ---------------
+
+@pytest.mark.parametrize("app_dir", [
+    "clusters/vollminlab-cluster/demo/demo/",                       # not an app/ dir
+    "clusters/vollminlab-cluster/demo/",
+    "clusters/vollminlab-cluster/",
+    "clusters/vollminlab-cluster/demo/../demo/app/",
+    "clusters/vollminlab-cluster/Demo/demo/app/",
+    "clusters/vollminlab-cluster/demo/demo/app/\n",
+    "clusters/vollminlab-cluster/demo/ｄemo/app/",
+    "/clusters/vollminlab-cluster/demo/demo/app/",
+    123,
+])
+def test_check_rejects_an_app_dir_outside_the_pattern(app_dir):
+    # Several would fail later for another reason; the gate must name app_dir itself.
+    r = guard(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit",
+              {"peak_memory_bytes": 300 * MI}, app_dir=app_dir)
+    assert not r.ok and "app_dir" in r.reason
+
+
+@pytest.mark.parametrize("app_dir", [APP, APP.rstrip("/")])
+def test_check_accepts_a_well_formed_app_dir(app_dir):
+    assert guard(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit",
+                 {"peak_memory_bytes": 300 * MI}, app_dir=app_dir).ok

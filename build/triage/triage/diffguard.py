@@ -30,6 +30,8 @@ _CPU_LINE = re.compile(r"""^[ \t]*cpu:[ \t]*(["']?)[0-9.]+m?\1[ \t]*\r?\Z""", re
 # Printable ASCII only: PyYAML also breaks lines at \x85, \u2028 and \u2029, which
 # "\n"-split lines would otherwise hide a second YAML line inside.
 _RENOVATE_LINE = re.compile(r"^([ \t]*)(version|tag|image):[ \t]*[\x21-\x7e][\x20-\x7e]*\r?\Z", re.ASCII)
+# The schema enforces this upstream; check() is the boundary, so it checks again.
+_APP_DIR = re.compile(r"clusters/vollminlab-cluster/[a-z0-9-]+/[a-z0-9-]+/app/?", re.ASCII)
 HEADROOM = 1.2
 MAX_GROWTH = 2.0
 
@@ -310,6 +312,8 @@ def _check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_file
         return _fail(f"metrics must be a mapping, not {type(metrics).__name__}")
     if not app_dir:
         return _fail("no app_dir was given")
+    if not isinstance(app_dir, str) or not _APP_DIR.fullmatch(app_dir):
+        return _fail(f"app_dir {str(app_dir)[:120]!r} is not clusters/vollminlab-cluster/<namespace>/<app>/app/")
     app_dir = app_dir.rstrip("/") + "/"
     try:
         file_patches = patching.parse(patch_text or "")
