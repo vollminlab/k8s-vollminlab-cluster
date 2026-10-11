@@ -77,7 +77,9 @@ def build_job(template: dict, incident, existing_issue, deadline_seconds: int, n
     spec["backoffLimit"] = 0                     # a retry would pay for the whole investigation again
     spec["activeDeadlineSeconds"] = deadline_seconds
     env = [{"name": "TRIAGE_INCIDENT", "value": incident.to_json()},
-           {"name": "TRIAGE_EXISTING_ISSUE", "value": str(existing_issue or "")}]
+           {"name": "TRIAGE_EXISTING_ISSUE", "value": str(existing_issue or "")},
+           # The same suffix as the Job name; publish puts it in the PR branch name.
+           {"name": "TRIAGE_RUN", "value": str(now)}]
     pod = spec["template"]["spec"]
     for c in pod.get("initContainers", []) + pod["containers"]:
         c.setdefault("env", []).extend(copy.deepcopy(env))

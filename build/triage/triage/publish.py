@@ -16,6 +16,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -254,12 +255,12 @@ def _scrub(text: str, run) -> tuple:
     return text, []
 
 
-def publish_incident(inc, result, existing_issue, policy, gh, token, notify, repo: Path, run) -> dict:
+def publish_incident(inc, result, existing_issue, policy, gh, token, notify, repo: Path, run, *, run_id: str) -> dict:
     gates = evaluate_gates(inc, result, policy, repo, run)
     cls = result.get("class") or "none"
     pr_url, preview, note = None, None, ""
     if gates.guard is not None and gates.guard.ok:
-        draft = {"branch": prbody.branch(cls, inc.fp12),
+        draft = {"branch": prbody.branch(cls, inc.fp12, run_id),
                  "title": prbody.title(cls, result["app_dir"]),
                  "body": prbody.body(cls, gates.guard.changes, result.get("metrics") or {}, inc.fp12),
                  "patch": result["patch"]}
@@ -364,6 +365,12 @@ def termination_text(summary: dict) -> str:
                       allow_nan=False)
 
 
+def run_id_from(environ, clock=time.time) -> str:
+    """TRIAGE_RUN (the dispatcher's Job-name suffix) if it is ref-safe, else now."""
+    rid = environ.get("TRIAGE_RUN", "")
+    return rid if prbody._RUN_ID.fullmatch(rid) else str(int(clock()))
+
+
 def main() -> int:
     summary = {"outcome": "publish_failed", "cost_usd": 0.0}
     notify, result = None, None
@@ -382,7 +389,7 @@ def main() -> int:
             summary = publish_sweep(inc, result, policy, gh, notify, subprocess.run, datetime.now(timezone.utc))
         else:
             summary = publish_incident(inc, result, int(existing) if existing else None, policy, gh, token,
-                                       notify, WORK / "repo", subprocess.run)
+                                       notify, WORK / "repo", subprocess.run, run_id=run_id_from(os.environ))
     except Exception as e:
         summary["detail"] = f"{type(e).__name__}: {e}"[:500]
         print(f"publish failed: {summary['detail']}", file=sys.stderr)

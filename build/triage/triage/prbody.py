@@ -6,6 +6,8 @@ the app directory (validated against a pattern and against the checkout), field
 paths and values read from the real files, and one numeric metric per class.
 That metric is reported by the agent, not measured by code, and the PR says so.
 """
+import re
+
 from .yamldiff import MISSING
 
 CLASS_TEXT = {
@@ -44,8 +46,15 @@ def app_name(app_dir: str) -> str:
     return app_dir.rstrip("/").split("/")[-2]      # clusters/vollminlab-cluster/<ns>/<app>/app
 
 
-def branch(cls: str, fp12: str) -> str:
-    return f"fix/triage-{cls}-{fp12}"
+_RUN_ID = re.compile(r"[0-9a-z]{1,20}", re.ASCII)
+
+
+def branch(cls: str, fp12: str, run_id: str) -> str:
+    """One branch per run, so a re-investigation never collides with (or pushes over)
+    the branch of an earlier PR for the same fingerprint."""
+    if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id):
+        raise ValueError(f"run id {str(run_id)[:40]!r} is not ^[0-9a-z]{{1,20}}$")
+    return f"fix/triage-{cls}-{fp12}-{run_id}"
 
 
 def title(cls: str, app_dir: str) -> str:

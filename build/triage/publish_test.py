@@ -18,6 +18,7 @@ LIVE = {"classes": {"oom-memory-limit": "live"}}
 POLICY_PATH = "clusters/vollminlab-cluster/kyverno/kyverno-policies/policies/p.yaml"
 HEAD_FILES = dict(REPO_FILES, **{POLICY_PATH: "kind: ClusterPolicy\nmetadata: {name: p}\n"})
 CM = APP + "configmap.yaml"
+RUN = "1791700000"
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="needs the git binary (CI's test image has none)")
 
@@ -141,7 +142,8 @@ def repo(tmp_path):
 def go(repo, result, policy=None, existing=None, runner=None):
     gh, runner, notes = FakeGitHub(), runner or Runner(repo), []
     out = publish.publish_incident(INC, result, existing, policy or make_policy(), gh, "ghs_SECRET_TOKEN",
-                                   lambda t, m, url=None: notes.append((t, m, url)), repo, runner)
+                                   lambda t, m, url=None: notes.append((t, m, url)), repo, runner,
+                                   run_id=RUN)
     return out, gh, runner, notes
 
 
@@ -157,7 +159,7 @@ def test_shadow_mode_previews_the_pr_and_never_opens_it(repo):
     _, title, body, labels = gh.issue()
     assert title == "[KubePodCrashLooping] demo/Deployment/demo"
     assert {"shadow", f"fp/{INC.fp12}", "class/oom-memory-limit"} <= set(labels)
-    assert f"fix/triage-oom-memory-limit-{INC.fp12}" in body and "(shadow mode)" in body
+    assert f"fix/triage-oom-memory-limit-{INC.fp12}-{RUN}" in body and "(shadow mode)" in body
     assert "raise memory limit above reported peak" in body
     assert out == {"outcome": "issue_created", "cost_usd": 0.5, "issue": 11, "pr": None}
     assert len(notes) == 1 and notes[0][2].endswith("/issues/11")
@@ -320,6 +322,12 @@ def test_termination_text_never_emits_nan_or_infinity(cost):
     assert parsed["outcome"] == "issue_created" and parsed["cost_usd"] is None
 
 
+def test_run_id_comes_from_triage_run_or_the_clock():
+    assert publish.run_id_from({"TRIAGE_RUN": "1791700000"}) == "1791700000"
+    for bad in ({}, {"TRIAGE_RUN": ""}, {"TRIAGE_RUN": "../x"}, {"TRIAGE_RUN": "x" * 40}):
+        assert publish.run_id_from(bad, clock=lambda: 1234.9) == "1234"
+
+
 def test_termination_text_is_valid_json_within_the_kubelet_limit():
     text = publish.termination_text({"outcome": "x", "cost_usd": 1.0, "detail": "é" * 5000, "pr": "y" * 5000})
     assert len(text.encode()) <= 3500
@@ -368,7 +376,7 @@ def real_repo(root: Path, files=HEAD_FILES) -> Path:
 def real_go(repo, result, policy=None):
     gh, runner = FakeGitHub(), RealGit()
     out = publish.publish_incident(INC, result, None, policy or make_policy(**LIVE), gh, "ghs_SECRET_TOKEN",
-                                   lambda *a, **k: None, repo, runner)
+                                   lambda *a, **k: None, repo, runner, run_id=RUN)
     return out, gh, runner
 
 
@@ -379,7 +387,7 @@ def test_real_git_live_mode_commits_exactly_the_guarded_change(tmp_path):
     assert out["pr"].endswith("/pull/1"), gh.issue()[2]
     files = _sh(repo, "diff", "--name-only", "HEAD~1", "HEAD").stdout.decode().split()
     assert files == [CM]
-    assert _sh(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.decode().strip() == f"fix/triage-oom-memory-limit-{INC.fp12}"
+    assert _sh(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.decode().strip() == f"fix/triage-oom-memory-limit-{INC.fp12}-{RUN}"
     assert len(pushes(runner)) == 1
 
 

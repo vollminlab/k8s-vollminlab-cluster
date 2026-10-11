@@ -27,6 +27,7 @@ def test_build_job_is_suspended_labelled_and_carries_the_incident():
         env = {e["name"]: e["value"] for e in c["env"]}
         assert Incident.from_json(env["TRIAGE_INCIDENT"]) == INC
         assert env["TRIAGE_EXISTING_ISSUE"] == ""
+        assert env["TRIAGE_RUN"] == "1791700000"       # publish's per-run branch suffix
     assert {e["name"] for e in pod["initContainers"][0]["env"]} >= {"HOME"}
 
 

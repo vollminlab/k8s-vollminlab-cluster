@@ -1,5 +1,7 @@
 import copy
 
+import pytest
+
 from testsupport import AGENT_OK, APP, REPO_FILES, make_patch
 from triage import diffguard, prbody
 from triage.yamldiff import MISSING
@@ -23,7 +25,7 @@ def test_no_free_text_from_the_model_reaches_the_pr():
                       "summary": CANARY, "detail": CANARY}]
     g = guarded(r)
     assert g.ok, g.reason
-    text = "\n".join([prbody.branch(r["class"], "abc123def456"), prbody.title(r["class"], r["app_dir"]),
+    text = "\n".join([prbody.branch(r["class"], "abc123def456", "1791700000"), prbody.title(r["class"], r["app_dir"]),
                       prbody.body(r["class"], g.changes, r["metrics"], "abc123def456")])
     assert CANARY not in text
 
@@ -39,7 +41,20 @@ def test_body_carries_the_parsed_diff_and_the_class_metric_only():
 
 def test_title_and_branch():
     assert prbody.title("oom-memory-limit", APP) == "fix(demo): raise memory limit above reported peak (triage)"
-    assert prbody.branch("renovate-breakage", "abc123def456") == "fix/triage-renovate-breakage-abc123def456"
+    assert (prbody.branch("renovate-breakage", "abc123def456", "1791700000")
+            == "fix/triage-renovate-breakage-abc123def456-1791700000")
+
+
+def test_two_runs_for_one_fingerprint_get_different_branches():
+    # A re-investigation of the same incident must not collide with (or force-push
+    # over) the branch of an earlier, still-open PR.
+    assert prbody.branch("oom-memory-limit", "abc123def456", "1") != prbody.branch("oom-memory-limit", "abc123def456", "2")
+
+
+@pytest.mark.parametrize("run", ["", "a/b", "..", "x" * 21, "A1", "1 2", "1\n", None, 5])
+def test_branch_run_id_must_be_short_and_ref_safe(run):
+    with pytest.raises(ValueError):
+        prbody.branch("oom-memory-limit", "abc123def456", run)
 
 
 def test_removed_values_and_table_breakers_are_rendered_safely():
