@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 from kubernetes.client.exceptions import ApiException
 
-from triage.owners import infer_owner, kube_owner_lookup, resolve
+from triage.owners import MISSING, infer_owner, kube_owner_lookup, resolve
 
 CHAIN = {
     ("Pod", "radarr-7d9c8b6f5-x2x9q"): ("ReplicaSet", "radarr-7d9c8b6f5"),
@@ -123,7 +123,8 @@ def _reader(objs):
 
 def test_kube_lookup_infers_owner_of_a_deleted_pod_and_confirms_it():
     core = _api(read_namespaced_pod=_reader({}))
-    apps = _api(read_namespaced_deployment=_reader({"radarr": _obj()}),
+    apps = _api(read_namespaced_replica_set=_reader({}),        # RS aged out too
+                read_namespaced_deployment=_reader({"radarr": _obj()}),
                 read_namespaced_stateful_set=_reader({}), read_namespaced_daemon_set=_reader({}))
     get_owner = kube_owner_lookup(core, apps, _api())
     assert get_owner("Pod", "mediastack", "radarr-7d9c8b6f5-x2x9q") == ("Deployment", "radarr")
@@ -166,7 +167,7 @@ def test_confirming_read_errors_other_than_404_propagate():
     def forbidden(name, ns):
         raise ApiException(status=403)
     core = _api(read_namespaced_pod=_reader({}))
-    apps = _api(read_namespaced_deployment=forbidden)
+    apps = _api(read_namespaced_replica_set=_reader({}), read_namespaced_deployment=forbidden)
     get_owner = kube_owner_lookup(core, apps, _api())
     with pytest.raises(ApiException):
         get_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q")
@@ -193,3 +194,76 @@ def test_kube_lookup_confirms_a_deleted_cronjob_pod():
     get_owner = kube_owner_lookup(core, apps, batch)
     assert resolve("Pod", "velero", "backup-29312440-abcde", get_owner) == ("CronJob", "backup")
 
+
+# --- Deployment pods are confirmed through their ReplicaSet ---------------------------
+
+def _rs_owner(rs):
+    """replicaset_owner stub: rs maps name -> controller tuple (or None); absent = gone."""
+    def owner(ns, name):
+        return rs[name] if name in rs else MISSING
+    return owner
+
+
+def test_deployment_pod_confirmed_by_its_replicaset():
+    exists = _exists()          # the Deployment read is not needed when the RS proves it
+    owner = _rs_owner({"radarr-7d9c8b6f5": ("Deployment", "radarr")})
+    assert infer_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q", exists, owner) == ("Deployment", "radarr")
+
+
+def test_daemonset_pod_is_not_pinned_on_a_same_prefix_deployment():
+    # DaemonSet "foo-agentx" pod "foo-agentx-abcde" fits the Deployment pattern with
+    # base "foo" and hash "agentx". No ReplicaSet "foo-agentx" exists, and "agentx" is
+    # too short to be a pod-template-hash, so Deployment "foo" is not adopted.
+    exists = _exists(("Deployment", "foo"), ("DaemonSet", "foo-agentx"))
+    assert infer_owner("Pod", "ns", "foo-agentx-abcde", exists, _rs_owner({})) == ("DaemonSet", "foo-agentx")
+    assert ("Deployment", "foo") not in exists.calls
+
+
+def test_replicaset_owned_by_something_else_rejects_the_deployment():
+    exists = _exists(("Deployment", "foo"), ("DaemonSet", "foo-7d9c8b6f5"))
+    owner = _rs_owner({"foo-7d9c8b6f5": ("Deployment", "other")})
+    assert infer_owner("Pod", "ns", "foo-7d9c8b6f5-abcde", exists, owner) == ("DaemonSet", "foo-7d9c8b6f5")
+
+
+def test_replicaset_without_a_controller_rejects_the_deployment():
+    exists = _exists(("Deployment", "foo"))
+    owner = _rs_owner({"foo-7d9c8b6f5": None})
+    assert infer_owner("Pod", "ns", "foo-7d9c8b6f5-abcde", exists, owner) is None
+
+
+def test_gone_replicaset_falls_back_to_deployment_when_hash_looks_like_a_pod_template_hash():
+    exists = _exists(("Deployment", "radarr"))
+    assert infer_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q", exists, _rs_owner({})) == ("Deployment", "radarr")
+
+
+def test_gone_replicaset_with_a_short_hash_does_not_fall_back():
+    exists = _exists(("Deployment", "radarr"))
+    assert infer_owner("Pod", "ns", "radarr-7d9c8b-x2x9q", exists, _rs_owner({})) is None
+
+
+def test_kube_lookup_confirms_deployment_through_a_live_replicaset():
+    ref = SimpleNamespace(kind="Deployment", name="radarr", controller=True)
+    core = _api(read_namespaced_pod=_reader({}))
+    apps = _api(read_namespaced_replica_set=_reader({"radarr-7d9c8b6f5": _obj(ref)}),
+                read_namespaced_deployment=_reader({}),          # not consulted
+                read_namespaced_stateful_set=_reader({}), read_namespaced_daemon_set=_reader({}))
+    get_owner = kube_owner_lookup(core, apps, _api())
+    assert get_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q") == ("Deployment", "radarr")
+
+
+def test_kube_lookup_daemonset_pod_with_deployment_shaped_name():
+    core = _api(read_namespaced_pod=_reader({}))
+    apps = _api(read_namespaced_replica_set=_reader({}), read_namespaced_deployment=_reader({"foo": _obj()}),
+                read_namespaced_stateful_set=_reader({}),
+                read_namespaced_daemon_set=_reader({"foo-agentx": _obj()}))
+    get_owner = kube_owner_lookup(core, apps, _api())
+    assert get_owner("Pod", "ns", "foo-agentx-abcde") == ("DaemonSet", "foo-agentx")
+
+
+def test_replicaset_confirming_read_errors_other_than_404_propagate():
+    def forbidden(name, ns):
+        raise ApiException(status=403)
+    core = _api(read_namespaced_pod=_reader({}))
+    get_owner = kube_owner_lookup(core, _api(read_namespaced_replica_set=forbidden), _api())
+    with pytest.raises(ApiException):
+        get_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q")
