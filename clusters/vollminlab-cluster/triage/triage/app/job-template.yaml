@@ -1,0 +1,130 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: triage
+  labels:
+    app: triage-agent
+    env: production
+    category: observability
+spec:
+  # 25h: the dispatcher recomputes 24h spend and outcomes from finished Jobs.
+  ttlSecondsAfterFinished: 90000
+  template:
+    metadata:
+      labels:
+        app: triage-agent
+        env: production
+        category: observability
+    spec:
+      serviceAccountName: triage-agent
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: harbor-vollminlab-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Claude Code. Holds the Anthropic key; holds NO GitHub credential. Its checkout,
+        # HOME and scratch are on investigate-work, which publish never mounts; the only
+        # thing it hands over is /result/result.json.
+        - name: investigate
+          image: harbor.vollminlab.com/vollminlab/triage:0.1.0
+          # -I: isolated mode. No cwd, PYTHONPATH or user site-packages on sys.path.
+          command: ["python", "-I", "-u", "-m", "triage.investigate"]
+          env:
+            - name: HOME
+              value: /work/home
+            - name: PYTHONNOUSERSITE
+              value: "1"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: investigate-work
+              mountPath: /work
+            - name: result
+              mountPath: /result
+            - name: investigate-tmp
+              mountPath: /tmp
+            - name: policy
+              mountPath: /etc/triage
+              readOnly: true
+            - name: anthropic
+              mountPath: /var/run/secrets/triage/anthropic
+              readOnly: true
+      containers:
+        # Plain Python, no LLM. Holds the GitHub App key and Pushover; never the Anthropic
+        # key. Reads result.json from a read-only mount, clones the repo itself into its
+        # own /publish, and never sees investigate's checkout, HOME or /tmp.
+        - name: publish
+          image: harbor.vollminlab.com/vollminlab/triage:0.1.0
+          command: ["python", "-I", "-u", "-m", "triage.publish"]
+          env:
+            - name: HOME
+              value: /publish/home
+            - name: PYTHONNOUSERSITE
+              value: "1"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: result
+              mountPath: /result
+              readOnly: true
+            - name: publish-work
+              mountPath: /publish
+            - name: publish-tmp
+              mountPath: /tmp
+            - name: policy
+              mountPath: /etc/triage
+              readOnly: true
+            - name: github
+              mountPath: /var/run/secrets/triage/github
+              readOnly: true
+            - name: pushover
+              mountPath: /var/run/secrets/triage/pushover
+              readOnly: true
+      volumes:
+        - name: investigate-work      # investigate only: checkout, HOME, scratch
+          emptyDir: {}
+        - name: result                # the ONE shared volume: result.json
+          emptyDir:
+            sizeLimit: 8Mi
+        - name: publish-work          # publish only: its own clone and HOME
+          emptyDir: {}
+        - name: investigate-tmp
+          emptyDir: {}
+        - name: publish-tmp
+          emptyDir: {}
+        - name: policy
+          configMap:
+            name: triage-policy
+        - name: anthropic
+          secret:
+            secretName: triage-anthropic-apikey
+        - name: github
+          secret:
+            secretName: triage-github-app
+        - name: pushover
+          secret:
+            secretName: triage-pushover

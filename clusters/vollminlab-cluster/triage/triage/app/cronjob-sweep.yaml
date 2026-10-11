@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: triage-sweep
+  namespace: triage
+  labels:
+    app: triage-sweep
+    env: production
+    category: observability
+spec:
+  # 07:30 UTC: after the 03:00-06:00 backup window, so the sweep sees last night's backups.
+  schedule: "30 7 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 86400
+      # The tick is one idempotent POST (a second one is deduped as in-flight),
+      # so retrying after an eviction is safe.
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: triage-sweep
+            env: production
+            category: observability
+        spec:
+          serviceAccountName: triage-sweep
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          imagePullSecrets:
+            - name: harbor-vollminlab-pull
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: sweep
+              image: harbor.vollminlab.com/vollminlab/triage:0.1.0
+              command: ["python", "-I", "-u", "-m", "triage.sweep_tick"]
+              env:
+                - name: DISPATCHER_URL
+                  value: http://triage-dispatcher.triage.svc:8080/sweep
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 96Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
