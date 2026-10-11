@@ -8,6 +8,9 @@ metadata:
     env: production
     category: observability
 spec:
+  # Explicit: restrict-loadbalancer-services' pattern requires the field, and CI
+  # validates the file before the API server would default it.
+  type: ClusterIP
   selector:
     app: triage-dispatcher
   ports:
