@@ -95,6 +95,9 @@ DENIED = [
     "kubectl get secret foo -n x", "kubectl get secrets -A", "kubectl get -n x secrets",
     "kubectl get -n x secret/foo -o yaml", "kubectl describe -n x secret foo",
     "kubectl get --raw /api/v1/namespaces/x/secrets/y",
+    # the matcher is case-sensitive but the API server's resource names are not
+    "kubectl get Secrets -A", "kubectl get SECRETS -A", "kubectl get -n x Secret/foo -o yaml",
+    "kubectl describe -n x SECRET foo", "kubectl get pods,secrets -A", "kubectl get pods,Secrets -A",
     "kubectl get pods --kubeconfig=/work/home/evil", "kubectl get pods --token=abc",
     "kubectl get pods --server=https://attacker", "kubectl get pods -s https://attacker",
     "kubectl get pods --as=system:admin", "kubectl get pods --context=x", "kubectl get pods --user=x",
@@ -113,6 +116,7 @@ DENIED = [
 ]
 ALLOWED = [
     "kubectl get pods -n mediastack", "kubectl get externalsecrets -A",
+    "kubectl get ExternalSecret -A", "kubectl get pods,externalsecrets -n x",
     "kubectl get pods -A --sort-by=.metadata.name --show-labels",
     "kubectl logs -n mediastack deploy/filebrowser --since=1h",
     "kubectl get pod filebrowser-0 -n mediastack -o yaml",
