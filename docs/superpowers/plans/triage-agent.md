@@ -5582,6 +5582,11 @@ subjects:
     namespace: triage
 ---
 # Owner resolution only: Pod -> ReplicaSet -> Deployment, Pod -> Job -> CronJob.
+# When the Pod/ReplicaSet/Job is already gone, owners.py infers the controller from
+# the generated name and CONFIRMS it with a get on the Deployment, StatefulSet,
+# DaemonSet or CronJob. Those reads are required: a 403 on the confirm re-raises,
+# the dispatcher falls back to keying the incident on the Pod, and a resolve that
+# arrives after the pod was replaced no longer matches the open issue.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -5595,10 +5600,10 @@ rules:
     resources: ["pods"]
     verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["replicasets"]
+    resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
     verbs: ["get"]
   - apiGroups: ["batch"]
-    resources: ["jobs"]
+    resources: ["jobs", "cronjobs"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

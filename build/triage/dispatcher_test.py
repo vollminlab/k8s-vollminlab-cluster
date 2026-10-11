@@ -311,3 +311,78 @@ def test_waiting_job_with_a_bad_incident_annotation_is_dropped_not_blocking(anno
     assert d.tick() == f"started {good}"
     assert d.queue.deleted == [bad]
     assert EVENTS.labels("unknown", "dropped_invalid")._value.get() == before + 1
+
+
+# --- the real owner path: fire while the pod lives, resolve after it is replaced ------
+
+class KeyedGitHub(FakeGitHub):
+    """Finds an issue only under the fingerprint it was filed with."""
+    def __init__(self):
+        super().__init__()
+        self.issues = {}
+
+    def find_open_issue(self, repo, fp12):
+        return self.issues.get(fp12)
+
+
+class FakeCluster:
+    """Fake kube API clients for owners.kube_owner_lookup; objects can be deleted."""
+    def __init__(self, deployment_read=None):
+        from kubernetes.client.exceptions import ApiException
+        self.ApiException = ApiException
+        ref = lambda kind, name: NS(kind=kind, name=name, controller=True)
+        self.objs = {
+            ("Pod", "radarr-7d9c8b6f5-x2x9q"): ref("ReplicaSet", "radarr-7d9c8b6f5"),
+            ("ReplicaSet", "radarr-7d9c8b6f5"): ref("Deployment", "radarr"),
+            ("Deployment", "radarr"): None,
+        }
+        self.deployment_read = deployment_read
+        self.core = NS(read_namespaced_pod=self._reader("Pod"))
+        self.apps = NS(read_namespaced_replica_set=self._reader("ReplicaSet"),
+                       read_namespaced_deployment=deployment_read or self._reader("Deployment"),
+                       read_namespaced_stateful_set=self._reader("StatefulSet"),
+                       read_namespaced_daemon_set=self._reader("DaemonSet"))
+        self.batch = NS(read_namespaced_job=self._reader("Job"), read_namespaced_cron_job=self._reader("CronJob"))
+
+    def _reader(self, kind):
+        def read(name, ns):
+            if (kind, name) not in self.objs:
+                raise self.ApiException(status=404)
+            ref = self.objs[(kind, name)]
+            return NS(metadata=NS(owner_references=[ref] if ref else []))
+        return read
+
+
+def _fire_then_resolve_after_replacement(cluster):
+    from triage.owners import kube_owner_lookup
+    gh = KeyedGitHub()
+    d, _ = make(github=gh)
+    d.get_owner = kube_owner_lookup(cluster.core, cluster.apps, cluster.batch)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["dispatched_new"]
+    fired = Incident.from_json(env_of(d.queue.jobs[0])["TRIAGE_INCIDENT"])
+    assert fired.workload == "Deployment/radarr"
+    gh.issues[fired.fp12] = {"number": 7, "updated_at": "2026-10-11T09:00:00Z"}
+    d.queue.jobs.clear()                                   # the Job ran and published
+    # The crash-looping pod is replaced and its ReplicaSet rolled away.
+    del cluster.objs[("Pod", "radarr-7d9c8b6f5-x2x9q")]
+    del cluster.objs[("ReplicaSet", "radarr-7d9c8b6f5")]
+    return d, gh, d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved")))
+
+
+def test_resolve_after_pod_and_replicaset_are_gone_closes_the_same_issue():
+    d, gh, result = _fire_then_resolve_after_replacement(FakeCluster())
+    assert result == ["resolved"]
+    assert [c[:2] for c in gh.calls] == [("comment", 7), ("close", 7)]
+
+
+def test_forbidden_deployment_read_loses_the_resolve():
+    # Why the dispatcher's ClusterRole must grant `get` on deployments (and the other
+    # inferred controllers): without it the confirm is a 403, the lookup fails, the
+    # resolve is keyed on the Pod, and the open issue is never closed.
+    from kubernetes.client.exceptions import ApiException
+    def forbidden(name, ns):
+        raise ApiException(status=403)
+    cluster = FakeCluster(deployment_read=forbidden)
+    d, gh, result = _fire_then_resolve_after_replacement(cluster)
+    assert result == ["resolved_unmatched"]
+    assert gh.calls == []
