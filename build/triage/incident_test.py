@@ -1,4 +1,7 @@
-from testsupport import CRASHLOOP_LABELS, FLUX_LABELS, am_alert, am_payload
+import json
+
+from testsupport import (CRASHLOOP_LABELS, FLUX_LABELS, KSM_CRASHLOOP_LABELS, KSM_HPA_LABELS,
+                         NODE_FS_LABELS, NODE_NOT_READY_LABELS, am_alert, am_payload)
 from triage.incident import (Incident, fingerprint, from_alertmanager, namespace_of,
                              raw_workload, sweep_finding_fingerprint, sweep_incident)
 
@@ -67,3 +70,47 @@ def test_sweep_incident_and_finding_fingerprints():
     assert (s.source, s.reason, s.namespace, s.workload) == ("sweep", "nightly-sweep", "", "")
     assert sweep_finding_fingerprint("unprotected-pvc", "ns", "PersistentVolumeClaim/a") != \
            sweep_finding_fingerprint("unprotected-pvc", "ns", "PersistentVolumeClaim/b")
+
+
+# --- scraper labels are not the subject (real series, see testsupport) --------------
+
+def test_node_not_ready_is_the_node_not_the_ksm_pod():
+    [inc] = from_alertmanager(am_payload(am_alert(NODE_NOT_READY_LABELS)))
+    assert inc.workload == "Node/k8sworker02"
+    assert inc.namespace == ""          # Nodes are cluster-scoped; `monitoring` is KSM's
+
+
+def test_node_exporter_alert_is_the_instance_node():
+    [inc] = from_alertmanager(am_payload(am_alert(NODE_FS_LABELS)))
+    assert (inc.workload, inc.namespace) == ("Node/k8sworker01", "")
+
+
+def test_node_exporter_alerts_on_two_nodes_are_two_incidents():
+    other = dict(NODE_FS_LABELS, instance="k8sworker03",
+                 pod="kube-prometheus-stack-prometheus-node-exporter-9xk2p")
+    a, b = from_alertmanager(am_payload(am_alert(NODE_FS_LABELS), am_alert(other)))
+    assert b.workload == "Node/k8sworker03"
+    assert a.fingerprint != b.fingerprint
+
+
+def test_ksm_crashloop_keeps_the_subject_pod():
+    [inc] = from_alertmanager(am_payload(am_alert(KSM_CRASHLOOP_LABELS)))
+    assert (inc.workload, inc.namespace) == ("Pod/engine-image-ei-75a03ec3-ksn6d", "longhorn-system")
+
+
+def test_ksm_hpa_alert_is_the_hpa():
+    [inc] = from_alertmanager(am_payload(am_alert(KSM_HPA_LABELS)))
+    assert (inc.workload, inc.namespace) == ("HorizontalPodAutoscaler/radarr", "mediastack")
+
+
+def test_scraper_pod_is_ignored_when_it_is_the_service_pod():
+    labels = {"namespace": "monitoring", "service": "kube-prometheus-stack-kube-state-metrics",
+              "pod": "kube-prometheus-stack-kube-state-metrics-65786d78c5-5fdvb"}
+    assert raw_workload(labels) == ("", "")
+
+
+def test_from_json_ignores_unknown_keys():
+    inc = Incident("alertmanager", "R", "ns", "Deployment/x")
+    raw = json.loads(inc.to_json())
+    raw["added_in_a_later_image"] = {"x": 1}
+    assert Incident.from_json(json.dumps(raw)) == inc

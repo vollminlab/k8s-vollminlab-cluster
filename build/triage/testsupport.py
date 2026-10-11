@@ -57,8 +57,10 @@ def am_payload(*alerts):
     }
 
 
-# A FluxResourceNotReady alert exactly as kube-state-metrics labels it: `namespace`
-# and `pod` belong to KSM itself; the HelmRelease lives in `exported_namespace`.
+# A FluxResourceNotReady alert exactly as its custom-resource-state series is labelled.
+# Unlike the stock KSM series above, this one's own `namespace` collided with the
+# target's and was renamed: `namespace` and `pod` belong to KSM itself, and the
+# HelmRelease lives in `exported_namespace`.
 FLUX_LABELS = {
     "alertname": "FluxResourceNotReady",
     "customresource_group": "helm.toolkit.fluxcd.io",
@@ -70,6 +72,48 @@ FLUX_LABELS = {
     "ready": "False",
     "reason": "UpgradeFailed",
     "severity": "warning",
+}
+
+# --- real series from this cluster's Prometheus (2026-10-11) -----------------------
+# Stock kube-state-metrics and node-exporter series keep the OBJECT's namespace in
+# `namespace`, but `pod`, `service`, `instance` and `job` describe the SCRAPER. The
+# Alertmanager alert labels are the rule's output labels, which for these stock rules
+# keep the series labels.
+KSM_POD = "kube-prometheus-stack-kube-state-metrics-65786d78c5-5fdvb"
+KSM_SERVICE = "kube-prometheus-stack-kube-state-metrics"
+
+# kube_node_status_condition{condition="Ready", status="true"} == 0
+NODE_NOT_READY_LABELS = {
+    "alertname": "KubeNodeNotReady", "severity": "warning",
+    "condition": "Ready", "container": "kube-state-metrics", "endpoint": "http",
+    "instance": "172.18.218.45:8080", "job": "kube-state-metrics", "namespace": "monitoring",
+    "node": "k8sworker02", "pod": KSM_POD, "service": KSM_SERVICE, "status": "true",
+}
+
+# node_filesystem_avail_bytes
+NODE_FS_LABELS = {
+    "alertname": "NodeFilesystemSpaceFillingUp", "severity": "warning",
+    "container": "node-exporter", "device": "/dev/sdb", "endpoint": "http-metrics",
+    "fstype": "ext4", "instance": "k8sworker01", "job": "node-exporter",
+    "mountpoint": "/mnt/vm-lt", "namespace": "monitoring",
+    "pod": "kube-prometheus-stack-prometheus-node-exporter-24mhm",
+    "service": "kube-prometheus-stack-prometheus-node-exporter",
+}
+
+# kube_pod_container_status_restarts_total: here `pod` IS the subject.
+KSM_CRASHLOOP_LABELS = {
+    "alertname": "KubePodCrashLooping", "severity": "warning",
+    "container": "engine-image-ei-75a03ec3", "endpoint": "http", "instance": "172.18.218.45:8080",
+    "job": "kube-state-metrics", "namespace": "longhorn-system", "pod": "engine-image-ei-75a03ec3-ksn6d",
+    "service": KSM_SERVICE, "uid": "0b6f3c1e-1d2a-4c5b-9e8f-7a6b5c4d3e2f",
+}
+
+# kube_horizontalpodautoscaler_* (KubeHpaMaxedOut and friends)
+KSM_HPA_LABELS = {
+    "alertname": "KubeHpaMaxedOut", "severity": "warning",
+    "container": "kube-state-metrics", "endpoint": "http", "instance": "172.18.218.45:8080",
+    "job": "kube-state-metrics", "namespace": "mediastack", "horizontalpodautoscaler": "radarr",
+    "pod": KSM_POD, "service": KSM_SERVICE,
 }
 
 CRASHLOOP_LABELS = {
