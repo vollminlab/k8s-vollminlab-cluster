@@ -4,6 +4,7 @@ The model chooses the patch; this module decides whether it may become a PR on a
 public repo. It never trusts the model's description of the patch, only the patch
 applied to the real checkout and diffed field by field.
 """
+import difflib
 import posixpath
 import re
 from dataclasses import dataclass, field
@@ -16,6 +17,15 @@ from .yamldiff import MISSING
 _QUANTITY = re.compile(r"^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|k|M|G|T)?$")
 _MULTIPLIER = {None: 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40,
                "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}
+# Gate 3 has two layers. The structural diff says WHICH field changed and checks its
+# value; these line rules say the committed BYTES changed nothing else. Without them a
+# patch can add comments (prose a reviewer reads as authoritative), re-quote or
+# re-indent lines, or add anything else YAML parses to the same tree.
+_MEMORY_LINE = re.compile(r"""^([ \t]*)memory:[ \t]*(["']?)\d+(\.\d+)?(Ki|Mi|Gi|Ti|k|M|G|T)?\2[ \t]*\r?$""")
+_CPU_LINE = re.compile(r"""^[ \t]*cpu:[ \t]*(["']?)[0-9.]+m?\1[ \t]*\r?$""")
+# Printable ASCII only: PyYAML also breaks lines at \x85, \u2028 and \u2029, which
+# "\n"-split lines would otherwise hide a second YAML line inside.
+_RENOVATE_LINE = re.compile(r"^([ \t]*)(version|tag|image):[ \t]*[\x21-\x7e][\x20-\x7e]*\r?$")
 HEADROOM = 1.2
 MAX_GROWTH = 2.0
 
@@ -51,6 +61,57 @@ def _fail(reason, changes=None, new_files=None):
 def forbidden_file(path: str) -> bool:
     name = posixpath.basename(path)
     return name == "kustomization.yaml" or name.endswith("-externalsecret.yaml") or "networkpolicy" in name
+
+
+def _indent(line: str) -> str:
+    return line[:len(line) - len(line.lstrip(" \t"))]
+
+
+def line_edits(path: str, old: str, new: str) -> list:
+    """[(path, removed lines, added lines)], one entry per changed region."""
+    a, b = old.split("\n"), new.split("\n")
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    return [(path, a[i1:i2], b[j1:j2]) for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal"]
+
+
+def _bad(path, line, cls):
+    return f"{path}: {cls} may not change the line {line[:80]!r}"
+
+
+def line_violation(cls: str, edits: list):
+    """None if every removed and added line is one `cls` may touch, else the reason."""
+    if cls == "oom-memory-limit":
+        for path, removed, added in edits:
+            for line in added + removed:
+                if not _MEMORY_LINE.match(line):
+                    return _bad(path, line, cls)
+            if len(removed) != len(added):
+                return f"{path}: {cls} must replace memory lines one for one"
+            for r, a in zip(removed, added):
+                if _indent(r) != _indent(a):
+                    return f"{path}: {cls} may not re-indent {a[:80]!r}"
+        return None
+    if cls == "cpu-throttle-limit":
+        for path, removed, added in edits:
+            if added:
+                return _bad(path, added[0], cls)
+            for line in removed:
+                if not _CPU_LINE.match(line):
+                    return _bad(path, line, cls)
+        return None
+    if cls == "renovate-breakage":
+        lines = [(p, l) for p, r, a in edits for l in a + r]
+        for path, line in lines:
+            if not _RENOVATE_LINE.match(line) or "#" in line:
+                return _bad(path, line, cls)
+        if len(edits) != 1 or len(edits[0][1]) != 1 or len(edits[0][2]) != 1:
+            return f"{cls} must replace exactly one line"
+        path, [r], [a] = edits[0]
+        mr, ma = _RENOVATE_LINE.match(r), _RENOVATE_LINE.match(a)
+        if mr.group(1) != ma.group(1) or mr.group(2) != ma.group(2):
+            return f"{path}: {cls} must keep the line's key and indentation: {a[:80]!r}"
+        return None
+    return f"no line rules exist for class {cls!r}"
 
 
 def app_dir_in_namespace(app_dir, namespace, list_files, read_file) -> bool:
@@ -134,6 +195,8 @@ def _renovate(changes, history_has_value, denylist, new_files):
 
 def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files,
           history_has_value, denylist) -> GuardResult:
+    if cls not in ("oom-memory-limit", "cpu-throttle-limit", "renovate-breakage"):
+        return _fail(f"no diff rules exist for class {cls!r}")
     if not app_dir:
         return _fail("no app_dir was given")
     app_dir = app_dir.rstrip("/") + "/"
@@ -141,7 +204,7 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
         file_patches = patching.parse(patch_text or "")
     except patching.PatchError as e:
         return _fail(f"unparseable patch: {e}")
-    changes, new_files = [], {}
+    changes, new_files, edits = [], {}, []
     for fp in file_patches:
         if fp.old_path is None or fp.new_path is None:
             return _fail("the patch adds or deletes a file")
@@ -150,6 +213,8 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
         path = posixpath.normpath(fp.new_path)
         if path != fp.new_path or not path.startswith(app_dir):
             return _fail(f"{fp.new_path} is outside the incident's app directory {app_dir}")
+        if not path.endswith((".yaml", ".yml")):
+            return _fail(f"{path}: only YAML files may be changed")
         if forbidden_file(path):
             return _fail(f"{path}: no class may change this file")
         if path in new_files:
@@ -167,10 +232,14 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
             return _fail(f"{path} is not valid YAML after the patch: {e}")
         except yamldiff.DiffError as e:
             return _fail(f"{path}: {e}")
+        edits += line_edits(path, old, new)
         changes += [FieldChange(path, c.path[0], ".".join(c.path[1:]), c.old, c.new) for c in diffs]
         new_files[path] = new
     if not changes:
         return _fail("the patch changes no YAML value")
+    reason = line_violation(cls, edits)
+    if reason:
+        return _fail(reason, changes, new_files)
     if not app_dir_in_namespace(app_dir, namespace, list_files, read_file):
         return _fail(f"{app_dir} declares nothing in namespace {namespace!r}, so it is not this incident's app")
     rules = {
@@ -178,8 +247,6 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
         "cpu-throttle-limit": lambda: _cpu(changes, metrics),
         "renovate-breakage": lambda: _renovate(changes, history_has_value, denylist, new_files),
     }
-    if cls not in rules:
-        return _fail(f"no diff rules exist for class {cls!r}")
     reason = rules[cls]()
     if reason:
         return _fail(reason, changes, new_files)

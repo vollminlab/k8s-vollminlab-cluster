@@ -1,6 +1,6 @@
 import copy
 
-from testsupport import AGENT_OK, APP, REPO_FILES
+from testsupport import AGENT_OK, APP, REPO_FILES, make_patch
 from triage import diffguard, prbody
 from triage.yamldiff import MISSING
 
@@ -46,3 +46,15 @@ def test_removed_values_and_table_breakers_are_rendered_safely():
     c = diffguard.FieldChange("f", "D/x", "a.b", "x|y`z", MISSING)
     body = prbody.body("cpu-throttle-limit", [c], {"throttled_ratio": 0.5}, "abc")
     assert "(removed)" in body and "x\\|y'z" in body
+
+
+def test_a_canary_in_a_patch_comment_never_passes_the_gate():
+    r = copy.deepcopy(AGENT_OK)
+    cm = APP + "configmap.yaml"
+    new = REPO_FILES[cm].replace("memory: 256Mi", f"memory: 400Mi  # {CANARY}")
+    r["patch"] = make_patch(cm, REPO_FILES[cm], new)
+    g = guarded(r)
+    assert not g.ok and CANARY in g.reason   # the reason goes to the private issue only
+    r["patch"] = make_patch(cm, REPO_FILES[cm], f"# {CANARY}\n" + REPO_FILES[cm].replace("memory: 256Mi", "memory: 400Mi"))
+    g = guarded(r)
+    assert not g.ok and CANARY in g.reason   # the reason goes to the private issue only
