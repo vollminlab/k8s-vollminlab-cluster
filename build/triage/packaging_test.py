@@ -27,3 +27,12 @@ def test_the_image_runs_python_isolated():
     assert cmd.startswith('["python", "-I"'), cmd
     assert "pip install --no-cache-dir --no-deps /tmp/src" in docker
     assert "COPY triage/ ./triage/" not in docker        # no importable copy left in a workdir
+
+
+def test_triage_query_console_script_runs_isolated_in_the_image():
+    # pip writes the console script with a bare `#!/usr/local/bin/python` shebang; the
+    # image appends -I to it, like every other entrypoint, and checks that it ran.
+    docker = (HERE / "Dockerfile").read_text()
+    assert "sed -i '1s|^#!\\(.*python[0-9.]*\\)$|#!\\1 -I|' /usr/local/bin/triage-query" in docker
+    assert 'head -1 /usr/local/bin/triage-query | grep -q " -I$"' in docker
+    assert "triage-query --help" in docker

@@ -47,9 +47,14 @@ RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 # module planted under a writable HOME or cwd can never load. See pyproject.toml.
 COPY pyproject.toml /tmp/src/
 COPY triage/ /tmp/src/triage/
+# triage-query (the agent's VM/Loki client, a [project.scripts] console script) gets
+# a bare python shebang from pip; append -I so it runs isolated too.
 RUN pip install --no-cache-dir --no-deps /tmp/src \
  && rm -rf /tmp/src \
- && cd / && python -I -c "import triage.publish, triage.investigate, triage.server, triage.sweep_tick, triage.result"
+ && cd / && python -I -c "import triage.publish, triage.investigate, triage.server, triage.sweep_tick, triage.result, triage.query" \
+ && sed -i '1s|^#!\(.*python[0-9.]*\)$|#!\1 -I|' /usr/local/bin/triage-query \
+ && head -1 /usr/local/bin/triage-query | grep -q " -I$" \
+ && triage-query --help > /dev/null
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 COPY --chmod=0755 triage-api-key /usr/local/bin/triage-api-key
 
