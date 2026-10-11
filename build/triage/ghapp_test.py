@@ -182,3 +182,56 @@ def test_retries_must_be_at_least_one(retries):
         GitHub(lambda: "t", session=FakeSession(), retries=retries)
     with pytest.raises(ValueError):
         GitHubApp("1", "2", "pem", session=FakeSession(), retries=retries)
+
+
+# --- bounded waits: the dispatcher calls GitHub while holding its global lock ----------
+
+def test_max_retry_after_caps_the_sleep():
+    sleeps = []
+    s = FakeSession(Resp(429, headers={"Retry-After": "60"}), Resp(503, headers={"Retry-After": "30"}),
+                    Resp(200, []))
+    GitHub(lambda: "t", session=s, sleep=sleeps.append, max_retry_after=5).find_open_issue("o/r", "x")
+    assert sleeps == [5, 5]
+
+
+def test_max_retry_after_also_caps_exponential_backoff():
+    sleeps = []
+    s = FakeSession(Resp(502), Resp(502), Resp(502), Resp(200, []))
+    GitHub(lambda: "t", session=s, sleep=sleeps.append, retries=4, max_retry_after=3).find_open_issue("o/r", "x")
+    assert sleeps == [1, 2, 3]
+
+
+def test_token_minting_honours_max_retry_after():
+    _, pem = _pem()
+    sleeps = []
+    s = FakeSession(Resp(429, headers={"Retry-After": "60"}), Resp(201, {"token": "ghs_y"}))
+    GitHubApp("123", "456", pem, session=s, sleep=sleeps.append, max_retry_after=5).token(["r"], {})
+    assert sleeps == [5]
+
+
+@pytest.mark.parametrize("bad", [-1, "5"])
+def test_max_retry_after_is_validated(bad):
+    with pytest.raises(ValueError):
+        GitHub(lambda: "t", session=FakeSession(), max_retry_after=bad)
+
+
+def test_secondary_rate_limit_403_with_retry_after_is_retried_on_safe_calls():
+    sleeps = []
+    s = FakeSession(Resp(403, headers={"Retry-After": "4"}), Resp(200, [{"number": 3}]))
+    gh = GitHub(lambda: "t", session=s, sleep=sleeps.append)
+    assert gh.find_open_issue("o/r", "x") == {"number": 3}
+    assert sleeps == [4] and len(s.calls) == 2
+
+
+def test_plain_403_is_not_retried():
+    s = FakeSession(Resp(403), Resp(200, []))
+    with pytest.raises(requests.HTTPError):
+        GitHub(lambda: "t", session=s, sleep=lambda _: None).find_open_issue("o/r", "x")
+    assert len(s.calls) == 1
+
+
+def test_secondary_rate_limit_403_is_not_retried_on_creates():
+    s = FakeSession(Resp(403, headers={"Retry-After": "1"}), Resp(201, {"number": 1}))
+    with pytest.raises(requests.HTTPError):
+        GitHub(lambda: "t", session=s, sleep=lambda _: None).create_issue("o/r", "t", "b", [])
+    assert len(s.calls) == 1

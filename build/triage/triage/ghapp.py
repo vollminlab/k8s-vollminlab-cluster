@@ -15,22 +15,43 @@ def _check_retries(retries: int) -> int:
     return retries
 
 
-def _backoff(r, attempt: int) -> float:
-    """Retry-After (seconds, capped) on 429/503, else exponential."""
-    if r is not None and r.status_code in (429, 503):
-        after = str((r.headers or {}).get("Retry-After", "")).strip()
-        if after.isascii() and after.isdigit():
-            return min(int(after), MAX_RETRY_AFTER)
-    return 2 ** attempt
+def _check_max_retry_after(seconds) -> int:
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds < 0:
+        raise ValueError(f"max_retry_after must be an int >= 0, got {seconds!r}")
+    return seconds
 
 
-def send_with_retries(send, retries: int, sleep, retry_unsafe: bool = True):
+def _retry_after(r):
+    """The response's Retry-After in whole seconds, or None if absent or not delta-seconds."""
+    after = str((r.headers or {}).get("Retry-After", "")).strip()
+    return int(after) if after.isascii() and after.isdigit() else None
+
+
+def _backoff(r, attempt: int, max_retry_after: int = MAX_RETRY_AFTER) -> float:
+    """Retry-After on 403/429/503, else exponential; never longer than max_retry_after."""
+    if r is not None and r.status_code in (403, 429, 503):
+        after = _retry_after(r)
+        if after is not None:
+            return min(after, max_retry_after)
+    return min(2 ** attempt, max_retry_after)
+
+
+def _secondary_rate_limit(r) -> bool:
+    # GitHub's secondary rate limit answers 403 (not 429) with a Retry-After header.
+    # A plain 403 is a permission error and is never retried.
+    return r.status_code == 403 and _retry_after(r) is not None
+
+
+def send_with_retries(send, retries: int, sleep, retry_unsafe: bool = True,
+                      max_retry_after: int = MAX_RETRY_AFTER):
     """Call `send()` until it returns a non-retryable response, and return it.
 
-    Retried: 429 always; 5xx, timeouts and connection errors only when
-    `retry_unsafe` is true. A non-idempotent create passes False, because GitHub can
-    fail (502, dropped connection) AFTER creating the object, and a re-POST would
-    duplicate it; 429 is a refusal before processing, so it is always safe.
+    Retried: 429 always; 5xx, timeouts, connection errors and a secondary-rate-limit
+    403 (one carrying Retry-After) only when `retry_unsafe` is true. A non-idempotent
+    create passes False, because GitHub can fail (502, dropped connection) AFTER
+    creating the object, and a re-POST would duplicate it; 429 is a refusal before
+    processing, so it is always safe. Each wait is capped at `max_retry_after`
+    seconds, which a caller holding a lock sets low.
     """
     for attempt in range(retries):
         last = attempt == retries - 1
@@ -39,31 +60,32 @@ def send_with_retries(send, retries: int, sleep, retry_unsafe: bool = True):
         except (requests.ConnectionError, requests.Timeout):
             if last or not retry_unsafe:
                 raise
-            sleep(_backoff(None, attempt))
+            sleep(_backoff(None, attempt, max_retry_after))
             continue
-        if r.status_code == 429 or (r.status_code >= 500 and retry_unsafe):
-            if not last:
-                sleep(_backoff(r, attempt))
-                continue
+        retryable = r.status_code == 429 or (retry_unsafe and (r.status_code >= 500 or _secondary_rate_limit(r)))
+        if retryable and not last:
+            sleep(_backoff(r, attempt, max_retry_after))
+            continue
         return r
 
 
 class GitHubApp:
     def __init__(self, app_id: str, installation_id: str, private_key_pem: str, session=None,
-                 retries: int = 3, sleep=time.sleep):
+                 retries: int = 3, sleep=time.sleep, max_retry_after: int = MAX_RETRY_AFTER):
         self.app_id = str(app_id)
         self.installation_id = str(installation_id)
         self.private_key = private_key_pem
         self.session = session or requests.Session()
         self.retries = _check_retries(retries)
         self.sleep = sleep
+        self.max_retry_after = _check_max_retry_after(max_retry_after)
 
     @classmethod
-    def from_dir(cls, path: str = SECRET_DIR, session=None) -> "GitHubApp":
+    def from_dir(cls, path: str = SECRET_DIR, session=None, **kwargs) -> "GitHubApp":
         def read(name):
             with open(f"{path}/{name}") as f:
                 return f.read().strip()
-        return cls(read("app_id"), read("installation_id"), read("private_key"), session)
+        return cls(read("app_id"), read("installation_id"), read("private_key"), session, **kwargs)
 
     def _jwt(self) -> str:
         now = int(time.time())
@@ -83,7 +105,7 @@ class GitHubApp:
             headers={"Authorization": f"Bearer {self._jwt()}", "Accept": "application/vnd.github+json"},
             json={"repositories": repositories, "permissions": permissions},
             timeout=30,
-        ), self.retries, self.sleep)
+        ), self.retries, self.sleep, max_retry_after=self.max_retry_after)
         r.raise_for_status()
         return r.json()["token"]
 
@@ -104,18 +126,20 @@ class CachedToken:
 
 
 class GitHub:
-    def __init__(self, token_provider, session=None, retries: int = 3, sleep=time.sleep):
+    def __init__(self, token_provider, session=None, retries: int = 3, sleep=time.sleep,
+                 max_retry_after: int = MAX_RETRY_AFTER):
         self.token_provider = token_provider
         self.session = session or requests.Session()
         self.retries = _check_retries(retries)
         self.sleep = sleep
+        self.max_retry_after = _check_max_retry_after(max_retry_after)
 
     def _request(self, method, path, retry_unsafe: bool = True, **kwargs):
         def send():
             headers = {"Authorization": f"Bearer {self.token_provider()}",
                        "Accept": "application/vnd.github+json"}
             return self.session.request(method, f"{API}{path}", headers=headers, timeout=30, **kwargs)
-        r = send_with_retries(send, self.retries, self.sleep, retry_unsafe)
+        r = send_with_retries(send, self.retries, self.sleep, retry_unsafe, self.max_retry_after)
         r.raise_for_status()
         return r.json() if r.content else None
 
