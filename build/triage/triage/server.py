@@ -39,22 +39,30 @@ def make_handler(dispatcher, lock):
             return self._reply(404)
 
         def do_POST(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            header = (self.headers.get("Content-Length") or "0").strip()
+            length = int(header) if header.isascii() and header.isdigit() else -1
+            if length < 0:
+                # Never block on, or drop, a request we cannot frame.
+                return self._reply(400, b"invalid Content-Length")
             if length > MAX_BODY:
                 return self._reply(413)
             raw = self.rfile.read(length)
             if self.path not in ("/alertmanager", "/sweep"):
                 return self._reply(404)
             try:
+                payload = json.loads(raw) if self.path == "/alertmanager" else None
+            except ValueError as e:          # json.JSONDecodeError, UnicodeDecodeError
+                # 4xx: Alertmanager does not retry, and resending the same bytes won't help.
+                return self._reply(400, str(e).encode())
+            try:
                 with lock:
                     if self.path == "/alertmanager":
-                        result = dispatcher.handle_alertmanager(json.loads(raw))
+                        result = dispatcher.handle_alertmanager(payload)
                     else:
                         result = dispatcher.handle_sweep()
-            except ValueError as e:          # includes json.JSONDecodeError
-                return self._reply(400, str(e).encode())
             except Exception:
-                # 5xx makes Alertmanager retry the webhook, which is what we want.
+                # Any dispatcher failure is ours, not the sender's: 5xx makes
+                # Alertmanager retry the webhook, which is what we want.
                 log.exception("handling %s failed", self.path)
                 return self._reply(500)
             return self._reply(200, json.dumps(result).encode(), "application/json")

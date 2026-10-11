@@ -1,3 +1,4 @@
+import http.client
 import json
 import threading
 import urllib.error
@@ -12,9 +13,11 @@ from triage.server import make_handler
 
 class FakeDispatcher:
     def __init__(self):
-        self.payloads, self.sweeps = [], 0
+        self.payloads, self.sweeps, self.raises = [], 0, None
 
     def handle_alertmanager(self, payload):
+        if self.raises:
+            raise self.raises
         self.payloads.append(payload)
         return ["dispatched_new"]
 
@@ -30,6 +33,20 @@ def server():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield d, f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
+
+
+def raw_post(base, path, body: bytes, content_length):
+    """POST with a hand-set (or absent) Content-Length header."""
+    host, port = base.rsplit("/", 1)[1].split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    conn.putrequest("POST", path, skip_accept_encoding=True)
+    if content_length is not None:
+        conn.putheader("Content-Length", content_length)
+    conn.endheaders(body)
+    resp = conn.getresponse()
+    status = resp.status
+    conn.close()
+    return status
 
 
 def post(url, body: bytes):
@@ -68,3 +85,25 @@ def test_sweep_tick_posts_to_the_dispatcher(server, monkeypatch, capsys):
     assert sweep_tick.main() == 0
     assert d.sweeps == 1
     assert "HTTP 200" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("length,expected", [("abc", 400), ("-1", 400), ("1.5", 400), ("\u00b2", 400),
+                                             (str(10**9), 413)])
+def test_bad_content_length_gets_a_response(server, length, expected):
+    _, base = server
+    assert raw_post(base, "/alertmanager", b"{}", length) == expected
+
+
+def test_missing_content_length_is_an_empty_body(server):
+    d, base = server
+    assert raw_post(base, "/sweep", b"", None) == 200
+    assert d.sweeps == 1
+    assert raw_post(base, "/alertmanager", b"", None) == 400       # empty body is not JSON
+
+
+def test_dispatcher_value_error_is_500_so_alertmanager_retries(server):
+    d, base = server
+    d.raises = ValueError("bad datetime from github")
+    with pytest.raises(urllib.error.HTTPError) as e:
+        post(base + "/alertmanager", b'{"alerts": []}')
+    assert e.value.code == 500
