@@ -39,12 +39,20 @@ ENV DISABLE_AUTOUPDATER=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY triage/ ./triage/
+COPY requirements.txt /tmp/src/
+RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
+# Installed into site-packages, with no copy left in a working directory: every
+# entrypoint runs `python -I -m triage.<module>` (isolated mode: no cwd, no
+# PYTHONPATH/PYTHON* env and no user site-packages on sys.path), so a .pth file or
+# module planted under a writable HOME or cwd can never load. See pyproject.toml.
+COPY pyproject.toml /tmp/src/
+COPY triage/ /tmp/src/triage/
+RUN pip install --no-cache-dir --no-deps /tmp/src \
+ && rm -rf /tmp/src \
+ && cd / && python -I -c "import triage.publish, triage.investigate, triage.server, triage.sweep_tick, triage.result"
 COPY managed-settings.json /etc/claude-code/managed-settings.json
 COPY --chmod=0755 triage-api-key /usr/local/bin/triage-api-key
 
 USER 65532:65532
-CMD ["python", "-m", "triage.server"]
+WORKDIR /
+CMD ["python", "-I", "-u", "-m", "triage.server"]
