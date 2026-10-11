@@ -36,8 +36,15 @@ Propose a patch ONLY when the root cause is exactly one of these. Otherwise set 
   resources.limits.cpu only and keep the request. Set metrics.throttled_ratio to
   rate(container_cpu_cfs_throttled_periods_total[1h]) / rate(container_cpu_cfs_periods_total[1h]).
 - renovate-breakage: a version bump left a resource failing. Change exactly one version, tag
-  or image value back to a value that appears earlier in that same file's git history
-  (git log -p -- <file>). Never introduce a version that was never in the file.
+  or image value back to the value it held immediately before the bump. You cannot run git.
+  Find the previous value from the cluster instead: for a chart version, the HelmRelease's
+  status history (kubectl get helmrelease <name> -n <ns> -o yaml, then
+  status.history[].chartVersion, newest first) or its Flux events
+  (kubectl events -n <ns> --for helmrelease/<name>); for an image tag, the previous
+  ReplicaSet's pod template (kubectl get rs -n <ns> -o yaml). Never introduce a version that
+  was never deployed. The publisher checks your value against the file's own git history and
+  rejects anything other than the immediately previous value, so if you cannot establish it,
+  set class to "none".
 
 Patch format: a unified diff with "--- a/<path>" and "+++ b/<path>" headers and @@ hunks,
 against this checkout. It may touch only files inside ONE app directory,
