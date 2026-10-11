@@ -107,3 +107,17 @@ def test_dispatcher_value_error_is_500_so_alertmanager_retries(server):
     with pytest.raises(urllib.error.HTTPError) as e:
         post(base + "/alertmanager", b'{"alerts": []}')
     assert e.value.code == 500
+
+
+def test_dispatcher_github_client_bounds_retry_waits(monkeypatch):
+    # The dispatcher calls GitHub while holding its global lock, so a Retry-After
+    # must not stall intake and scheduling for up to 60s per retry.
+    from triage import server
+    built = {}
+    monkeypatch.setattr(server.GitHubApp, "from_dir",
+                        classmethod(lambda cls, **kw: built.setdefault("app_kwargs", kw) and "app"))
+    gh = server.dispatcher_github("triage-reports")
+    assert gh.max_retry_after == server.DISPATCHER_MAX_RETRY_AFTER == 5
+    assert built["app_kwargs"] == {"max_retry_after": 5}
+    assert gh.token_provider.repositories == ["triage-reports"]
+    assert gh.token_provider.permissions == {"issues": "write", "metadata": "read"}

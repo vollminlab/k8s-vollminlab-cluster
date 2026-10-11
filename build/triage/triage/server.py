@@ -20,6 +20,9 @@ log = logging.getLogger("triage.server")
 MAX_BODY = 2_000_000
 TEMPLATE_PATH = "/etc/triage/job-template.yaml"
 TICK_SECONDS = 30
+# The dispatcher calls GitHub inside its global lock, which also serializes webhook
+# intake; a GitHub Retry-After (up to 60s per retry by default) must not stall it.
+DISPATCHER_MAX_RETRY_AFTER = 5
 
 
 def make_handler(dispatcher, lock):
@@ -73,6 +76,13 @@ def make_handler(dispatcher, lock):
     return Handler
 
 
+def dispatcher_github(reports_repo_name: str) -> GitHub:
+    """The dispatcher's GitHub client: Issues-only on the reports repo, short waits."""
+    app = GitHubApp.from_dir(max_retry_after=DISPATCHER_MAX_RETRY_AFTER)
+    return GitHub(CachedToken(app, [reports_repo_name], {"issues": "write", "metadata": "read"}),
+                  max_retry_after=DISPATCHER_MAX_RETRY_AFTER)
+
+
 def main():
     from kubernetes import client, config
 
@@ -84,8 +94,7 @@ def main():
     config.load_incluster_config()
     core, apps, batch = client.CoreV1Api(), client.AppsV1Api(), client.BatchV1Api()
     reports_repo_name = policy.reports_repo.split("/", 1)[1]
-    github = GitHub(CachedToken(GitHubApp.from_dir(), [reports_repo_name],
-                                {"issues": "write", "metadata": "read"}))
+    github = dispatcher_github(reports_repo_name)
     pushover = Pushover.from_dir()
     session = requests.Session()
     dispatcher = Dispatcher(
