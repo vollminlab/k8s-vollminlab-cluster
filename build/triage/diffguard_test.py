@@ -320,3 +320,33 @@ def test_cpu_matches_field_paths_by_segment():
 def test_changes_carry_a_path_tuple():
     r = guard(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
     assert r.changes[0].path == ("data", "values.yaml", "resources", "limits", "memory")
+
+
+# ---- nothing raises out of check() ------------------------------------------------
+# An exception would crash publish and suppress the issue: an injected model could
+# hide its own report by making the gate throw.
+
+DEEP = "[" * 3000 + "]" * 3000
+
+
+@pytest.mark.parametrize("bad", ["2026-13-45", DEEP], ids=["bad-timestamp", "deep-nesting"])
+def test_unconstructible_yaml_in_a_manifest_is_a_failure_not_an_exception(bad):
+    new = CONFIGMAP.replace("memory: 256Mi", "memory: 400Mi").replace("  namespace: demo\n", f"  namespace: demo\n  stamp: {bad}\n")
+    r = guard(make_patch(CM, CONFIGMAP, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
+    assert not r.ok and r.reason
+
+
+@pytest.mark.parametrize("bad", ["2026-13-45", DEEP], ids=["bad-timestamp", "deep-nesting"])
+def test_unconstructible_yaml_in_embedded_values_is_a_failure_not_an_exception(bad):
+    new = CONFIGMAP.replace("memory: 256Mi", "memory: 400Mi").replace("    image:\n", f"    stamp: {bad}\n    image:\n")
+    r = guard(make_patch(CM, CONFIGMAP, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
+    assert not r.ok and r.reason
+
+
+def test_a_throwing_callback_is_a_failure_not_an_exception():
+    def boom(_):
+        raise OSError("disk gone")
+    r = check(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit", APP, "demo",
+              {"peak_memory_bytes": 300 * MI}, read_file=boom, list_files=boom,
+              file_history=boom, denylist=())
+    assert not r.ok and "disk gone" in r.reason

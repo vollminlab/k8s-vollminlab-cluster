@@ -219,7 +219,11 @@ def _renovate(changes, file_history, denylist, new_files, added_line):
 
 def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files,
           file_history, denylist) -> GuardResult:
-    """Gate 3.
+    """Gate 3. Never raises: any exception while parsing or comparing is a gate failure.
+
+    An exception escaping here would crash publish and suppress the issue, so a
+    prompt-injected model could hide its own report by making the gate throw
+    (PyYAML raises ValueError for `2026-13-45` and RecursionError for deep nesting).
 
     read_file(path) -> str | None and list_files(dir) -> [path] read the checkout.
     file_history(path) -> [str]: the texts of the file's past revisions, newest
@@ -227,6 +231,15 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
     `git show <rev>:<path>` for each). Including the current revision is harmless.
     Used only by renovate-breakage, whose new value must equal, at the same document
     and field path, a value some past revision held."""
+    try:
+        return _check(patch_text, cls, app_dir, namespace, metrics, read_file=read_file,
+                      list_files=list_files, file_history=file_history, denylist=denylist)
+    except Exception as e:
+        return _fail(f"the diff guard could not evaluate the patch: {type(e).__name__}: {str(e)[:200]}")
+
+
+def _check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files,
+           file_history, denylist) -> GuardResult:
     if cls not in ("oom-memory-limit", "cpu-throttle-limit", "renovate-breakage"):
         return _fail(f"no diff rules exist for class {cls!r}")
     if not app_dir:

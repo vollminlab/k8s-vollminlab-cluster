@@ -61,8 +61,8 @@ def expand(value):
     if isinstance(value, str) and "\n" in value:
         try:
             parsed = yaml.safe_load(value)
-        except yaml.YAMLError:
-            return value
+        except Exception:     # YAMLError, ValueError (2026-13-45), RecursionError (deep nesting)
+            return value      # compared as the whole string, so any change is still seen
         if isinstance(parsed, (dict, list)):
             return parsed
     return value

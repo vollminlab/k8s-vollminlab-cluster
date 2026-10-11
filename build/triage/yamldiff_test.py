@@ -1,7 +1,7 @@
 import pytest
 
 from testsupport import CONFIGMAP
-from triage.yamldiff import MISSING, DiffError, diff
+from triage.yamldiff import MISSING, DiffError, diff, expand
 
 
 def test_change_inside_embedded_helm_values():
@@ -74,3 +74,9 @@ def test_duplicate_document_keys_are_an_error():
 def test_moving_a_document_to_another_namespace_is_an_error():
     with pytest.raises(DiffError):
         diff(HR, HR.replace("namespace: demo", "namespace: kube-system"))
+
+
+@pytest.mark.parametrize("bad", ["a:\n  b: 2026-13-45\n", "a: " + "[" * 3000 + "]" * 3000 + "\n"],
+                         ids=["bad-timestamp", "deep-nesting"])
+def test_expand_leaves_unconstructible_text_as_a_string(bad):
+    assert expand(bad) == bad
