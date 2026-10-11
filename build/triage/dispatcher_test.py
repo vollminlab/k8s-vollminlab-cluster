@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 
+import pytest
+
 from testsupport import CRASHLOOP_LABELS, FLUX_LABELS, JOB_TEMPLATE, am_alert, am_payload, make_policy
 from triage import jobs
 from triage.dispatcher import Dispatcher
@@ -17,7 +19,7 @@ OWNERS = {
 
 class FakeQueue:
     def __init__(self):
-        self.jobs, self.deleted, self.unsuspended = [], [], []
+        self.jobs, self.deleted, self.unsuspended, self.annotated = [], [], [], []
 
     def list(self):
         return list(self.jobs)
@@ -34,6 +36,11 @@ class FakeQueue:
     def unsuspend(self, name):
         self.unsuspended.append(name)
         next(j for j in self.jobs if j.metadata.name == name).spec.suspend = False
+
+    def annotate(self, name, key, value):
+        self.annotated.append((name, key, value))
+        job = next(j for j in self.jobs if j.metadata.name == name)
+        job.metadata.annotations = dict(job.metadata.annotations or {}, **{key: value})
 
     def delete(self, name):
         self.deleted.append(name)
@@ -56,11 +63,11 @@ class FakeGitHub:
         self.calls.append(("close", n))
 
 
-def make(github=None, firing=True, outcomes=None, policy=None, clock=None):
+def make(github=None, firing=True, outcomes=None, policy=None, clock=None, queue=None):
     notes = []
     d = Dispatcher(
         policy=policy or make_policy(),
-        queue=FakeQueue(),
+        queue=queue or FakeQueue(),
         template=TEMPLATE,
         github=github or FakeGitHub(),
         get_owner=lambda kind, ns, name: OWNERS.get((kind, name)),
@@ -214,3 +221,93 @@ def test_sweep_success_moves_the_sweep_timestamp():
     d.read_outcome = lambda name: {"outcome": "sweep_ok", "cost_usd": 0.8}
     d.tick()
     assert d.last_sweep == done.timestamp()
+
+
+def _spend(d):
+    from triage.dispatcher import SPEND_24H
+    return SPEND_24H._value.get()
+
+
+def test_crashed_job_is_charged_the_per_run_cap():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.tick()
+    assert d._spend_24h == 3.0 and _spend(d) == 3.0
+
+
+@pytest.mark.parametrize("outcome", [
+    {"outcome": "publish_failed", "cost_usd": None, "detail": "unparseable termination message"},
+    {"outcome": "agent_error"},
+    {"outcome": "agent_error", "cost_usd": "lots"},
+])
+def test_outcome_with_unknown_cost_is_charged_the_per_run_cap(outcome):
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.read_outcome = lambda name: outcome
+    d.tick()
+    assert d._spend_24h == 3.0
+
+
+def test_outcome_with_known_cost_is_charged_exactly():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.read_outcome = lambda name: {"outcome": "agent_error", "cost_usd": 0.0}
+    d.tick()
+    assert d._spend_24h == 0.0
+
+
+def test_resolved_without_a_matching_issue_or_job_is_counted_unmatched(caplog):
+    from triage.dispatcher import EVENTS
+    before = EVENTS.labels("alertmanager", "resolved_unmatched")._value.get()
+    gh = FakeGitHub()
+    d, _ = make(github=gh)
+    with caplog.at_level("INFO", logger="triage.dispatcher"):
+        assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved"))) == \
+            ["resolved_unmatched"]
+    assert EVENTS.labels("alertmanager", "resolved_unmatched")._value.get() == before + 1
+    assert gh.calls == []
+    assert any("unmatched" in r.getMessage() and "fp/" in r.getMessage() for r in caplog.records)
+
+
+def test_crash_page_is_not_repeated_after_a_dispatcher_restart():
+    queue = FakeQueue()
+    d, notes = make(queue=queue)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    name = queue.jobs[0].metadata.name
+    _finish(d, name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.tick()
+    assert notes == ["Triage job crashed"]
+    assert queue.annotated == [(name, jobs.CRASH_NOTIFIED_ANNOTATION, "true")]
+    restarted, notes2 = make(queue=queue)       # fresh process, same cluster state
+    restarted.tick()
+    restarted.tick()
+    assert notes2 == []
+
+
+def test_crash_page_waits_if_the_job_cannot_be_annotated():
+    class Unannotatable(FakeQueue):
+        def annotate(self, name, key, value):
+            raise RuntimeError("apiserver down")
+    d, notes = make(queue=Unannotatable())
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.tick()
+    assert notes == []        # at most once: no page we could not record
+
+
+@pytest.mark.parametrize("annotations", [{}, None, {jobs.INCIDENT_ANNOTATION: "{not json"},
+                                         {jobs.INCIDENT_ANNOTATION: "[]"}])
+def test_waiting_job_with_a_bad_incident_annotation_is_dropped_not_blocking(annotations):
+    from triage.dispatcher import EVENTS
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.handle_alertmanager(am_payload(am_alert(dict(CRASHLOOP_LABELS, alertname="Second"))))
+    bad, good = (j.metadata.name for j in d.queue.jobs)
+    d.queue.jobs[0].metadata.annotations = annotations
+    before = EVENTS.labels("unknown", "dropped_invalid")._value.get()
+    assert d.tick() == f"started {good}"
+    assert d.queue.deleted == [bad]
+    assert EVENTS.labels("unknown", "dropped_invalid")._value.get() == before + 1

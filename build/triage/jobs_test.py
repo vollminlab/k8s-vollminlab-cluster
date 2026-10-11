@@ -120,3 +120,16 @@ def test_read_outcome_none_when_publish_never_ran_and_garbage_is_flagged():
     assert jobs.read_outcome(none_core, "triage", "j") is None
     bad_core = NS(list_namespaced_pod=lambda ns, label_selector: NS(items=[_pod("publish", "not json")]))
     assert jobs.read_outcome(bad_core, "triage", "j")["outcome"] == "publish_failed"
+
+
+def test_job_queue_annotate_patches_metadata_annotations():
+    calls = []
+    batch = NS(patch_namespaced_job=lambda name, ns, body: calls.append((name, ns, body)))
+    jobs.JobQueue(batch).annotate("j1", jobs.CRASH_NOTIFIED_ANNOTATION, "true")
+    assert calls == [("j1", "triage", {"metadata": {"annotations": {
+        "triage.vollminlab.com/crash-notified": "true"}}})]
+
+
+def test_read_outcome_unparseable_message_has_unknown_cost():
+    bad_core = NS(list_namespaced_pod=lambda ns, label_selector: NS(items=[_pod("publish", "not json")]))
+    assert jobs.read_outcome(bad_core, "triage", "j")["cost_usd"] is None

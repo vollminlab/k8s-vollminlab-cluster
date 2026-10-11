@@ -6,6 +6,8 @@ NAMESPACE = "triage"
 FP_LABEL = "triage.vollminlab.com/fp"
 KIND_LABEL = "triage.vollminlab.com/kind"
 INCIDENT_ANNOTATION = "triage.vollminlab.com/incident"
+# Set once the "job crashed" page has gone out, so a dispatcher restart cannot repeat it.
+CRASH_NOTIFIED_ANNOTATION = "triage.vollminlab.com/crash-notified"
 MIN_TTL_SECONDS = 86400
 # The credential split: the LLM container never holds a GitHub or Pushover credential,
 # and the container that writes to GitHub never holds the Anthropic key.
@@ -114,7 +116,8 @@ def read_outcome(core, namespace: str, job_name: str):
                 try:
                     return json.loads(term.message)
                 except ValueError:
-                    return {"outcome": "publish_failed", "cost_usd": 0.0,
+                    # cost unknown: the dispatcher charges the per-run cap
+                    return {"outcome": "publish_failed", "cost_usd": None,
                             "detail": "unparseable termination message"}
     return None
 
@@ -131,6 +134,9 @@ class JobQueue:
 
     def unsuspend(self, name: str):
         self.batch.patch_namespaced_job(name, self.namespace, {"spec": {"suspend": False}})
+
+    def annotate(self, name: str, key: str, value: str):
+        self.batch.patch_namespaced_job(name, self.namespace, {"metadata": {"annotations": {key: value}}})
 
     def delete(self, name: str):
         self.batch.delete_namespaced_job(name, self.namespace, propagation_policy="Background")

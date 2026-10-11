@@ -35,7 +35,6 @@ class Dispatcher:
         self.clock = clock
         self._queue_full_alerted = False
         self._budget_alerted_at = 0.0
-        self._crash_alerted = set()
         self._spend_24h = 0.0
         # Seeded with the start time, so TriageSweepStale measures "26h without a sweep"
         # from whichever is later: the last clean sweep, or this process starting. Jobs
@@ -120,15 +119,25 @@ class Dispatcher:
         return action.value
 
     def _resolved(self, inc: Incident) -> str:
+        dropped = 0
         for j in self.queue.list():
             if jobs.fp_of(j) == inc.fp12 and jobs.is_suspended(j) and not jobs.finished(j):
                 self.queue.delete(j.metadata.name)
+                dropped += 1
         raw = self.github.find_open_issue(self.policy.reports_repo, inc.fp12)
         if raw:
             when = _utc(self.clock()).strftime("%Y-%m-%d %H:%M UTC")
             self.github.comment(self.policy.reports_repo, raw["number"],
                                 f"Resolved at {when}: Alertmanager reports `{inc.reason}` resolved. Closing.")
             self.github.close_issue(self.policy.reports_repo, raw["number"])
+        elif not dropped:
+            # Nothing to close and nothing queued: the alert was never filed (dropped,
+            # deduped onto another fingerprint, or still being investigated). Counted
+            # so the gap is visible rather than reported as a clean resolve.
+            EVENTS.labels("alertmanager", "resolved_unmatched").inc()
+            log.info("resolved_unmatched: %s %s %s matched no open issue or queued job (fp/%s)",
+                     inc.reason, inc.namespace or "-", inc.workload or "-", inc.fp12)
+            return "resolved_unmatched"
         EVENTS.labels("alertmanager", "resolved").inc()
         return "resolved"
 
@@ -156,7 +165,15 @@ class Dispatcher:
                 self._budget_alerted_at = now
             return "budget_hold"
         for job in waiting:
-            inc = Incident.from_json(job.metadata.annotations[jobs.INCIDENT_ANNOTATION])
+            try:
+                inc = Incident.from_json((job.metadata.annotations or {})[jobs.INCIDENT_ANNOTATION])
+            except Exception as e:
+                # A Job we cannot read must not block every Job queued behind it.
+                log.error("dropping waiting job %s: unreadable incident annotation (%s: %s)",
+                          job.metadata.name, type(e).__name__, e)
+                self.queue.delete(job.metadata.name)
+                EVENTS.labels("unknown", "dropped_invalid").inc()
+                continue
             if inc.source == "alertmanager" and not self.still_firing(inc.am_fingerprints):
                 self.queue.delete(job.metadata.name)
                 EVENTS.labels(inc.source, "dropped_resolved").inc()
@@ -178,15 +195,11 @@ class Dispatcher:
                 continue
             outcome = self.read_outcome(j.metadata.name)
             if outcome is None:
-                outcome = {"outcome": "job_crashed", "cost_usd": 0.0}
-                if j.metadata.name not in self._crash_alerted:
-                    self._notify("Triage job crashed",
-                                 f"{j.metadata.name} finished without publishing (killed, OOM or deadline). "
-                                 f"kubectl describe job -n triage {j.metadata.name}")
-                    self._crash_alerted.add(j.metadata.name)
+                outcome = {"outcome": "job_crashed", "cost_usd": None}
+                self._notify_crash_once(j)
             name = outcome.get("outcome")
             counts[name if name in counts else "publish_failed"] += 1
-            spend += float(outcome.get("cost_usd") or 0.0)
+            spend += self._cost_of(outcome)
             if name == "sweep_ok" and done.timestamp() > self.last_sweep:
                 self.last_sweep = done.timestamp()
         for o, n in counts.items():
@@ -194,6 +207,30 @@ class Dispatcher:
         self._spend_24h = spend
         SPEND_24H.set(spend)
         LAST_SWEEP.set(self.last_sweep)
+
+    def _cost_of(self, outcome: dict) -> float:
+        """The outcome's reported cost; an unknown cost counts as the per-run cap,
+        because a killed or garbled run very likely spent real money."""
+        cost = outcome.get("cost_usd")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            return float(cost)
+        return float(self.policy.per_run_budget_usd)
+
+    def _notify_crash_once(self, job) -> None:
+        """Page once per crashed Job, across dispatcher restarts. The Job is annotated
+        BEFORE paging: a failed annotate retries next tick, whereas paging first would
+        re-page every tick for as long as the annotate kept failing."""
+        name = job.metadata.name
+        if (job.metadata.annotations or {}).get(jobs.CRASH_NOTIFIED_ANNOTATION) == "true":
+            return
+        try:
+            self.queue.annotate(name, jobs.CRASH_NOTIFIED_ANNOTATION, "true")
+        except Exception as e:
+            log.error("could not mark %s crash-notified (%s); will page on a later tick", name, e)
+            return
+        self._notify("Triage job crashed",
+                     f"{name} finished without publishing (killed, OOM or deadline). "
+                     f"kubectl describe job -n triage {name}")
 
     def _notify(self, title: str, message: str) -> None:
         try:
