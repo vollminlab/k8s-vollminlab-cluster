@@ -12,6 +12,10 @@ class _Missing:
 MISSING = _Missing()
 
 
+class DiffError(Exception):
+    """The two texts cannot be compared document for document."""
+
+
 @dataclass(frozen=True)
 class Change:
     path: tuple          # (doc key, key, key, ...); list indexes are strings
@@ -23,11 +27,32 @@ def load_docs(text: str) -> list:
     return [d for d in yaml.safe_load_all(text) if d is not None]
 
 
-def _doc_key(doc, index: int) -> str:
+def doc_key(doc, index: int) -> tuple:
+    """(apiVersion, kind, namespace, name) for a mapping; ("#doc", index) otherwise.
+
+    The whole identity, not kind/name alone: two documents that differ only in
+    namespace or apiVersion are different objects to Kubernetes, and keying them
+    together would let one hide behind the other."""
     if isinstance(doc, dict):
-        meta = doc.get("metadata") or {}
-        return f"{doc.get('kind', '?')}/{meta.get('name', '?') if isinstance(meta, dict) else '?'}"
-    return f"doc{index}"
+        meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+        return tuple(_ident(v) for v in (doc.get("apiVersion"), doc.get("kind"),
+                                         meta.get("namespace"), meta.get("name")))
+    return ("#doc", str(index))
+
+
+def _ident(v):
+    return v if v is None or isinstance(v, str) else repr(v)
+
+
+def keyed_docs(text: str) -> dict:
+    """{doc key: document}. Raises DiffError if two documents share a key."""
+    out = {}
+    for i, d in enumerate(yaml.safe_load_all(text)):
+        key = doc_key(d, i)
+        if key in out:
+            raise DiffError(f"a document identity appears twice: {key}")
+        out[key] = d
+    return out
 
 
 def _expand(value):
@@ -56,9 +81,17 @@ def _walk(path, a, b, out):
 
 
 def diff(old_text: str, new_text: str) -> list:
-    old = {_doc_key(d, i): d for i, d in enumerate(load_docs(old_text))}
-    new = {_doc_key(d, i): d for i, d in enumerate(load_docs(new_text))}
+    """Leaf changes between two texts with the same documents.
+
+    Raises DiffError if either text has two documents with one identity (twice),
+    or if the patch adds or removes a document: only values inside existing
+    documents are compared, so a new document must never be silently dropped."""
+    old, new = keyed_docs(old_text), keyed_docs(new_text)
+    if set(old) != set(new):
+        added = sorted(map(str, set(new) - set(old)))
+        removed = sorted(map(str, set(old) - set(new)))
+        raise DiffError(f"the patch adds or removes a document (added {added}, removed {removed})")
     out = []
-    for key in sorted(set(old) | set(new)):
-        _walk((key,), old.get(key, MISSING), new.get(key, MISSING), out)
+    for key in old:
+        _walk((key,), old[key], new[key], out)
     return out

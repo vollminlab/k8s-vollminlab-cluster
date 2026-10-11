@@ -30,7 +30,7 @@ def parse_bytes(q) -> float:
 @dataclass(frozen=True)
 class FieldChange:
     file: str
-    doc: str
+    doc: tuple           # yamldiff.doc_key: (apiVersion, kind, namespace, name)
     field: str
     old: object
     new: object
@@ -165,6 +165,8 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
             diffs = yamldiff.diff(old, new)
         except yaml.YAMLError as e:
             return _fail(f"{path} is not valid YAML after the patch: {e}")
+        except yamldiff.DiffError as e:
+            return _fail(f"{path}: {e}")
         changes += [FieldChange(path, c.path[0], ".".join(c.path[1:]), c.old, c.new) for c in diffs]
         new_files[path] = new
     if not changes:

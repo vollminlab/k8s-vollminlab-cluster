@@ -151,3 +151,17 @@ def test_parse_bytes():
     assert parse_bytes("1G") == 1e9
     with pytest.raises(ValueError):
         parse_bytes("lots")
+
+
+# ---- smuggling: verified exploits that passed the gate before ---------------------
+
+HR_PATH = APP + "helmrelease.yaml"
+HIDDEN_DOC = ("apiVersion: helm.toolkit.fluxcd.io/v2\nkind: HelmRelease\n"
+              "metadata: {name: demo, namespace: kube-system}\nspec: {values: {evil: true}}\n---\n")
+
+
+def test_exploit_hidden_document_with_a_colliding_kind_and_name_is_rejected():
+    p = cm_patch("memory: 256Mi", "memory: 400Mi") + make_patch(HR_PATH, HELMRELEASE, HIDDEN_DOC + HELMRELEASE)
+    r = guard(p, "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
+    assert not r.ok, r.changes
+    assert HR_PATH in r.reason
