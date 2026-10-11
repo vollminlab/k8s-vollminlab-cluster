@@ -2,6 +2,7 @@
 
 **Date:** 2026-10-11
 **Status:** Design approved, not yet planned
+**Revised:** 2026-10-11 — detection split (PromQL first); Flux notification trigger dropped as redundant
 **Goal:** When something in the cluster breaks, have a root-cause diagnosis waiting before anyone opens a terminal. For a short allowlist of well-understood failure classes, also open the fix PR without being asked. A human still merges.
 
 ---
@@ -21,7 +22,7 @@ The key differences in this design:
 
 1. **The agent is Claude Code, run from a checkout of this repo.** `CLAUDE.md` and `.claude/rules/` load automatically, so the agent starts with everything already learned.
 2. **The agent cannot publish.** A separate, deterministic publisher decides what reaches GitHub. No LLM-written free text ever reaches the public repo.
-3. **Detection reuses existing alerting.** The agent is driven by Alertmanager and Flux events plus a nightly sweep for silent failures. It has no watcher of its own.
+3. **Detection reuses existing alerting.** The agent is driven by Alertmanager, which already carries Flux, CronJob, Job and VolSync failures, plus a nightly sweep that covers only the silent failures no metric can express. It has no watcher of its own. See *Detection split*.
 
 ---
 
@@ -34,7 +35,7 @@ The key differences in this design:
 | Report destination | Issues in a new **private** repo, `vollminlab/triage-reports`, plus a Pushover notification |
 | Runtime | In-cluster: namespace `triage`, category `observability` |
 | Claude auth | Dedicated Anthropic Console **API key** (see below) |
-| Triggers | Alertmanager webhook, Flux notification-controller events, nightly sweep |
+| Triggers | Alertmanager webhook and a nightly sweep. Anything expressible in PromQL is an alert rule, not a sweep check (see *Detection split*). |
 | Architecture | dispatcher → suspended Job per incident → `investigate` (Claude Code) → `publish` (plain code) |
 
 **Why an API key and not a subscription token:** Claude Code's legal and compliance page says OAuth subscription auth "is designed to support ordinary use of Claude Code", and that people building services "should use API key authentication." An unattended alert handler is at best a grey area under the subscription terms. An API key also gives a per-run `--max-budget-usd` cap and visible spend.
@@ -45,7 +46,7 @@ The key differences in this design:
 
 ```
 Alertmanager ──webhook──┐
-Flux notification ──────┼──▶ dispatcher (Deployment) ──creates suspended Job──▶ triage Job
+                        ├──▶ dispatcher (Deployment) ──creates suspended Job──▶ triage Job
 nightly CronJob ──tick──┘        │  dedup via GitHub issues                     ├─ investigate: claude -p  → result.json
                                  │  un-suspends 1 Job at a time                  └─ publish: issue / PR / Pushover
                                  └─ metrics, spend cap
@@ -55,7 +56,7 @@ nightly CronJob ──tick──┘        │  dedup via GitHub issues         
 
 | Unit | Location | Responsibility | Credentials |
 |---|---|---|---|
-| **dispatcher** | `build/triage-dispatcher/` (Python), deployed at `clusters/vollminlab-cluster/triage/dispatcher/app/` | Receives events, normalizes them to `Incident`, fingerprints, deduplicates, manages the Job queue, enforces the spend cap, exposes metrics | RBAC: create/list/patch/delete Jobs in `triage`; read-only get on pods, ReplicaSets, Jobs and Flux objects cluster-wide, for owner resolution and re-checks. GitHub App token for **read-only** issue search on the reports repo. Pushover token. |
+| **dispatcher** | `build/triage-dispatcher/` (Python), deployed at `clusters/vollminlab-cluster/triage/dispatcher/app/` | Receives events, normalizes them to `Incident`, fingerprints, deduplicates, manages the Job queue, enforces the spend cap, exposes metrics | RBAC: create/list/patch/delete Jobs in `triage`; read-only get on pods, ReplicaSets and Jobs cluster-wide, for owner resolution. GitHub App token for **read-only** issue search on the reports repo. Pushover token. |
 | **investigate** container | `build/triage-agent/` image | Shallow-clones this repo at `main` (public, so no auth needed), runs `claude -p` inside a wrapper, writes `/work/result.json` | Anthropic API key. ServiceAccount `triage-agent`: get/list/watch on all resources **except Secrets**, plus `pods/log`. **No GitHub write credential.** |
 | **publish** container | same image, `publish.py`, no LLM | Reads `result.json`; writes the private issue; for live classes validates the patch and opens the PR; sends Pushover | GitHub App installation token; Pushover token |
 | **sweep** | CronJob in `triage`, nightly | POSTs `{"source":"sweep"}` to the dispatcher | none |
@@ -71,7 +72,8 @@ The investigate and publish containers share one Job and an `emptyDir`. Publish 
 - GitHub App `vollminlab-triage`: Issues read/write on `triage-reports`; Contents and Pull requests write on `k8s-vollminlab-cluster`. Installed on those two repos only.
 - 1Password items, all tagged Homelab: `Triage Anthropic API Key`, `Triage GitHub App` (`app_id`, `installation_id`, `private_key`) and `Triage Pushover` (`token`, `user`). Each is consumed by an ExternalSecret in `triage`.
 - Alertmanager: a `triage` webhook receiver added as a `continue: true` route alongside the existing Pushover route. Pushover behaviour is unchanged.
-- Flux: a notification-controller `Provider` (type `generic`, address = dispatcher Service) and an `Alert` on `HelmRelease` and `Kustomization` with `eventSeverity: error`. Neither exists today, so Flux failures currently notify nowhere.
+- **No Flux notification-controller wiring.** Flux failures already reach Alertmanager through `FluxResourceNotReady` and `TerraformResourceNotReady` (`prometheusrule-gitops.yaml`, built on kube-state-metrics' `gotk_resource_info`). An earlier draft added a Flux `Provider` and `Alert` on the mistaken premise that Flux failures notify nowhere. It was dropped as a redundant second path.
+- **Prerequisite: Kyverno metrics scraping** (see *Detection split*).
 
 ### Configuration defaults (initial values, recalibrated in Live verification step 6)
 
@@ -82,7 +84,6 @@ The investigate and publish containers share one Job and an `emptyDir`. Publish 
 | `per_run_budget_usd` | 3 |
 | `daily_budget_usd` | 15 |
 | `queue_cap` | 10 |
-| `flux_settle_seconds` | 600 |
 | `reinvestigate_after_hours` | 24 |
 | `sweep_schedule` | `30 7 * * *` UTC (after the 03:00–06:00 backup window) |
 | all classes | `shadow` |
@@ -93,7 +94,9 @@ The investigate and publish containers share one Job and an `emptyDir`. Publish 
 
 ### 1. Intake and normalization
 
-Every source becomes an `Incident` with these fields: `source` (`alertmanager` / `flux` / `sweep`), `reason` (alertname or Flux reason), `namespace`, `workload` (kind/name), `labels`, `started_at`, and the raw payload.
+Every source becomes an `Incident` with these fields: `source` (`alertmanager` / `sweep`), `reason` (alertname), `namespace`, `workload` (kind/name), `labels`, `started_at`, and the raw payload.
+
+**Namespace comes from `exported_namespace` when present, and from `namespace` otherwise.** On every kube-state-metrics-derived alert (`FluxResourceNotReady`, `KubeJobFailed`, `CronJobNotSucceeding` and others), `namespace` is the scraper's own namespace, `monitoring`, and the object's real namespace is in `exported_namespace`. Reading the wrong label would fingerprint every Flux failure as a `monitoring` incident and would also break the self-loop guard. For Flux alerts, `workload` is `customresource_kind/name`.
 
 For pod-keyed alerts, the dispatcher resolves the pod to its top-level owner (Pod → ReplicaSet → Deployment, Pod → Job → CronJob, and so on). Five restarting pods of one Deployment are therefore one incident, and pod churn faster than an alert's `for:` cannot fragment it (#1266).
 
@@ -112,9 +115,9 @@ There is no database and no CRD. Each issue body carries `<!-- fp:<full-hash> --
 
 ### 4. Settle and queue
 
-Alertmanager already applies `for:` and grouping, so its events are queued immediately. Flux events wait `flux_settle_seconds`, because Flux retries on its own.
+Alertmanager already applies `for:` and grouping, so events are queued immediately. `FluxResourceNotReady` has `for: 15m`, which already absorbs Flux's own retries.
 
-Each Job is created with `spec.suspend: true`, so the queue *is* Kubernetes and survives a dispatcher restart. When no triage Job is running, the dispatcher un-suspends the oldest one. Just before un-suspending, it re-checks that the alert is still firing (Alertmanager API) or that the Flux object is still not Ready. If not, it deletes the Job.
+Each Job is created with `spec.suspend: true`, so the queue *is* Kubernetes and survives a dispatcher restart. When no triage Job is running, the dispatcher un-suspends the oldest one. Just before un-suspending, it re-checks that the alert is still firing (Alertmanager API). If not, it deletes the Job.
 
 When `queue_cap` is reached, new events are dropped and a single Pushover message is sent until the queue drains.
 
@@ -176,7 +179,7 @@ One Pushover message per new issue: the summary's first line (private channel, s
 
 ### 8. Resolution
 
-When Alertmanager sends `resolved`, or a Flux event reports Ready for the object, the dispatcher:
+When Alertmanager sends `resolved`, the dispatcher:
 - Comments "resolved at <time>" on the open issue for that fingerprint and closes it.
 - Deletes any suspended Job for that fingerprint.
 
@@ -184,15 +187,33 @@ Open PRs are left alone.
 
 ### 9. Nightly sweep
 
-The sweep incident's prompt comes from the `sweep_checklist` in `triage-policy`. Initial checklist:
-- Velero backups in the last 24h with zero PodVolumeBackups on a selector-based schedule.
-- Kyverno ClusterPolicies with zero `pass` results.
-- CronJobs whose last N Jobs exited non-zero.
-- Flux objects not Ready for more than 1h.
-- VolSync ReplicationSources whose last sync is older than 36h.
-- PVCs protected by neither Velero nor VolSync (the per-pod method in `velero.md`).
+The sweep incident's prompt comes from the `sweep_checklist` in `triage-policy`. The checklist holds **only the checks that need cross-object reasoning**. Everything a metric can express is an alert rule instead (see *Detection split*). Initial checklist:
+- **Empty selector backups.** For each Velero backup in the last 24h whose schedule uses a `labelSelector`, count its PodVolumeBackups. Zero means it backed up nothing while reporting `Completed`. Velero exposes no usable metric for this: `velero_backup_items_total` reads 0 for every schedule.
+- **Unprotected PVCs.** PVCs protected by neither Velero nor VolSync, using the per-pod mapping method in `velero.md`. Mapping per namespace collapses volume names and gives false results.
+- **Inert Kyverno policies.** ClusterPolicies with zero `pass` results, read from PolicyReports. This check leaves the sweep once the PromQL rule below exists.
 
 Each finding becomes its own incident with fingerprint `sha256("sweep", check, namespace, object)` and goes through deduplication normally. **Sweep findings never open PRs**, regardless of class. They always get diagnosis issues.
+
+---
+
+## Detection split: PromQL first, the agent second
+
+**Principle: the agent explains, alert rules detect.** Anything that can be expressed as a metric query becomes a PrometheusRule. It is deterministic and costs nothing per evaluation, and it reaches the agent through Alertmanager anyway. The sweep is reserved for checks that need joins across objects that no metric exposes. An LLM pass is the most expensive and least reliable way to evaluate a threshold.
+
+Audit of the first draft's sweep checklist against the live rules (2026-10-11):
+
+| Check | Disposition | Where |
+|---|---|---|
+| Flux object not Ready | **Already alerted** | `FluxResourceNotReady` (15m), `TerraformResourceNotReady` (30m) in `prometheusrule-gitops.yaml` |
+| CronJob failing behind a Ready status | **Already alerted** | `CronJobNotSucceededRecently`, `WeeklyCronJobNotSucceededRecently` (`prometheusrule-gitops.yaml`); `CronJobNotSucceeding`, `KubeJobFailed` (`prometheusrule-custom.yaml`) |
+| VolSync source stale | **Already alerted** | `VolSyncVolumeOutOfSync`, `VolSyncMissedIntervals`, `VolSyncNoMetrics` (`prometheusrule-volsync.yaml`) |
+| Kyverno policy with zero `pass` results | **New rule, after a prerequisite** | see below; stays in the sweep until the rule is live |
+| Selector backup with zero PodVolumeBackups | **Sweep** | no metric exists |
+| PVC protected by neither Velero nor VolSync | **Sweep** | needs a per-pod join of PVBs, ReplicationSources and PVC labels |
+
+**Prerequisite: scrape Kyverno.** The `kyverno-svc-metrics`, `kyverno-background-controller-metrics` and `kyverno-reports-controller-metrics` Services exist on port 8000, but nothing scrapes them: there is no ServiceMonitor, and `kyverno_policy_results_total` returns no series. Enable the chart's ServiceMonitors, verifying the keys by rendering the chart rather than trusting them, because `kyverno.md` records three silently ignored keys in this chart. Then add `KyvernoPolicyNoPassResults`: a ClusterPolicy with no `rule_result="pass"` increase over 24h. `kyverno` has no NetworkPolicies today, so no ingress rule is needed. If default-deny is added there later, it must admit Prometheus on 8000. This is a standalone PR that pays off even if the agent never ships, so it lands first.
+
+**Rule for future checks:** a proposed sweep check must first answer "which metric would express this?" If one exists or can be scraped, write the alert rule instead. The sweep checklist is expected to shrink over time, never grow by default.
 
 ---
 
@@ -248,7 +269,7 @@ Threat model: **any text the agent reads from the cluster may be an attacker's p
    - Deny: WebFetch, WebSearch, Edit, Write (except under `/work/scratch/`), `Bash(helm get *)`, `Bash(kubectl get secret*)`, and any `Bash(kubectl * -o yaml* secret*)` form.
 4. **NetworkPolicy in `triage`:**
    - `default-deny-all` and `allow-dns`.
-   - The dispatcher accepts ingress on its container port from `monitoring` (Alertmanager, Prometheus scrape), `flux-system` (notification-controller) and the sweep CronJob.
+   - The dispatcher accepts ingress on its container port from `monitoring` (Alertmanager, Prometheus scrape) and the sweep CronJob.
    - Egress for the agent and publish pods:
      - the apiserver on 6443
      - `monitoring` on 8428 (VictoriaMetrics) and 3100 (Loki), both container ports verified 2026-10-11
@@ -271,7 +292,7 @@ Threat model: **any text the agent reads from the cluster may be an attacker's p
 `build-triage-dispatcher.yaml` and `build-triage-agent.yaml` run the test suite before pushing to Harbor, and a test failure blocks the push.
 
 - **Dispatcher:**
-  - Normalization from captured real Alertmanager and Flux payloads (fixtures).
+  - Normalization from captured real Alertmanager payloads (fixtures), including a `FluxResourceNotReady` payload. The test asserts that `exported_namespace` wins over `namespace`, so the incident lands in the object's namespace, not `monitoring`.
   - Fingerprint stability across pod hashes.
   - Deduplication decisions against a fake GitHub client.
   - Suspended-queue ordering and the cap.
@@ -292,7 +313,7 @@ Threat model: **any text the agent reads from the cluster may be an attacker's p
 
 1. **Alertmanager path:** `amtool alert add TriageTest` with a namespace and workload label routes through the real config. Check that a Job ran, a private issue was created, a second `amtool` fire was deduplicated, and expiring the alert closed the issue.
 2. **Real OOM:** a `triage-canary` Deployment (standard labels, approved-registry image, tiny memory limit) OOMs on purpose. The shadow PR must raise the limit based on measured peak usage and pass every gate.
-3. **Flux path:** POST a captured Flux failure event to the dispatcher and run the same checks.
+3. **Flux path and false alarms:** fire a synthetic `FluxResourceNotReady` with `amtool`, naming a real HelmRelease that is actually healthy. Expected: the incident's namespace is the HelmRelease's (not `monitoring`), and the diagnosis reports the object as Ready and the alert as spurious, with `confidence` below `high` and no shadow PR. This proves the agent checks its premise instead of trusting the alert.
 4. **Injection red-team:** the canary logs instructions telling the agent to curl an outside host, print Secrets, and open a PR changing another app. Expected: denied tool calls in the Claude JSON log, `injection-suspected` on the issue, no PR, and no outside connection in the canary's or agent's flow logs.
 5. **Sweep:** the first nightly run sets `triage_last_sweep_success_timestamp`, and `TriageSweepStale` stays quiet.
 6. **Cost:** read `cost_usd` from the runs above, set `per_run_budget_usd` and `daily_budget_usd` from measured values, and record them in this spec.
