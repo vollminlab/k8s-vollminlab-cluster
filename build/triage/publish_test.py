@@ -508,6 +508,93 @@ def test_sweep_notify_failure_keeps_the_outcome(workdir):
     assert out["outcome"] == "sweep_ok"
 
 
+# --- GitHub's 65,536-character body limit ----------------------------------------------
+
+GITHUB_BODY_LIMIT = 65536
+
+
+def test_fit_truncates_with_a_marker_and_leaves_short_text_alone():
+    assert publish.MAX_BODY_CHARS == 60000
+    assert publish._fit("short") == "short"
+    text = "a" * 100000
+    out = publish._fit(text)
+    assert len(out) <= publish.MAX_BODY_CHARS
+    omitted = len(text) - out.index("\n\n[truncated by triage:")
+    assert out.endswith(f"\n\n[truncated by triage: {omitted} characters omitted]")
+    assert publish._fit("b" * publish.MAX_BODY_CHARS) == "b" * publish.MAX_BODY_CHARS
+
+
+def _max_size_result(tmp_path):
+    """The largest record load_result accepts: every agent field at its schema maximum,
+    and the rest of the 1 MiB filled with denied tool calls."""
+    from triage.result import MAX_RESULT_BYTES, load_result
+    agent = dict(AGENT_OK, **{"summary": "s" * 2000, "root_cause": "r" * 8000,
+                              "evidence": ["e" * 2000] * 30, "class": "none", "patch": None, "app_dir": None})
+    rec = success(agent, 0.5, [])
+    room = MAX_RESULT_BYTES - len(json.dumps(rec)) - 1000
+    rec["tool_denials"] = ["Bash: " + "d" * 594] * (room // 604)
+    path = tmp_path / "result.json"
+    path.write_text(json.dumps(rec))
+    assert MAX_RESULT_BYTES - 2000 < path.stat().st_size <= MAX_RESULT_BYTES
+    loaded = load_result(path)
+    assert loaded["status"] == "ok"
+    return loaded
+
+
+def test_a_max_size_result_still_files_exactly_one_issue_within_githubs_limit(workdir, tmp_path):
+    out, gh, _, _ = go(workdir, _max_size_result(tmp_path))
+    assert gh.kinds().count("create_issue") == 1 and out["outcome"] == "issue_created"
+    body = gh.issue()[2]
+    assert len(body) <= publish.MAX_BODY_CHARS < GITHUB_BODY_LIMIT
+    assert "[truncated by triage:" in body
+
+
+def test_a_max_size_result_comment_on_an_existing_issue_is_truncated(workdir, tmp_path):
+    _, gh, _, _ = go(workdir, _max_size_result(tmp_path), existing=7)
+    comments = [c[2] for c in gh.calls if c[0] == "comment"]
+    assert len(comments) == 1 and len(comments[0]) <= publish.MAX_BODY_CHARS
+
+
+def test_truncation_happens_after_redaction(workdir, monkeypatch, tmp_path):
+    # A secret past the cut must still be redacted, and the redaction cannot push the
+    # body back over the limit.
+    monkeypatch.setattr(leakscan, "scan", lambda texts, run: {"text": ["hunter2"]} if "text" in texts else {})
+    result = _max_size_result(tmp_path)
+    result["root_cause"] = "hunter2 " * 1000
+    _, gh, _, _ = go(workdir, result)
+    body = gh.issue()[2]
+    assert "hunter2" not in body and len(body) <= publish.MAX_BODY_CHARS
+
+
+def test_an_unscanned_body_keeps_its_warning_when_truncated(workdir, monkeypatch, tmp_path):
+    def broken(texts, run):
+        raise leakscan.LeakScanError("gitleaks missing")
+    monkeypatch.setattr(leakscan, "scan", broken)
+    _, gh, _, _ = go(workdir, _max_size_result(tmp_path))
+    body = gh.issue()[2]
+    assert len(body) <= publish.MAX_BODY_CHARS and body.endswith("this text was posted unscanned.")
+    assert "leakscan-failed" in gh.labels()
+
+
+def test_the_gate_report_comment_is_truncated(workdir, monkeypatch):
+    monkeypatch.setattr(publish.issuebody, "render_gate_report", lambda *a, **k: "g" * 200000)
+    _, gh, _, _ = go(workdir, success(AGENT_OK, 0.5, []))
+    comments = [c[2] for c in gh.calls if c[0] == "comment"]
+    assert comments and all(len(c) <= publish.MAX_BODY_CHARS for c in comments)
+
+
+def test_sweep_bodies_are_truncated(workdir, monkeypatch):
+    monkeypatch.setattr(publish.issuebody, "render_finding", lambda f, fp: ("t", "f" * 200000))
+    f1 = {"check": "unprotected-pvc", "namespace": "a", "object": "PersistentVolumeClaim/x",
+          "summary": "s", "detail": "d"}
+    result = success(dict(AGENT_OK, **{"class": "none", "patch": None, "app_dir": None, "findings": [f1]}), 0.8, [])
+    gh = FakeGitHub()
+    publish.publish_sweep(Incident("sweep", "nightly-sweep", "", ""), result, make_policy(), gh,
+                          lambda *a, **k: None, Runner(workdir), datetime(2026, 10, 11, 8, tzinfo=timezone.utc),
+                          workdir=workdir)
+    assert len(gh.issue()[2]) <= publish.MAX_BODY_CHARS
+
+
 # --- main ---------------------------------------------------------------------------
 
 def test_main_always_writes_a_termination_message(tmp_path, monkeypatch):

@@ -212,3 +212,13 @@ def test_fifo_result_does_not_block(tmp_path):
     os.mkfifo(tmp_path / "result.json")
     r = load_result(tmp_path / "result.json")
     assert r["failure_reason"] == "invalid_output" and "regular file" in r["detail"]
+
+
+def test_tool_denials_are_capped_in_count_and_length(tmp_path):
+    from triage import result as result_mod
+    assert (result_mod.MAX_DENIALS, result_mod.MAX_DENIAL_CHARS) == (50, 500)
+    denials = [f"Bash: {i} " + "y" * 2000 for i in range(400)]
+    (tmp_path / "r.json").write_text(json.dumps(success(AGENT_OK, 0.1, denials)))
+    got = load_result(tmp_path / "r.json")["tool_denials"]
+    assert len(got) == 50 and all(len(d) == 500 for d in got)
+    assert got[0].startswith("Bash: 0 ") and got[-1].startswith("Bash: 49 ")

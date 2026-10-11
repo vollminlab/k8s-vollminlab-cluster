@@ -11,6 +11,10 @@ AGENT_SCHEMA = json.loads(Path(__file__).with_name("agent_output.schema.json").r
 FAILURE_REASONS = ("max_turns", "budget_cap", "timeout", "api_error", "invalid_output", "setup_failed")
 # result.json is read by publish, which holds the GitHub key; bound what it parses.
 MAX_RESULT_BYTES = 1 << 20
+# tool_denials is rendered into the issue body; GitHub refuses a body over 65,536
+# characters, so an unbounded list could suppress the whole issue.
+MAX_DENIALS = 50
+MAX_DENIAL_CHARS = 500
 _RELAXED_DROP = ("pattern", "maxLength", "maxItems")
 
 
@@ -146,4 +150,5 @@ def load_result(path) -> dict:
     denials = data.get("tool_denials")
     if not (isinstance(denials, list) and all(isinstance(d, str) for d in denials)):
         denials = []
+    denials = [d[:MAX_DENIAL_CHARS] for d in denials[:MAX_DENIALS]]
     return success(agent_part, data.get("cost_usd", 0.0), denials)

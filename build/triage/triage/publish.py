@@ -51,6 +51,10 @@ PUBLISH_BUDGET_SECONDS = 240
 API_RESERVE_SECONDS = 60
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 DIRTY = "✗ publish's own checkout was not clean; refusing to build a PR from it"
+# GitHub refuses an issue body or comment over 65,536 characters, and a refused
+# create_issue would lose the diagnosis outright. Every body is cut to this, after
+# redaction, leaving room for GitHub's own counting of what we send.
+MAX_BODY_CHARS = 60000
 GATES_PENDING = ("## PR gates\n\nRunning. The gate report follows as a comment on this issue; "
                  "if none arrives, publish did not finish.")
 
@@ -353,16 +357,31 @@ def open_pr(repo: Path, gh, policy, draft: dict, new_files: dict, token: str, ru
     return gh.create_pull(policy.cluster_repo, draft["title"], draft["branch"], "main", draft["body"])["html_url"]
 
 
+def _fit(text: str, limit: int = MAX_BODY_CHARS) -> str:
+    """`text` cut to at most `limit` characters, ending in a marker saying how much went."""
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    while True:
+        marker = f"\n\n[truncated by triage: {omitted} characters omitted]"
+        keep = limit - len(marker)
+        if len(text) - keep == omitted:
+            return text[:keep] + marker
+        omitted = len(text) - keep
+
+
 def _scrub(text: str, run) -> tuple:
-    """Redact secrets from text bound for the private repo. Returns (text, extra labels).
-    A scan that cannot run (including one the deadline cut off) never stops the issue."""
+    """Redact secrets from text bound for the private repo, then cut it to
+    MAX_BODY_CHARS. Returns (text, extra labels). A scan that cannot run (including one
+    the deadline cut off) never stops the issue."""
     try:
         hits = leakscan.scan({"text": text}, run)
     except Exception as e:
-        return text + f"\n\n> Leak scan could not run ({e}); this text was posted unscanned.", ["leakscan-failed"]
+        note = f"\n\n> Leak scan could not run ({str(e)[:300]}); this text was posted unscanned."
+        return _fit(text, MAX_BODY_CHARS - len(note)) + note, ["leakscan-failed"]
     if hits:
-        return leakscan.redact(text, hits["text"]), ["redacted"]
-    return text, []
+        return _fit(leakscan.redact(text, hits["text"])), ["redacted"]
+    return _fit(text), []
 
 
 def _gates_and_pr(inc, result, policy, gh, token, workdir: Path, run, run_id: str, g: Gates) -> None:
