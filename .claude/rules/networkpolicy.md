@@ -101,6 +101,11 @@ Keep this table current whenever a new NetworkPolicy namespace is added.
 | `mediastack` | `filebrowser` | 8080 | Filebrowser HTTP + TUS uploads (svc 80→8080). **Pod-scoped**: mediastack has no default-deny; this policy is the only thing stopping in-cluster pods spoofing the proxy-auth header | filebrowser-allow-ingress-nginx ingress (from ingress-nginx) |
 | `foundry` | `foundryvtt` | 30000 | Foundry VTT HTTP + socket.io (svc 80→named port `http`→30000) | allow-ingress-nginx ingress (from ingress-nginx) |
 | `foundry` | n/a (egress target) | 443 | foundryvtt.com distribution download + licence check, and the VolSync restic mover to B2 | allow-https-egress egress (RFC1918 excluded) |
+| `triage` | `dispatcher` (`app: triage-dispatcher`) | 8080 | Alertmanager webhook, Prometheus scrape, sweep trigger (svc 8080→named port `http`→8080) | allow-dispatcher-ingress ingress (from monitoring alertmanager/prometheus, and `app: triage-sweep`) |
+| `triage` | n/a (egress target → monitoring) | 8428 / 3100 | VictoriaMetrics (both tiers, headless) / Loki, from `app: triage-agent` | allow-agent-monitoring-egress egress; monitoring side: allow-triage-victoria-metrics, allow-triage-loki |
+| `triage` | n/a (egress target → monitoring) | 9093 | Alertmanager API re-check, from `app: triage-dispatcher` | allow-dispatcher-alertmanager-egress egress; monitoring side: allow-triage-alertmanager |
+| `triage` | n/a (egress target) | 6443 | kube-apiserver (`kubernetes` svc 443→6443 on the CP hosts), from `app: triage-dispatcher` (Job queue, owner lookup) and `app: triage-agent` (read-only kubectl/flux) | allow-kube-api-egress egress (port only, no `to`) |
+| `triage` | n/a (egress target) | 443 | Anthropic API, GitHub, Pushover, kubeconform CRD catalog; RFC1918 excluded; open internet is the spec's accepted residual risk | allow-https-egress egress |
 
 Add a row here when writing a new NetworkPolicy with a port restriction. This is the source of
 truth — do not rely on service port numbers.
