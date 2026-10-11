@@ -254,6 +254,8 @@ New PrometheusRules:
 
 **Spend cap:** when the rolling 24h spend reaches `daily_budget_usd`, the dispatcher stops un-suspending Jobs (the queue holds) and sends one Pushover message.
 
+**The daily cap is not a security boundary.** The spend it sums is each Job's `cost_usd`, which publish copies from `result.json`, and `result.json` is written inside the investigate container. That figure is trustworthy only for honest failures (a turn limit, a budget cap, an API error, a timeout charged at the per-run cap). A compromised investigation controls the file and can under-report its cost, down to zero, so the daily cap cannot bound what an attacker spends. The boundary is the **Anthropic workspace's monthly spend limit** (plan Task 6), which Anthropic enforces outside anything the agent can reach, together with the per-run `--max-budget-usd` the CLI enforces. Task 6 is therefore mandatory before Phase 5, not optional hardening.
+
 **Self-loop guard:** events whose namespace is `triage` are ignored (counted as `ignored_self`). Those alerts still reach Pushover through the existing route.
 
 ---

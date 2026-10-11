@@ -39,6 +39,7 @@ Each deviation was forced by something found while planning. Task 41 folds them 
 | 10 | Live check 4: "no outside connection in the canary's or agent's flow logs" | Verified by the denied-tool-call record plus "no PR, no changed file" | Calico open source has no flow logs here. The denial record shows that the attempt was blocked before any network call. |
 | 11 | investigate and publish share `/work` (the checkout, `HOME` and `result.json`) | **publish trusts only `result.json`.** It clones the repo itself into its own `/publish` volume; `result` is the only volume both containers mount (read-only in publish); every publish subprocess gets a minimal environment; both containers run `python -I` from an installed package | Verified 2026-10-11: the agent's then-allowed `git log --output=<path> --pretty=format:...` writes arbitrary bytes, e.g. a `filter.<x>.clean` command into the shared `.git/config`, which publish's `git add` would have run beside the GitHub App key; a `.pth` file in the shared `HOME` runs at Python startup. Filtering inputs cannot close that class; separating the filesystems does. See the spec, Security, "Containment". |
 | 12 | renovate-breakage: the agent finds the previous value in the file's git history | **The agent cannot run git** (`Bash(git *)` denied, as are curl's file-writing flags). It reads the previous version from the HelmRelease's `status.history`, Flux events or the previous ReplicaSet; publish checks it against the file's history in its own clone | Same finding as 11: `git log` was the write primitive. |
+| 13 | Spend cap: "when the rolling 24h spend reaches `daily_budget_usd`, the dispatcher stops un-suspending Jobs", read as the spend limit | The daily cap stays, but **the Anthropic workspace's monthly spend limit (Task 6) is the security boundary**, and Task 6 is mandatory before Phase 5 | `cost_usd` reaches the dispatcher from `result.json`, which the investigate container writes. It is trustworthy only for honest failures; a compromised investigation can under-report it, so a cap that sums it bounds nothing an attacker controls. |
 
 The code listings in Tasks 8 to 28 predate deviations 11 and 12. Where they differ from
 `build/triage/`, the source and its tests are authoritative.
@@ -350,7 +351,9 @@ Expected: `201 [('issues', 'write'), ('metadata', 'read')] ['triage-reports']`. 
 
 ### Task 6: Anthropic API key with a hard spend limit
 
-- [ ] **Step 1:** In the Anthropic Console, create a workspace `triage` and set a **monthly spend limit** of $60 on it. This is the backstop behind the dispatcher's daily cap: a bug in the cap cannot spend past it.
+**This task is mandatory before Phase 5, not optional hardening.** `cost_usd` in `result.json` is written inside the investigate container, so it is trustworthy only for honest failures: a prompt-injected investigation controls that file and can under-report its spend (down to $0). The dispatcher's daily cap, which sums those figures, is therefore an accounting aid and not a security boundary. The workspace's monthly spend limit is enforced by Anthropic, outside anything the agent can touch, and it is the only real ceiling on spend.
+
+- [ ] **Step 1:** In the Anthropic Console, create a workspace `triage` and set a **monthly spend limit** of $60 on it. This is the real limit; the dispatcher's daily cap only shapes honest spend (see above), and neither a bug in that cap nor an investigation that lies about its cost can spend past this.
 - [ ] **Step 2:** Create an API key in that workspace named `triage-agent`.
 - [ ] **Step 3:** Save to 1Password: item `Triage Anthropic API Key`, vault Homelab, tag Homelab, field `api_key`, with the notes line `Referenced by ExternalSecret triage/triage-anthropic-apikey — do not rename fields`.
 
@@ -4976,7 +4979,7 @@ Expected: `2.1.283 (Claude Code)`.
 
 ## Phase 5: Deploy to the cluster (PR 5)
 
-All of Phase 5 is one PR, `feat/triage-deploy`. Prerequisites: Tasks 4–7 are done (repo, App, three 1Password items) and Task 29's image is in Harbor.
+All of Phase 5 is one PR, `feat/triage-deploy`. Prerequisites: Tasks 4–7 are done (repo, App, three 1Password items, and Task 6's workspace spend limit, which is the only real spend boundary) and Task 29's image is in Harbor.
 
 Layout:
 ```
