@@ -128,7 +128,10 @@ def test_renovate_value_must_be_historic_at_the_same_field_not_anywhere_in_the_f
     ("version: 1.10", 'version: "1.10"'),          # same digits, different type
 ])
 def test_renovate_history_match_is_exact(past, new):
-    r = guard(hr_patch("version: 2.0.0", new), "renovate-breakage",
+    # The current value is quoted like the new one, so only the history rule decides.
+    cur = 'version: "2.0.0"' if '"' in new else "version: 2.0.0"
+    hr = HELMRELEASE.replace("version: 2.0.0", cur)
+    r = guard(hr_patch(cur, new, hr), "renovate-breakage", files=dict(REPO_FILES, **{HR_PATH: hr}),
               history={HR_PATH: [HELMRELEASE.replace("version: 2.0.0", past)]})
     assert not r.ok and "history" in r.reason
 
@@ -494,3 +497,59 @@ def test_renovate_unparseable_revision_before_the_target_fails_closed():
     r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage",
               history={HR_PATH: [HELMRELEASE, "a: [unclosed\n", HR_OLD]})
     assert not r.ok
+
+
+# ---- a changed line must change its value and nothing else ------------------------
+# A re-quoted or re-terminated line with the same value makes no structural change,
+# so it used to ride along beside a real raise, even in another file.
+
+DEPLOY = APP + "deployment.yaml"
+DEPLOY_TEXT = ("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: demo\n  namespace: demo\n"
+               "spec:\n  resources:\n    limits:\n      memory: 64Mi\n")
+
+
+@pytest.mark.parametrize("rider", ['memory: "64Mi"', "memory: '64Mi'", "memory: 64Mi  ", "memory: 64Mi\r"],
+                         ids=["double-quoted", "single-quoted", "trailing-space", "cr-added"])
+def test_oom_formatting_only_rider_in_another_file_is_rejected(rider):
+    files = dict(REPO_FILES, **{DEPLOY: DEPLOY_TEXT})
+    p = cm_patch("memory: 256Mi", "memory: 400Mi") + make_patch(DEPLOY, DEPLOY_TEXT, DEPLOY_TEXT.replace("memory: 64Mi", rider))
+    r = guard(p, "oom-memory-limit", {"peak_memory_bytes": 300 * MI}, files=files)
+    assert not r.ok, r.changes
+
+
+def test_oom_cr_removed_is_rejected():
+    cm = CONFIGMAP.replace("memory: 128Mi\n", "memory: 128Mi\r\n")
+    files = dict(REPO_FILES, **{CM: cm})
+    new = cm.replace("memory: 128Mi\r\n", "memory: 128Mi\n").replace("memory: 256Mi", "memory: 400Mi")
+    r = guard(make_patch(CM, cm, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI}, files=files)
+    assert not r.ok
+
+
+@pytest.mark.parametrize("removed, added", [
+    ("    memory: 256Mi", '    memory: "400Mi"'),        # value changed AND re-quoted
+    ("    memory: 256Mi", "    memory: 400Mi "),
+    ("    memory: 256Mi", "    memory: 256Mi\r"),
+    ("    memory: 256Mi", "    memory: 256Mi"),           # identical
+])
+def test_oom_pair_may_change_only_the_value(removed, added):
+    assert line_violation("oom-memory-limit", [("f.yaml", [removed], [added])])
+
+
+@pytest.mark.parametrize("removed, added", [
+    ("      version: 2.0.0", '      version: "1.9.3"'),
+    ("      version: 2.0.0", "      version: 1.9.3 "),
+    ("      version: 2.0.0", "      version: 1.9.3\r"),
+    ('      version: "2.0.0"', "      version: '1.9.3'"),
+    ("      version: 2.0.0", "      version: 2.0.0 "),
+])
+def test_renovate_pair_may_change_only_the_value(removed, added):
+    assert line_violation("renovate-breakage", [("f.yaml", [removed], [added])])
+
+
+@pytest.mark.parametrize("removed, added", [
+    ("      version: 2.0.0", "      version: 1.9.3"),
+    ('      tag: "2.0.0"', '      tag: "1.9.3"'),
+    ("      tag: 2.0.0\r", "      tag: 1.9.3\r"),
+])
+def test_renovate_pair_changing_only_the_value_passes_the_line_rules(removed, added):
+    assert line_violation("renovate-breakage", [("f.yaml", [removed], [added])]) is None

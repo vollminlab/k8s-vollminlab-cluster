@@ -75,8 +75,30 @@ def forbidden_file(path: str) -> bool:
     return name == "kustomization.yaml" or name.endswith("-externalsecret.yaml") or "networkpolicy" in name
 
 
-def _indent(line: str) -> str:
-    return line[:len(line) - len(line.lstrip(" \t"))]
+_KEY_VALUE = re.compile(r"([ \t]*[A-Za-z]+:[ \t]*)(.*?)([ \t]*\r?)", re.ASCII | re.DOTALL)
+
+
+def _split(line: str):
+    """(frame, value): the frame is everything but the value (indentation, key,
+    separator, quote style, trailing whitespace and any \r), byte for byte."""
+    m = _KEY_VALUE.fullmatch(line)
+    if not m:
+        return None, None
+    v = m.group(2)
+    q = v[0] if len(v) >= 2 and v[0] in "\"'" and v[-1] == v[0] else ""
+    return (m.group(1), q, m.group(3)), (v[1:-1] if q else v)
+
+
+def _value_only(path, removed, added, cls):
+    """None if `added` is `removed` with its value changed and nothing else, else why.
+    A re-quoted or re-terminated line with the same value changes no field, so it
+    would otherwise ride along beside a real change."""
+    (rf, rv), (af, av) = _split(removed), _split(added)
+    if rf is None or af is None or rf != af:
+        return f"{path}: {cls} may change only the value, not the formatting, of {added[:80]!r}"
+    if rv == av:
+        return f"{path}: {cls} must change the value of {added[:80]!r}"
+    return None
 
 
 def line_edits(path: str, old: str, new: str) -> list:
@@ -100,8 +122,9 @@ def line_violation(cls: str, edits: list):
             if len(removed) != len(added):
                 return f"{path}: {cls} must replace memory lines one for one"
             for r, a in zip(removed, added):
-                if _indent(r) != _indent(a):
-                    return f"{path}: {cls} may not re-indent {a[:80]!r}"
+                reason = _value_only(path, r, a, cls)
+                if reason:
+                    return reason
         return None
     if cls == "cpu-throttle-limit":
         for path, removed, added in edits:
@@ -119,10 +142,7 @@ def line_violation(cls: str, edits: list):
         if len(edits) != 1 or len(edits[0][1]) != 1 or len(edits[0][2]) != 1:
             return f"{cls} must replace exactly one line"
         path, [r], [a] = edits[0]
-        mr, ma = _RENOVATE_LINE.match(r), _RENOVATE_LINE.match(a)
-        if mr.group(1) != ma.group(1) or mr.group(2) != ma.group(2):
-            return f"{path}: {cls} must keep the line's key and indentation: {a[:80]!r}"
-        return None
+        return _value_only(path, r, a, cls)
     return f"no line rules exist for class {cls!r}"
 
 
