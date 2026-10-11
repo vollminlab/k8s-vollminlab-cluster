@@ -1,5 +1,6 @@
 """The dispatcher's decisions: what to queue, what to drop, and when to run it."""
 import logging
+import math
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -212,7 +213,9 @@ class Dispatcher:
         """The outcome's reported cost; an unknown cost counts as the per-run cap,
         because a killed or garbled run very likely spent real money."""
         cost = outcome.get("cost_usd")
-        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+        # Non-finite or negative counts as unknown: NaN would make every budget check
+        # pass, and a negative cost would refund the day's spend.
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0:
             return float(cost)
         return float(self.policy.per_run_budget_usd)
 

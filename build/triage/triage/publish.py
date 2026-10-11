@@ -12,6 +12,7 @@ compared byte for byte against what the gates approved before it is pushed.
 """
 import base64
 import json
+import math
 import os
 import subprocess
 import sys
@@ -341,17 +342,26 @@ def publish_sweep(inc, result, policy, gh, notify, run, now: datetime) -> dict:
 def termination_text(summary: dict) -> str:
     """One line of valid JSON within TERMINATION_MAX bytes. ASCII-escaped, so
     characters are bytes; string fields other than `outcome` are cut until it fits."""
-    s = dict(summary)
-    text = json.dumps(s)
-    while len(text) > TERMINATION_MAX:
-        cuttable = [k for k, v in s.items() if isinstance(v, str) and v and k != "outcome"]
-        if not cuttable:
-            return json.dumps({"outcome": str(s.get("outcome", "publish_failed"))[:100],
-                               "cost_usd": s.get("cost_usd", 0.0)})
-        longest = max(cuttable, key=lambda k: len(json.dumps(s[k])))
-        s[longest] = s[longest][: len(s[longest]) // 2]
-        text = json.dumps(s)
-    return text
+    # A non-finite float would be written as the bare token NaN/Infinity, which is not
+    # JSON; None tells the dispatcher the cost is unknown, so it charges the per-run cap.
+    s = {k: (None if isinstance(v, float) and not math.isfinite(v) else v) for k, v in summary.items()}
+    try:
+        text = json.dumps(s, allow_nan=False)
+        while len(text) > TERMINATION_MAX:
+            cuttable = [k for k, v in s.items() if isinstance(v, str) and v and k != "outcome"]
+            if not cuttable:
+                break
+            longest = max(cuttable, key=lambda k: len(json.dumps(s[k])))
+            s[longest] = s[longest][: len(s[longest]) // 2]
+            text = json.dumps(s, allow_nan=False)
+        if len(text) <= TERMINATION_MAX:
+            return text
+    except (TypeError, ValueError):
+        pass
+    cost = s.get("cost_usd")
+    return json.dumps({"outcome": str(s.get("outcome", "publish_failed"))[:100],
+                       "cost_usd": cost if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None},
+                      allow_nan=False)
 
 
 def main() -> int:

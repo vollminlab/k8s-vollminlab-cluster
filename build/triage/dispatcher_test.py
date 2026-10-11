@@ -240,6 +240,12 @@ def test_crashed_job_is_charged_the_per_run_cap():
     {"outcome": "publish_failed", "cost_usd": None, "detail": "unparseable termination message"},
     {"outcome": "agent_error"},
     {"outcome": "agent_error", "cost_usd": "lots"},
+    # json.loads accepts NaN/Infinity: NaN would make the budget check always pass,
+    # and a negative cost would refund the day's spend.
+    {"outcome": "issue_created", "cost_usd": float("nan")},
+    {"outcome": "issue_created", "cost_usd": float("inf")},
+    {"outcome": "issue_created", "cost_usd": -5.0},
+    {"outcome": "issue_created", "cost_usd": True},
 ])
 def test_outcome_with_unknown_cost_is_charged_the_per_run_cap(outcome):
     d, _ = make()

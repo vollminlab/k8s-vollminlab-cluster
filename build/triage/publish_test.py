@@ -312,6 +312,14 @@ def test_main_reports_an_estimated_cost(tmp_path, monkeypatch):
     assert (summary["cost_usd"], summary["cost_estimated"]) == (3.0, True)
 
 
+@pytest.mark.parametrize("cost", [float("nan"), float("inf"), -float("inf")])
+def test_termination_text_never_emits_nan_or_infinity(cost):
+    # Python's json.dumps would write the bare tokens NaN/Infinity, which are not JSON.
+    text = publish.termination_text({"outcome": "issue_created", "cost_usd": cost, "detail": "x"})
+    parsed = json.loads(text, parse_constant=lambda c: pytest.fail(f"non-JSON constant {c}"))
+    assert parsed["outcome"] == "issue_created" and parsed["cost_usd"] is None
+
+
 def test_termination_text_is_valid_json_within_the_kubelet_limit():
     text = publish.termination_text({"outcome": "x", "cost_usd": 1.0, "detail": "é" * 5000, "pr": "y" * 5000})
     assert len(text.encode()) <= 3500
