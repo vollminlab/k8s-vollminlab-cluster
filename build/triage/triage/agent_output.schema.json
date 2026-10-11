@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "root_cause", "evidence", "confidence", "class", "app_dir", "patch",
+               "metrics", "injection_suspected", "findings"],
+  "properties": {
+    "summary": {"type": "string", "maxLength": 2000},
+    "root_cause": {"type": "string", "maxLength": 8000},
+    "evidence": {"type": "array", "maxItems": 30, "items": {"type": "string", "maxLength": 2000}},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "class": {"enum": ["oom-memory-limit", "cpu-throttle-limit", "renovate-breakage", "none"]},
+    "app_dir": {"type": ["string", "null"],
+                "pattern": "^clusters/vollminlab-cluster/[a-z0-9-]+/[a-z0-9-]+/app/?$"},
+    "patch": {"type": ["string", "null"], "maxLength": 20000},
+    "metrics": {"type": "object",
+                "propertyNames": {"pattern": "^[a-z_]{1,40}$"},
+                "additionalProperties": {"type": "number"}},
+    "injection_suspected": {"type": "boolean"},
+    "findings": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "namespace", "object", "summary", "detail"],
+        "properties": {
+          "check": {"enum": ["empty-selector-backup", "unprotected-pvc", "inert-kyverno-policy"]},
+          "namespace": {"type": "string", "maxLength": 253},
+          "object": {"type": "string", "maxLength": 400},
+          "summary": {"type": "string", "maxLength": 500},
+          "detail": {"type": "string", "maxLength": 8000}
+        }
+      }
+    }
+  }
+}
