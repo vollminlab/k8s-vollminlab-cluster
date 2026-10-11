@@ -757,8 +757,7 @@ def test_real_git_head_parent_not_origin_main_blocks_the_push(tmp_path, remote):
     assert BRANCH.encode() not in _sh(bare, "branch", "--list").stdout
 
 
-@needs_git
-def test_real_git_a_planted_pth_in_a_home_is_not_loaded_under_python_isolation(tmp_path):
+def test_a_planted_pth_in_a_home_is_not_loaded_under_python_isolation(tmp_path):
     # investigate's HOME is on its own volume, so publish cannot even see it. If it
     # could, `python -I` (the Job's command) would still never load its user site.
     base = getattr(sys, "_base_executable", None) or sys.executable
