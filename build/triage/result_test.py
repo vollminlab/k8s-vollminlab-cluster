@@ -98,3 +98,26 @@ def test_load_result_non_numeric_cost_is_a_failure_record(tmp_path, cost):
 def test_failure_records_whether_cost_is_estimated():
     assert failure("timeout", "x")["cost_estimated"] is False
     assert failure("timeout", "x", 3.0, cost_estimated=True)["cost_estimated"] is True
+
+
+def test_load_result_on_a_directory_is_a_failure_record(tmp_path):
+    (tmp_path / "result.json").mkdir()
+    r = load_result(tmp_path / "result.json")
+    assert r["status"] == "failed" and r["failure_reason"] == "invalid_output"
+    assert "could not be read" in r["detail"]
+
+
+def test_load_result_unreadable_file_is_a_failure_record(tmp_path, monkeypatch):
+    p = tmp_path / "result.json"
+    p.write_text("{}")
+    def denied(self, *a, **kw):
+        raise PermissionError(13, "Permission denied", str(self))
+    monkeypatch.setattr(type(p), "read_text", denied)
+    r = load_result(p)
+    assert r["failure_reason"] == "invalid_output" and "Permission denied" in r["detail"]
+
+
+def test_load_result_invalid_utf8_is_a_failure_record(tmp_path):
+    p = tmp_path / "result.json"
+    p.write_bytes(b'{"status": "\xff"}')
+    assert load_result(p)["failure_reason"] == "invalid_output"

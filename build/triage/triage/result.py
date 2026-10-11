@@ -69,7 +69,14 @@ def load_result(path) -> dict:
     if not p.exists():
         return failure("invalid_output", "investigate produced no result.json")
     try:
-        data = json.loads(p.read_text())
+        text = p.read_text()
+    except OSError as e:
+        # A directory, or a file the publish container may not read.
+        return failure("invalid_output", f"result.json could not be read: {type(e).__name__}: {e}")
+    except ValueError as e:     # not UTF-8
+        return failure("invalid_output", f"result.json is not JSON: {e}")
+    try:
+        data = json.loads(text)
     except ValueError as e:
         return failure("invalid_output", f"result.json is not JSON: {e}")
     if not isinstance(data, dict):
