@@ -152,13 +152,16 @@ def _number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
-def _oom(changes, metrics):
+def _oom(changes, metrics, new_files):
     peak = metrics.get("peak_memory_bytes")
     if peak is None:
         return "oom-memory-limit requires metrics.peak_memory_bytes (measured, not estimated)"
     if not _number(peak) or peak <= 0:
         return f"metrics.peak_memory_bytes must be a finite number of bytes above zero, not {peak!r}"
-    raised_limit = False
+    # Each change belongs to one `resources` block: (file, document, path up to and
+    # including "resources"). A request may move only beside its OWN limit, never
+    # because some other container's limit was raised in the same patch.
+    blocks = {}
     for c in changes:
         if c.path[-3:] not in (_LIMITS_MEMORY, _REQUESTS_MEMORY):
             return f"{c.file}: {c.field} is not a memory request or limit"
@@ -172,12 +175,24 @@ def _oom(changes, metrics):
             return f"{c.file}: {c.field} {c.old} -> {c.new} does not raise it"
         if new_b > MAX_GROWTH * old_b:
             return f"{c.file}: {c.field} {c.old} -> {c.new} more than doubles it"
-        if c.path[-3:] == _LIMITS_MEMORY:
-            raised_limit = True
-            if new_b < HEADROOM * float(peak):
-                return (f"{c.file}: new limit {c.new} is below {HEADROOM}x the measured peak "
-                        f"({float(peak) / 2**20:.0f}Mi)")
-    if not raised_limit:
+        if c.path[-3:] == _LIMITS_MEMORY and new_b < HEADROOM * float(peak):
+            return (f"{c.file}: new limit {c.new} is below {HEADROOM}x the measured peak "
+                    f"({float(peak) / 2**20:.0f}Mi)")
+        blocks.setdefault((c.file, c.doc, c.path[:-2]), []).append(c)
+    for (file, doc, prefix), cs in blocks.items():
+        where = ".".join(prefix)
+        if not any(c.path[-3:] == _LIMITS_MEMORY for c in cs):
+            return f"{file}: {where} changes its memory request without raising its own memory limit"
+        new_doc = yamldiff.keyed_docs(new_files[file])[doc]
+        req = yamldiff.lookup(new_doc, prefix + ("requests", "memory"))
+        lim = yamldiff.lookup(new_doc, prefix + ("limits", "memory"))
+        if req is not MISSING and lim is not MISSING:
+            try:
+                if parse_bytes(req) > parse_bytes(lim):
+                    return f"{file}: {where}: memory request {req} exceeds its limit {lim}"
+            except ValueError as e:
+                return f"{file}: {where}: {e}"
+    if not blocks:
         return "oom-memory-limit must raise a memory limit"
     return None
 
@@ -307,7 +322,7 @@ def _check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_file
     if not app_dir_in_namespace(app_dir, namespace, list_files, read_file):
         return _fail(f"{app_dir} declares nothing in namespace {namespace!r}, so it is not this incident's app")
     rules = {
-        "oom-memory-limit": lambda: _oom(changes, metrics),
+        "oom-memory-limit": lambda: _oom(changes, metrics, new_files),
         "cpu-throttle-limit": lambda: _cpu(changes, metrics),
         "renovate-breakage": lambda: _renovate(changes, file_history, denylist, new_files, edits[0][2][0]),
     }

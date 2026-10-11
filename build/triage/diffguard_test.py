@@ -410,3 +410,50 @@ def test_line_rules_reject_non_ascii_digits(digits):
 def test_parse_bytes_rejects_a_trailing_newline():
     with pytest.raises(ValueError):
         parse_bytes("256Mi\n ")
+
+
+# ---- a request raise is paired with ITS OWN limit, and stays under it -------------
+
+SIDECAR = ("    sidecar:\n      resources:\n        requests:\n          memory: 64Mi\n"
+           "        limits:\n          memory: 128Mi\n")
+CM_SIDECAR = CONFIGMAP.replace("    image:\n", SIDECAR + "    image:\n")
+
+
+def test_oom_request_raise_unpaired_with_its_own_limit_is_rejected():
+    # The main container's limit is raised; the sidecar's REQUEST rides along.
+    files = dict(REPO_FILES, **{CM: CM_SIDECAR})
+    new = CM_SIDECAR.replace("memory: 256Mi", "memory: 400Mi").replace("memory: 64Mi", "memory: 100Mi")
+    r = guard(make_patch(CM, CM_SIDECAR, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI}, files=files)
+    assert not r.ok and "sidecar" in r.reason and "limit" in r.reason
+
+
+def test_oom_request_raised_above_its_limit_is_rejected():
+    cm = CONFIGMAP.replace("memory: 128Mi", "memory: 200Mi")
+    files = dict(REPO_FILES, **{CM: cm})
+    new = cm.replace("memory: 200Mi", "memory: 390Mi").replace("memory: 256Mi", "memory: 380Mi")
+    r = guard(make_patch(CM, cm, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI}, files=files)
+    assert not r.ok and "exceeds" in r.reason
+
+
+def test_oom_paired_raise_within_the_limit_passes():
+    new = CONFIGMAP.replace("memory: 128Mi", "memory: 200Mi").replace("memory: 256Mi", "memory: 400Mi")
+    r = guard(make_patch(CM, CONFIGMAP, new), "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
+    assert r.ok, r.reason
+    assert len(r.changes) == 2
+
+
+def test_oom_every_touched_block_must_raise_its_limit():
+    # Both limits raised would be fine; here only the main limit is, and the
+    # sidecar block is touched (request) without its limit.
+    files = dict(REPO_FILES, **{CM: CM_SIDECAR})
+    new = CM_SIDECAR.replace("memory: 64Mi", "memory: 100Mi")
+    r = guard(make_patch(CM, CM_SIDECAR, new), "oom-memory-limit", {"peak_memory_bytes": 1}, files=files)
+    assert not r.ok
+
+
+def test_oom_two_blocks_each_raising_their_own_limit_pass():
+    files = dict(REPO_FILES, **{CM: CM_SIDECAR})
+    new = CM_SIDECAR.replace("memory: 256Mi", "memory: 400Mi").replace("memory: 128Mi\n    image", "memory: 200Mi\n    image")
+    assert new.count("200Mi") == 1
+    r = guard(make_patch(CM, CM_SIDECAR, new), "oom-memory-limit", {"peak_memory_bytes": 150 * MI}, files=files)
+    assert r.ok, r.reason
