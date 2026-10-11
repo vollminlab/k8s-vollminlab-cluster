@@ -170,3 +170,26 @@ def test_confirming_read_errors_other_than_404_propagate():
     get_owner = kube_owner_lookup(core, apps, _api())
     with pytest.raises(ApiException):
         get_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q")
+
+
+# --- CronJob pods: <cronjob>-<schedule-index>-<5> -----------------------------------
+
+def test_cronjob_pod_is_inferred_and_confirmed():
+    assert infer_owner("Pod", "ns", "backup-29312440-abcde", _exists(("CronJob", "backup"))) == ("CronJob", "backup")
+
+
+def test_cronjob_pattern_wins_over_a_same_named_deployment():
+    # "backup-29312440-abcde" also fits the Deployment pattern (base "backup").
+    exists = _exists(("CronJob", "backup"), ("Deployment", "backup"))
+    assert infer_owner("Pod", "ns", "backup-29312440-abcde", exists) == ("CronJob", "backup")
+    assert exists.calls[0] == ("CronJob", "backup")
+
+
+def test_kube_lookup_confirms_a_deleted_cronjob_pod():
+    core = _api(read_namespaced_pod=_reader({}))
+    apps = _api(read_namespaced_replica_set=_reader({}), read_namespaced_deployment=_reader({"backup": _obj()}),
+                read_namespaced_stateful_set=_reader({}), read_namespaced_daemon_set=_reader({}))
+    batch = _api(read_namespaced_cron_job=_reader({"backup": _obj()}))
+    get_owner = kube_owner_lookup(core, apps, batch)
+    assert resolve("Pod", "velero", "backup-29312440-abcde", get_owner) == ("CronJob", "backup")
+

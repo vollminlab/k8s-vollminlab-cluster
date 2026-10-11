@@ -6,12 +6,18 @@ from kubernetes.client.exceptions import ApiException
 RESOLVABLE = ("Pod", "Job", "ReplicaSet")
 
 # When the object is already gone (crash-looping, evicted and replaced, or a finished
-# Job's pod garbage-collected), its owner is guessed from the generated name, in this
-# order, and adopted only if that controller is confirmed to exist. Without this, the
-# same incident fingerprints as Deployment/x while the pod lives and Pod/x-abc-123 once
-# it is replaced, and dedup misses it.
+# CronJob run's pod garbage-collected), its owner is guessed from the generated name, in
+# this order, and adopted only if that controller is confirmed to exist. Without this,
+# the same incident fingerprints as Deployment/x while the pod lives and Pod/x-abc-123
+# once it is replaced, and dedup misses it.
+#
+# A CronJob's pod is <cronjob>-<scheduled-minute-index>-<5>. It is tried before the
+# Deployment pattern, which it also fits (base <cronjob>, hash <index>). A pod of a
+# bare Job (no CronJob) cannot be inferred: <job>-<5> is indistinguishable from a
+# DaemonSet pod, and a deleted bare Job is not confirmable anyway.
 _NAME_PATTERNS = {
     "Pod": (
+        (re.compile(r"^(?P<base>.+)-\d{8,}-[a-z0-9]{5}$"), "CronJob"),
         (re.compile(r"^(?P<base>.+)-[a-z0-9]{6,10}-[a-z0-9]{5}$"), "Deployment"),
         (re.compile(r"^(?P<base>.+)-\d+$"), "StatefulSet"),
         (re.compile(r"^(?P<base>.+)-[a-z0-9]{5}$"), "DaemonSet"),
