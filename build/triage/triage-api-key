@@ -1,0 +1,5 @@
+#!/bin/sh
+# Claude Code apiKeyHelper. The key is read from the Secret mounted into the
+# investigate container only, so it is never in the environment that the agent's
+# Bash tool calls inherit. Read(//var/run/secrets/**) is denied in managed settings.
+exec cat /var/run/secrets/triage/anthropic/api_key

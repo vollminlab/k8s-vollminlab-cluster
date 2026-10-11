@@ -1,0 +1,42 @@
+{
+  "disableAllHooks": true,
+  "apiKeyHelper": "/usr/local/bin/triage-api-key",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash(kubectl get *)",
+      "Bash(kubectl describe *)",
+      "Bash(kubectl logs *)",
+      "Bash(kubectl top *)",
+      "Bash(kubectl events *)",
+      "Bash(flux get *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(curl -s http://victoria-metrics-single-server.monitoring.svc:8428/*)",
+      "Bash(curl -s 'http://victoria-metrics-single-server.monitoring.svc:8428/*)",
+      "Bash(curl -s http://victoria-metrics-lt-server.monitoring.svc:8428/*)",
+      "Bash(curl -s 'http://victoria-metrics-lt-server.monitoring.svc:8428/*)",
+      "Bash(curl -s http://loki.monitoring.svc:3100/*)",
+      "Bash(curl -s 'http://loki.monitoring.svc:3100/*)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Bash(helm *)",
+      "Bash(kubectl get secret*)",
+      "Bash(kubectl get secrets*)",
+      "Bash(kubectl describe secret*)",
+      "Bash(kubectl exec *)",
+      "Bash(kubectl port-forward *)",
+      "Bash(kubectl cp *)",
+      "Bash(kubectl proxy*)",
+      "Bash(kubectl debug *)",
+      "Read(//var/run/secrets/**)",
+      "Read(//proc/**)",
+      "Read(//etc/triage/**)"
+    ]
+  }
+}
