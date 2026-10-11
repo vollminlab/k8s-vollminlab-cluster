@@ -1,6 +1,6 @@
 import json
 
-from testsupport import (CRASHLOOP_LABELS, FLUX_LABELS, KSM_CRASHLOOP_LABELS, KSM_HPA_LABELS,
+from testsupport import (CRASHLOOP_LABELS, FLUX_LABELS, KSM_CRASHLOOP_LABELS, KSM_HPA_LABELS, KSM_POD, KSM_SERVICE,
                          NODE_FS_LABELS, NODE_NOT_READY_LABELS, am_alert, am_payload)
 from triage.incident import (Incident, fingerprint, from_alertmanager, namespace_of,
                              raw_workload, sweep_finding_fingerprint, sweep_incident)
@@ -104,7 +104,8 @@ def test_ksm_hpa_alert_is_the_hpa():
 
 
 def test_scraper_pod_is_ignored_when_it_is_the_service_pod():
-    labels = {"namespace": "monitoring", "service": "kube-prometheus-stack-kube-state-metrics",
+    labels = {"namespace": "monitoring", "job": "kube-state-metrics",
+              "service": "kube-prometheus-stack-kube-state-metrics",
               "pod": "kube-prometheus-stack-kube-state-metrics-65786d78c5-5fdvb"}
     assert raw_workload(labels) == ("", "")
 
@@ -114,3 +115,22 @@ def test_from_json_ignores_unknown_keys():
     raw = json.loads(inc.to_json())
     raw["added_in_a_later_image"] = {"x": 1}
     assert Incident.from_json(json.dumps(raw)) == inc
+
+
+def test_app_metric_alert_keeps_its_own_pod_when_service_shares_the_name():
+    # An app scraped through a same-named Service: `pod` is the subject, not a scraper.
+    labels = {"alertname": "RadarrQueueStuck", "namespace": "mediastack", "job": "radarr",
+              "service": "radarr", "pod": "radarr-7d9c8b6f5-x2x9q"}
+    [inc] = from_alertmanager(am_payload(am_alert(labels)))
+    assert (inc.workload, inc.namespace) == ("Pod/radarr-7d9c8b6f5-x2x9q", "mediastack")
+
+
+def test_scraper_rule_applies_only_to_ksm_and_node_exporter_jobs():
+    ksm = {"namespace": "monitoring", "job": "kube-state-metrics", "service": KSM_SERVICE, "pod": KSM_POD}
+    assert raw_workload(ksm) == ("", "")
+    ne = {"namespace": "monitoring", "job": "node-exporter", "node": "k8sworker01",
+          "service": "kube-prometheus-stack-prometheus-node-exporter",
+          "pod": "kube-prometheus-stack-prometheus-node-exporter-24mhm"}
+    assert raw_workload(ne) == ("Node", "k8sworker01")
+    no_job = {"namespace": "monitoring", "service": KSM_SERVICE, "pod": KSM_POD}
+    assert raw_workload(no_job) == ("Pod", KSM_POD)

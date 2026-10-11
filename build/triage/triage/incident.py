@@ -75,15 +75,22 @@ def namespace_of(labels: dict) -> str:
     return labels.get("exported_namespace") or labels.get("namespace", "")
 
 
+# Exporters whose `pod`/`service` labels describe themselves rather than the alert's subject.
+_SCRAPER_JOBS = ("kube-state-metrics", "node-exporter")
+
+
 def _subject_pod(labels: dict) -> str:
     """The `pod` the alert is about, or "" if the only pod label is the scraper's."""
     if "exported_namespace" in labels:
         # On a relabelled series plain `pod` is the scraper's own pod.
         return labels.get("exported_pod", "")
     pod, service = labels.get("pod", ""), labels.get("service", "")
-    if service and pod.startswith(service + "-"):
+    if labels.get("job") in _SCRAPER_JOBS and service and pod.startswith(service + "-"):
         # kube-state-metrics / node-exporter: `pod` is the exporter pod behind `service`
         # (e.g. kube-prometheus-stack-kube-state-metrics-65786d78c5-5fdvb), not the subject.
+        # Gated on `job`: an ordinary app scraped through a same-named Service (service
+        # `radarr`, pod `radarr-7d9c8b6f5-x2x9q`) has the same shape, and there `pod`
+        # IS the subject.
         return ""
     return pod
 
