@@ -37,6 +37,11 @@ data:
         env: production
         category: security
       replicas: 3
+      # Per-controller key. A top-level `serviceMonitor:` sat here unread until
+      # 2026-10-11: chart 3.9.0 has no such key, so Kyverno was never scraped and
+      # kyverno_policy_results_total did not exist.
+      serviceMonitor:
+        enabled: true
       priorityClassName: system-cluster-critical
       container:
         extraArgs:
@@ -70,6 +75,8 @@ data:
         env: production
         category: security
       replicas: 1
+      serviceMonitor:
+        enabled: true
       resources:
         requests:
           cpu: 100m
@@ -116,6 +123,8 @@ data:
         app: kyverno-reports-controller
         env: production
         category: security
+      serviceMonitor:
+        enabled: true
       resources:
         requests:
           cpu: 100m
@@ -242,6 +251,3 @@ data:
           expression: "!(request.resource.resource in ['subjectaccessreviews', 'selfsubjectaccessreviews', 'selfsubjectrulesreviews', 'tokenreviews'])"
         - name: exclude-k8s133-network-resources
           expression: "!(request.resource.resource in ['servicecidrs', 'ipaddresses'])"
-
-    serviceMonitor:
-      enabled: true
