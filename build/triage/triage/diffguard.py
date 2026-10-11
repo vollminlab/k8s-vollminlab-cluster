@@ -5,6 +5,7 @@ public repo. It never trusts the model's description of the patch, only the patc
 applied to the real checkout and diffed field by field.
 """
 import difflib
+import math
 import posixpath
 import re
 from dataclasses import dataclass, field
@@ -140,10 +141,18 @@ def app_dir_in_namespace(app_dir, namespace, list_files, read_file) -> bool:
     return False
 
 
+def _number(v) -> bool:
+    """A finite int or float. bool is an int subclass and is refused; so are NaN
+    and inf, which make every comparison against them false or true."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
 def _oom(changes, metrics):
     peak = metrics.get("peak_memory_bytes")
     if peak is None:
         return "oom-memory-limit requires metrics.peak_memory_bytes (measured, not estimated)"
+    if not _number(peak) or peak <= 0:
+        return f"metrics.peak_memory_bytes must be a finite number of bytes above zero, not {peak!r}"
     raised_limit = False
     for c in changes:
         if c.path[-3:] not in (_LIMITS_MEMORY, _REQUESTS_MEMORY):
@@ -171,6 +180,9 @@ def _oom(changes, metrics):
 def _cpu(changes, metrics):
     if "throttled_ratio" not in metrics:
         return "cpu-throttle-limit requires metrics.throttled_ratio (measured)"
+    ratio = metrics["throttled_ratio"]
+    if not _number(ratio) or not 0 <= ratio <= 1:
+        return f"metrics.throttled_ratio must be a finite fraction in [0, 1], not {ratio!r}"
     for c in changes:
         if c.path[-3:] != _LIMITS_CPU:
             return f"{c.file}: {c.field} is not a CPU limit"
@@ -242,6 +254,8 @@ def _check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_file
            file_history, denylist) -> GuardResult:
     if cls not in ("oom-memory-limit", "cpu-throttle-limit", "renovate-breakage"):
         return _fail(f"no diff rules exist for class {cls!r}")
+    if not isinstance(metrics, dict):
+        return _fail(f"metrics must be a mapping, not {type(metrics).__name__}")
     if not app_dir:
         return _fail("no app_dir was given")
     app_dir = app_dir.rstrip("/") + "/"

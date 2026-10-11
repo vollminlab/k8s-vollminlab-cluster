@@ -350,3 +350,31 @@ def test_a_throwing_callback_is_a_failure_not_an_exception():
               {"peak_memory_bytes": 300 * MI}, read_file=boom, list_files=boom,
               file_history=boom, denylist=())
     assert not r.ok and "disk gone" in r.reason
+
+
+# ---- metrics are measured numbers, not whatever the model wrote --------------------
+
+@pytest.mark.parametrize("peak", [float("nan"), float("inf"), 0, -1, True, "300Mi"],
+                         ids=["nan", "inf", "zero", "negative", "bool", "string"])
+def test_oom_peak_must_be_a_finite_positive_number(peak):
+    r = guard(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit", {"peak_memory_bytes": peak})
+    assert not r.ok and "peak_memory_bytes" in r.reason
+
+
+@pytest.mark.parametrize("ratio", [float("nan"), float("inf"), -0.1, 1.5, True, "0.4"],
+                         ids=["nan", "inf", "negative", "above-one", "bool", "string"])
+def test_cpu_throttled_ratio_must_be_a_finite_fraction(ratio):
+    r = guard(cm_patch("        cpu: 500m\n", ""), "cpu-throttle-limit", {"throttled_ratio": ratio})
+    assert not r.ok and "throttled_ratio" in r.reason
+
+
+@pytest.mark.parametrize("ratio", [0, 1, 0.4])
+def test_cpu_throttled_ratio_bounds_are_inclusive(ratio):
+    assert guard(cm_patch("        cpu: 500m\n", ""), "cpu-throttle-limit", {"throttled_ratio": ratio}).ok
+
+
+def test_metrics_must_be_a_mapping():
+    r = check(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit", APP, "demo", None,
+              read_file=REPO_FILES.get, list_files=lambda d: [p for p in REPO_FILES if p.startswith(d)],
+              file_history=lambda f: [], denylist=())
+    assert not r.ok and "metrics" in r.reason
