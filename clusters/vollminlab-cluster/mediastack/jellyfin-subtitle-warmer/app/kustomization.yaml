@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+metadata:
+  name: jellyfin-subtitle-warmer
+namespace: mediastack
+resources:
+  - jellyfin-subtitle-warmer-apikey-externalsecret.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: jellyfin-subtitle-warmer-script
+    files:
+      - warm.py
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app: jellyfin-subtitle-warmer
+    env: production
+    category: media

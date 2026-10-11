@@ -1350,6 +1350,17 @@ All apps in the `mediastack` namespace. Shared SMB storage mounted at the namesp
 | Public signup | Disabled — accounts created manually by admin |
 | Hardware transcoding | Deferred — CPU only for initial deployment |
 
+### jellyfin-subtitle-warmer (Subtitle pre-extraction)
+
+| Parameter | Value |
+|---|---|
+| Kind | CronJob `0 6 * * *` (02:00 US Eastern), `concurrencyPolicy: Forbid`, 5h budget (`MAX_RUNTIME_SECONDS`) |
+| Image | `docker.io/library/python:3.13.15-alpine`; script `warm.py` via `configMapGenerator`, tests in `warm_test.py` (`python3 warm_test.py`, not wired into CI) |
+| Why | First play of an item stalls while Jellyfin extracts its embedded subtitles. That reads the **whole mkv** over CIFS: 74s for GoldenEye (20 GB), 2m25s for Hoppers (24 GB, 46 tracks), measured 2026-10-11. The result is cached in `/config/data/subtitles` |
+| What it does | Walks Movies + Episodes newest first and requests one embedded text subtitle per media source, which makes Jellyfin extract and cache all of that file's tracks. Already-cached items take ~40ms, so each run resumes the backfill where the last one stopped |
+| Auth | Dedicated Jellyfin API key (app name `subtitle-warmer`) via ExternalSecret `jellyfin-subtitle-warmer-apikey` (1Password: "Jellyfin Subtitle Warmer API Key") |
+| Failure signal | Exits 1 only when every request failed (fires `KubeJobFailed`). Per-file failures are logged with their reason |
+
 ### FileBrowser (File drop)
 
 | Parameter | Value |

@@ -16,6 +16,7 @@ resources:
   - ./flaresolverr/app
   - ./seerr/app
   - ./jellyfin/app
+  - ./jellyfin-subtitle-warmer/app
   - ./jellystat-db/app
   - ./jellystat/app
   - ./prowlarr/app
