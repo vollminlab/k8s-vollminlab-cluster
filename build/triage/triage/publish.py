@@ -4,11 +4,18 @@ There is no LLM in this process. It decides, with plain code, what reaches GitHu
 Contract: always exits 0 and always writes a one-line JSON summary to the
 termination log, which the dispatcher reads for outcome and spend accounting.
 
-The checkout under /work/repo was shared with the investigate container, where a
-possibly prompt-injected model ran. So nothing here trusts the working tree:
-the diff guard reads the committed HEAD, a checkout with any modified, untracked
-or ignored file never becomes a PR, git never runs a hook, and the commit is
-compared byte for byte against what the gates approved before it is pushed.
+Containment: the investigate container ran a possibly prompt-injected model, and
+this one holds the GitHub App key. So publish reads exactly one thing investigate
+wrote, /result/result.json (its own read-only volume, size-capped, parsed as data).
+It clones the repo itself, fresh, into /publish, which investigate never mounts;
+every subprocess gets a minimal environment built here (never os.environ), with git
+system and global config off, hooks off and the file/ext transports refused; and
+Python runs isolated (`python -I`), so no user site-packages or .pth file loads.
+
+Inside that clone the old protections still hold, as defence in depth: the diff
+guard reads the committed HEAD, a checkout with any modified, untracked or ignored
+file never becomes a PR, the commit is compared byte for byte against what the
+gates approved, and the branch must be exactly one commit on origin/main.
 """
 import base64
 import json
@@ -28,18 +35,74 @@ from .policy import load_policy
 from .pushover import Pushover
 from .result import load_result
 
-WORK = Path("/work")
+RESULT = Path("/result/result.json")       # the only file read from investigate
+PUBLISH = Path("/publish")                 # publish's own emptyDir: its clone and HOME
+REPO_URL = "https://github.com/{repo}.git"
 TERMINATION_LOG = Path("/dev/termination-log")
 TERMINATION_MAX = 3500          # the kubelet keeps 4096 bytes
 BOT_NAME = "vollminlab-triage[bot]"
 BOT_EMAIL = "vollminlab-triage[bot]@users.noreply.github.com"
 HISTORY_DEPTH = 50
-DIRTY = "✗ checkout was modified by the investigation; refusing to build a PR from it"
+CLONE_TIMEOUT = 180
+# investigate leaves PUBLISH_RESERVE_SECONDS (300) of the Job deadline for this
+# container. Subprocesses get this much of it, which leaves time for the GitHub API
+# calls that post the report. TRIAGE_DEADLINE_EPOCH, if set, overrides it.
+PUBLISH_BUDGET_SECONDS = 240
+API_RESERVE_SECONDS = 60
+SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+DIRTY = "✗ publish's own checkout was not clean; refusing to build a PR from it"
+GATES_PENDING = ("## PR gates\n\nRunning. The gate report follows as a comment on this issue; "
+                 "if none arrives, publish did not finish.")
 
-# On every git invocation. Hooks are files under .git/, which the investigation could
-# have written; fsmonitor is a config-driven command run by `git status`; autocrlf
-# would rewrite the bytes the gates approved on `git add`.
-GIT_SAFETY = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false")
+# On every git invocation, after the minimal environment (clean_env) has already
+# turned off the system and global config. Hooks and fsmonitor are config-driven
+# commands; autocrlf would rewrite the bytes the gates approved on `git add`; the
+# file and ext transports would let a remote URL read local paths or run a command.
+GIT_SAFETY = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false",
+              "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never")
+
+# TEST HOOK ONLY. A local bare repository standing in for GitHub, which also allows the
+# file transport. Production never sets it; main() refuses to run if it is set.
+_TEST_REMOTE = None
+
+
+class DeadlineExceeded(subprocess.TimeoutExpired):
+    """The publish budget ran out before this subprocess could start."""
+
+    def __str__(self):
+        return f"publish's time budget ran out before {self.cmd[0]!r} could run"
+
+
+def clean_env(home: Path) -> dict:
+    """The whole environment of every subprocess: nothing inherited from os.environ.
+    The GitHub token is added to the push alone, by _git(extra_env=...)."""
+    return {"PATH": SAFE_PATH, "HOME": str(home), "LANG": "C.UTF-8",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0"}
+
+
+class SafeRun:
+    """subprocess.run bound to the clean environment and the publish deadline.
+
+    validate.py and leakscan.py receive this as their `run`, so their tools get the
+    same environment and their timeouts are cut to the time that is left."""
+
+    def __init__(self, run, env: dict, deadline: float, clock=time.time):
+        self.run, self.env, self.deadline, self.clock = run, dict(env), deadline, clock
+
+    def __call__(self, cmd, *, extra_env=None, timeout=120, **kw):
+        if "env" in kw:
+            raise TypeError("SafeRun sets the environment itself; pass extra_env")
+        left = self.deadline - self.clock()
+        if left <= 0:
+            raise DeadlineExceeded(cmd, 0)
+        env = dict(self.env, **(extra_env or {}))
+        return self.run(cmd, env=env, timeout=min(timeout, left), **kw)
+
+
+def clone_url(policy) -> str:
+    if _TEST_REMOTE is not None:
+        return Path(_TEST_REMOTE).resolve().as_uri()
+    return REPO_URL.format(repo=policy.cluster_repo)
 
 
 @dataclass
@@ -48,16 +111,36 @@ class Gates:
     shadow: bool = True
     lines: list = field(default_factory=list)
     guard: object = None
+    repo: Path = None            # publish's own clone, once made
+    pr_url: str = None
+    preview: dict = None         # the PR that would have been opened
+    note: str = ""
 
 
 class CommitMismatch(Exception):
     """The commit is not exactly the guarded change; its message is the gate line."""
 
 
-def _git(repo: Path, run, *args, env=None, timeout=120):
+def _git(repo: Path, run, *args, extra_env=None, timeout=120):
     # Bytes, never text=True: universal-newline decoding would turn CRLF into LF.
-    return run(["git", *GIT_SAFETY, "-C", str(repo), *args], capture_output=True, timeout=timeout,
-               env=env if env is not None else dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+    config = GIT_SAFETY + (("-c", "protocol.file.allow=always") if _TEST_REMOTE is not None else ())
+    kw = {"capture_output": True, "timeout": timeout}
+    if extra_env:
+        kw["extra_env"] = extra_env
+    return run(["git", *config, "-C", str(repo), *args], **kw)
+
+
+def clone(workdir: Path, policy, run) -> Path:
+    """A fresh, blobless clone of main into publish's own volume. Blobless, not
+    shallow: renovate-breakage needs the file's history, fetched lazily per blob."""
+    repo = workdir / "repo"
+    if repo.exists() or repo.is_symlink():
+        raise RuntimeError(f"{repo} already exists; publish clones only into an empty directory")
+    cp = _git(workdir, run, "clone", "--filter=blob:none", "--single-branch", "--branch", "main", "--no-tags",
+              "--quiet", "--", clone_url(policy), str(repo), timeout=CLONE_TIMEOUT)
+    if cp.returncode != 0:
+        raise RuntimeError(f"git clone exited {cp.returncode}: {cp.stderr.decode('utf-8', 'replace')[-300:]}")
+    return repo
 
 
 def read_head(repo: Path, path: str, run):
@@ -129,10 +212,17 @@ def _write(repo: Path, path: str, text: str):
         f.write(text)
 
 
-def evaluate_gates(inc, result, policy, repo: Path, run) -> Gates:
-    g = Gates()
+def gates_apply(inc, result) -> bool:
+    return (result["status"] == "ok" and (result.get("class") or "none") != "none" and bool(result.get("patch"))
+            and inc.source != "sweep")
+
+
+def evaluate_gates(inc, result, policy, workdir: Path, run, g: Gates = None) -> Gates:
+    """Gate lines accumulate on `g` as they are decided, so a caller that catches an
+    exception from here still reports every gate that ran before it."""
+    g = g if g is not None else Gates()
     cls = result.get("class", "none")
-    if result["status"] != "ok" or cls == "none" or not result.get("patch") or inc.source == "sweep":
+    if not gates_apply(inc, result):
         return g
     if cls not in policy.classes:
         g.lines.append(f"✗ class `{cls}` is not in triage-policy")
@@ -145,6 +235,11 @@ def evaluate_gates(inc, result, policy, repo: Path, run) -> Gates:
     else:
         ok = False
         g.lines.append(f"✗ confidence is {result['confidence']}, not high")
+    try:
+        g.repo = repo = clone(workdir, policy, run)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        g.lines.append(f"✗ could not make publish's own clone of {policy.cluster_repo}: {str(e)[:300]}")
+        return g
     # Before anything is written. The guard still runs on a dirty checkout, because
     # it reads only HEAD, so the private issue shows its verdict either way.
     clean = checkout_status(repo, run) == []
@@ -184,13 +279,12 @@ def evaluate_gates(inc, result, policy, repo: Path, run) -> Gates:
     return g
 
 
-def _git_env(token: str) -> dict:
+def _token_env(token: str) -> dict:
     # Through the environment (GIT_CONFIG_*), never argv: the token must not appear
     # in a process listing or in a CalledProcessError that quotes the command.
     basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-    return dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_CONFIG_COUNT="1",
-                GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
-                GIT_CONFIG_VALUE_0=f"AUTHORIZATION: basic {basic}")
+    return {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}"}
 
 
 def _verify_commit(repo: Path, baseline: dict, new_files: dict, run):
@@ -222,9 +316,24 @@ def _verify_commit(repo: Path, baseline: dict, new_files: dict, run):
                                  f"what the gates checked); not pushed")
 
 
+def _verify_base(repo: Path, run):
+    """HEAD must be exactly one commit on top of the clone's origin/main: nothing but
+    the guarded commit may ride along to the public repo."""
+    def rev(spec):
+        cp = _git(repo, run, "rev-parse", "--verify", "--quiet", f"{spec}^{{commit}}")
+        return cp.stdout.decode("ascii", "replace").strip() if cp.returncode == 0 else None
+
+    parent, base = rev("HEAD~1"), rev("refs/remotes/origin/main")
+    cp = _git(repo, run, "rev-list", "--count", "refs/remotes/origin/main..HEAD")
+    count = cp.stdout.decode("ascii", "replace").strip() if cp.returncode == 0 else None
+    if parent is None or base is None or parent != base or count != "1":
+        raise CommitMismatch(f"✗ the PR branch is not exactly one commit on origin/main (HEAD~1 {parent}, "
+                             f"origin/main {base}, {count} commit(s) ahead); not pushed")
+
+
 def open_pr(repo: Path, gh, policy, draft: dict, new_files: dict, token: str, run) -> str:
-    def git(*args, env=None):
-        cp = _git(repo, run, *args, env=env, timeout=180)
+    def git(*args, extra_env=None):
+        cp = _git(repo, run, *args, extra_env=extra_env, timeout=180)
         if cp.returncode != 0:
             raise RuntimeError(f"git {args[0] if args[0] != '-c' else 'commit'} exited {cp.returncode}: "
                                f"{cp.stderr.decode('utf-8', 'replace')[-300:]}")
@@ -237,88 +346,135 @@ def open_pr(repo: Path, gh, policy, draft: dict, new_files: dict, token: str, ru
     git("-c", f"user.name={BOT_NAME}", "-c", f"user.email={BOT_EMAIL}", "-c", "commit.gpgsign=false",
         "commit", "-q", "--no-verify", "-m", draft["title"])
     _verify_commit(repo, baseline, new_files, run)
-    # An explicit URL, not `origin`: the remote in .git/config is checkout state too.
-    # Only this call carries the token, so no filter or helper run earlier can see it.
-    git("push", "-q", f"https://github.com/{policy.cluster_repo}.git", f"HEAD:refs/heads/{draft['branch']}",
-        env=_git_env(token))
+    _verify_base(repo, run)
+    # An explicit URL, not `origin`: never a remote read from config. Only this call
+    # carries the token.
+    git("push", "-q", clone_url(policy), f"HEAD:refs/heads/{draft['branch']}", extra_env=_token_env(token))
     return gh.create_pull(policy.cluster_repo, draft["title"], draft["branch"], "main", draft["body"])["html_url"]
 
 
 def _scrub(text: str, run) -> tuple:
-    """Redact secrets from text bound for the private repo. Returns (text, extra labels)."""
+    """Redact secrets from text bound for the private repo. Returns (text, extra labels).
+    A scan that cannot run (including one the deadline cut off) never stops the issue."""
     try:
         hits = leakscan.scan({"text": text}, run)
-    except leakscan.LeakScanError as e:
+    except Exception as e:
         return text + f"\n\n> Leak scan could not run ({e}); this text was posted unscanned.", ["leakscan-failed"]
     if hits:
         return leakscan.redact(text, hits["text"]), ["redacted"]
     return text, []
 
 
-def publish_incident(inc, result, existing_issue, policy, gh, token, notify, repo: Path, run, *, run_id: str) -> dict:
-    gates = evaluate_gates(inc, result, policy, repo, run)
-    cls = result.get("class") or "none"
-    pr_url, preview, note = None, None, ""
-    if gates.guard is not None and gates.guard.ok:
-        draft = {"branch": prbody.branch(cls, inc.fp12, run_id),
-                 "title": prbody.title(cls, result["app_dir"]),
-                 "body": prbody.body(cls, gates.guard.changes, result.get("metrics") or {}, inc.fp12),
-                 "patch": result["patch"]}
+def _gates_and_pr(inc, result, policy, gh, token, workdir: Path, run, run_id: str, g: Gates) -> None:
+    evaluate_gates(inc, result, policy, workdir, run, g)
+    if g.guard is None or not g.guard.ok:
+        return
+    cls = result["class"]
+    draft = {"branch": prbody.branch(cls, inc.fp12, run_id),
+             "title": prbody.title(cls, result["app_dir"]),
+             "body": prbody.body(cls, g.guard.changes, result.get("metrics") or {}, inc.fp12),
+             "patch": result["patch"]}
+    g.preview, g.note = draft, "shadow mode" if g.shadow else "blocked by a gate"
+    try:
+        if leakscan.scan({"pr_body": draft["body"], "patch": draft["patch"]}, run):
+            g.pr_allowed = False
+            g.lines.append("✗ leak scan found a secret in the PR body or patch")
+    except leakscan.LeakScanError as e:
+        g.pr_allowed = False
+        g.lines.append(f"✗ leak scan could not run, so no PR: {e}")
+    if g.pr_allowed and not g.shadow:
         try:
-            if leakscan.scan({"pr_body": draft["body"], "patch": draft["patch"]}, run):
-                gates.pr_allowed = False
-                gates.lines.append("✗ leak scan found a secret in the PR body or patch")
-        except leakscan.LeakScanError as e:
-            gates.pr_allowed = False
-            gates.lines.append(f"✗ leak scan could not run, so no PR: {e}")
-        if gates.pr_allowed and not gates.shadow:
-            try:
-                pr_url = open_pr(repo, gh, policy, draft, gates.guard.new_files, token, run)
-            except CommitMismatch as e:
-                gates.lines.append(str(e))
-            except Exception as e:
-                gates.lines.append(f"✗ opening the PR failed: {type(e).__name__}: {str(e)[:300]}")
-        if pr_url is None:
-            preview = draft
-            note = "shadow mode" if gates.shadow else "blocked by a gate"
+            g.pr_url = open_pr(g.repo, gh, policy, draft, g.guard.new_files, token, run)
+            g.preview = None
+        except CommitMismatch as e:
+            g.lines.append(str(e))
+        except Exception as e:
+            g.lines.append(f"✗ opening the PR failed: {type(e).__name__}: {str(e)[:300]}")
 
-    body, labels = _scrub(issuebody.render_incident(inc, result, gates.lines, pr_url, preview, note), run)
+
+def publish_incident(inc, result, existing_issue, policy, gh, token, notify, workdir: Path, run, *,
+                     run_id: str, deadline: float = None, clock=time.time) -> dict:
+    """Issue first, then the gates, then the gate report as a comment.
+
+    The diagnosis is filed before any gate runs, so nothing the gates do (a crash, a
+    hung tool, the Job deadline) can lose it; any exception in the gates becomes a
+    gate line in the report."""
+    home = workdir / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    run = SafeRun(run, clean_env(home), clock() + PUBLISH_BUDGET_SECONDS if deadline is None else deadline, clock)
+    cls = result.get("class") or "none"
+    pending = gates_apply(inc, result)
+
+    text = issuebody.render_incident(inc, result, [], None, None, "")
+    body, labels = _scrub(text + ("\n\n" + GATES_PENDING if pending else ""), run)
     labels = [f"fp/{inc.fp12}", f"class/{cls}"] + labels
     if result["status"] != "ok":
         labels.append("agent-error")
     if result.get("injection_suspected"):
         labels.append("injection-suspected")
-    if preview is not None and gates.shadow:
-        labels.append("shadow")
-    if pr_url:
-        labels.append("pr-opened")
-
+    title = issuebody.incident_title(inc)
     if existing_issue:
         gh.comment(policy.reports_repo, existing_issue, body)
         gh.add_labels(policy.reports_repo, existing_issue, labels)
-        number, outcome = existing_issue, "commented"
+        number, outcome, issue_url = existing_issue, "commented", None
     else:
-        title = issuebody.incident_title(inc)
         issue = gh.create_issue(policy.reports_repo, title, body, labels)
-        number, outcome = issue["number"], "issue_created"
+        number, outcome, issue_url = issue["number"], "issue_created", issue["html_url"]
+
+    g, problems = Gates(), []
+    if pending:
+        try:
+            _gates_and_pr(inc, result, policy, gh, token, workdir, run, run_id, g)
+        except Exception as e:
+            g.pr_allowed = False
+            g.lines.append(f"✗ publish stopped while running the gates, so no PR: "
+                           f"{type(e).__name__}: {str(e)[:300]}")
+        report, more = _scrub(issuebody.render_gate_report(inc, g.lines, g.pr_url, g.preview, g.note), run)
+        more += (["shadow"] if g.preview is not None and g.shadow else []) + (["pr-opened"] if g.pr_url else [])
+        try:
+            gh.comment(policy.reports_repo, number, report)
+            if more:
+                gh.add_labels(policy.reports_repo, number, more)
+        except Exception as e:
+            problems.append(f"posting the gate report failed: {type(e).__name__}: {e}")
+
+    if outcome == "issue_created":
         headline = (result["summary"].split("\n")[0] if result["status"] == "ok"
                     else f"Investigation failed: {result['failure_reason']}")
-        if pr_url:
-            headline += f"\nPR opened: {pr_url}"
-        notify(f"Triage: {title}", headline, url=issue["html_url"])
+        if g.pr_url:
+            headline += f"\nPR opened: {g.pr_url}"
+        try:
+            notify(f"Triage: {title}", headline, url=issue_url)
+        except Exception as e:
+            problems.append(f"notify failed: {type(e).__name__}: {e}")
     if result["status"] != "ok":
         outcome = "agent_error"
-    return {"outcome": outcome, "cost_usd": float(result.get("cost_usd") or 0.0), "issue": number, "pr": pr_url}
+    out = {"outcome": outcome, "cost_usd": float(result.get("cost_usd") or 0.0), "issue": number, "pr": g.pr_url}
+    if problems:
+        for p in problems:
+            print(p, file=sys.stderr)
+        out["detail"] = "; ".join(problems)[:500]
+    return out
 
 
-def publish_sweep(inc, result, policy, gh, notify, run, now: datetime) -> dict:
+def _notify_quietly(notify, *args, **kw):
+    try:
+        notify(*args, **kw)
+    except Exception as e:
+        print(f"notify failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+def publish_sweep(inc, result, policy, gh, notify, run, now: datetime, *, workdir: Path = PUBLISH,
+                  deadline: float = None, clock=time.time) -> dict:
+    run = SafeRun(run, clean_env(workdir / "home"),
+                  clock() + PUBLISH_BUDGET_SECONDS if deadline is None else deadline, clock)
     cost = float(result.get("cost_usd") or 0.0)
     if result["status"] != "ok":
         body, labels = _scrub(issuebody.render_incident(inc, result, [], None, None, ""), run)
         issue = gh.create_issue(policy.reports_repo, "[sweep] investigation did not complete", body,
                                 [f"fp/{inc.fp12}", "sweep", "agent-error"] + labels)
-        notify("Triage sweep failed", f"{result['failure_reason']}: {result.get('detail', '')[:300]}",
-               url=issue["html_url"])
+        _notify_quietly(notify, "Triage sweep failed",
+                        f"{result['failure_reason']}: {result.get('detail', '')[:300]}", url=issue["html_url"])
         return {"outcome": "agent_error", "cost_usd": cost, "issue": issue["number"]}
     new = 0
     for f in result["findings"]:
@@ -335,8 +491,8 @@ def publish_sweep(inc, result, policy, gh, notify, run, now: datetime) -> dict:
                         [f"fp/{fp[:12]}", "sweep", f"check/{f['check']}"] + labels)
         new += 1
     if new:
-        notify("Triage sweep", f"{new} new finding(s). {result['summary'][:300]}",
-               url=f"https://github.com/{policy.reports_repo}/issues?q=is%3Aopen+label%3Asweep")
+        _notify_quietly(notify, "Triage sweep", f"{new} new finding(s). {result['summary'][:300]}",
+                        url=f"https://github.com/{policy.reports_repo}/issues?q=is%3Aopen+label%3Asweep")
     return {"outcome": "sweep_ok", "cost_usd": cost, "findings": len(result["findings"]), "new": new}
 
 
@@ -371,25 +527,40 @@ def run_id_from(environ, clock=time.time) -> str:
     return rid if prbody._RUN_ID.fullmatch(rid) else str(int(clock()))
 
 
+def deadline_from(environ, start: float) -> float:
+    """When subprocesses must be done: TRIAGE_DEADLINE_EPOCH (the Job's own deadline)
+    less time for the GitHub calls, if set and sane; else a fixed budget from start."""
+    raw = environ.get("TRIAGE_DEADLINE_EPOCH", "")
+    if raw.isascii() and raw.isdigit():
+        return float(raw) - API_RESERVE_SECONDS
+    return start + PUBLISH_BUDGET_SECONDS
+
+
 def main() -> int:
+    start = time.time()
     summary = {"outcome": "publish_failed", "cost_usd": 0.0}
     notify, result = None, None
     try:
+        if _TEST_REMOTE is not None:
+            raise RuntimeError("the test-only remote hook is set; refusing to publish")
         policy = load_policy()
         inc = Incident.from_json(os.environ["TRIAGE_INCIDENT"])
         existing = os.environ.get("TRIAGE_EXISTING_ISSUE") or None
-        result = load_result(WORK / "result.json")
+        result = load_result(RESULT)
         summary["cost_usd"] = float(result.get("cost_usd") or 0.0)
         notify = Pushover.from_dir().send
         repos = [policy.reports_repo.split("/", 1)[1], policy.cluster_repo.split("/", 1)[1]]
         token = GitHubApp.from_dir().token(
             repos, {"issues": "write", "contents": "write", "pull_requests": "write", "metadata": "read"})
         gh = GitHub(lambda: token)
+        deadline = deadline_from(os.environ, start)
         if inc.source == "sweep":
-            summary = publish_sweep(inc, result, policy, gh, notify, subprocess.run, datetime.now(timezone.utc))
+            summary = publish_sweep(inc, result, policy, gh, notify, subprocess.run, datetime.now(timezone.utc),
+                                    workdir=PUBLISH, deadline=deadline)
         else:
             summary = publish_incident(inc, result, int(existing) if existing else None, policy, gh, token,
-                                       notify, WORK / "repo", subprocess.run, run_id=run_id_from(os.environ))
+                                       notify, PUBLISH, subprocess.run, run_id=run_id_from(os.environ),
+                                       deadline=deadline)
     except Exception as e:
         summary["detail"] = f"{type(e).__name__}: {e}"[:500]
         print(f"publish failed: {summary['detail']}", file=sys.stderr)

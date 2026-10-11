@@ -34,6 +34,19 @@ def render_incident(inc, result, gate_lines, pr_url, preview, preview_note) -> s
     return "\n".join(lines)
 
 
+def render_gate_report(inc, gate_lines, pr_url, preview, preview_note) -> str:
+    """The comment posted after the gates ran: the issue itself was filed first."""
+    lines = [f"<!-- fp:{inc.fingerprint} gate-report -->", "## PR gates"]
+    lines += [f"- {g}" for g in gate_lines] or ["- (no gate ran)"]
+    if pr_url:
+        lines += ["", f"**PR opened:** {pr_url}"]
+    elif preview:
+        lines += ["", f"## The PR that would have been opened ({preview_note})", "",
+                  f"Branch `{preview['branch']}`  ", f"Title `{preview['title']}`", "",
+                  preview["body"], "", "```diff", preview["patch"], "```"]
+    return "\n".join(lines)
+
+
 def render_finding(finding: dict, fp: str) -> tuple:
     title = f"[sweep] {finding['check']}: {finding['namespace']}/{finding['object']}"[:200]
     body = "\n".join([f"<!-- fp:{fp} -->", f"**{finding['summary']}**", "", finding["detail"]])

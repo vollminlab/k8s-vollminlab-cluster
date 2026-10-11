@@ -38,3 +38,12 @@ def test_finding():
     title, body = issuebody.render_finding(f, "f" * 64)
     assert title == "[sweep] unprotected-pvc: ns/PersistentVolumeClaim/a"
     assert body.startswith("<!-- fp:" + "f" * 64 + " -->") and "d" in body
+
+
+def test_gate_report_carries_the_gates_and_the_preview():
+    preview = {"branch": "fix/b", "title": "fix(x): y", "body": "PRBODY", "patch": "--- a/x"}
+    text = issuebody.render_gate_report(INC, ["✓ g1", "✗ g2"], None, preview, "shadow mode")
+    assert text.startswith(f"<!-- fp:{INC.fingerprint} gate-report -->")
+    assert "- ✓ g1" in text and "- ✗ g2" in text and "PRBODY" in text and "(shadow mode)" in text
+    opened = issuebody.render_gate_report(INC, ["✓ g1"], "https://x/pull/1", None, "")
+    assert "**PR opened:** https://x/pull/1" in opened and "would have been opened" not in opened
