@@ -170,11 +170,11 @@ def workdir(tmp_path):
     return d
 
 
-def go(workdir, result, policy=None, existing=None, runner=None, notify=None, **kw):
+def go(workdir, result, policy=None, existing=None, runner=None, notify=None, cluster_gh=None, **kw):
     gh, runner, notes = FakeGitHub(), runner or Runner(workdir), []
     out = publish.publish_incident(INC, result, existing, policy or make_policy(), gh, "ghs_SECRET_TOKEN",
                                    notify or (lambda t, m, url=None: notes.append((t, m, url))), workdir, runner,
-                                   run_id=RUN, **kw)
+                                   run_id=RUN, cluster_gh=cluster_gh or gh, **kw)
     return out, gh, runner, notes
 
 
@@ -226,7 +226,7 @@ def test_the_issue_is_filed_before_any_gate_runs(workdir):
     runner = Runner(workdir, log=log)
     gh = FakeGitHub(log=log)
     publish.publish_incident(INC, success(AGENT_OK, 0.5, []), None, make_policy(**LIVE), gh, "t",
-                             lambda *a, **k: None, workdir, runner, run_id=RUN)
+                             lambda *a, **k: None, workdir, runner, run_id=RUN, cluster_gh=gh)
     first_git = next(i for i, e in enumerate(log) if e.startswith("git "))
     assert log.index("create_issue") < first_git
     assert log[-1] == "comment"                                      # the report comes last
@@ -387,7 +387,7 @@ def test_a_failed_report_comment_keeps_the_outcome(workdir):
             raise ConnectionError("github down")
     gh = NoComment()
     out = publish.publish_incident(INC, success(AGENT_OK, 0.5, []), None, make_policy(), gh, "t",
-                                   lambda *a, **k: None, workdir, Runner(workdir), run_id=RUN)
+                                   lambda *a, **k: None, workdir, Runner(workdir), run_id=RUN, cluster_gh=gh)
     assert out["outcome"] == "issue_created" and "gate report failed" in out["detail"]
 
 
@@ -628,6 +628,65 @@ def test_main_refuses_to_run_with_the_test_remote_hook_set(tmp_path, monkeypatch
     assert summary["outcome"] == "publish_failed" and "test-only remote" in summary["detail"]
 
 
+def test_issues_use_the_reports_client_and_the_pr_uses_the_cluster_client(workdir):
+    cluster = FakeGitHub()
+    out, reports, runner, _ = go(workdir, success(AGENT_OK, 0.5, []), policy=make_policy(**LIVE), cluster_gh=cluster)
+    assert out["pr"] and cluster.kinds() == ["create_pull"]
+    assert "create_pull" not in reports.kinds() and "create_issue" in reports.kinds()
+    assert pushes(runner)
+
+
+ISSUES_PERMS = {"issues": "write", "metadata": "read"}
+CLUSTER_PERMS = {"contents": "write", "pull_requests": "write", "metadata": "read"}
+
+
+def _main_with_fakes(tmp_path, monkeypatch, inc, result):
+    minted, clients = [], []
+
+    class FakeApp:
+        def token(self, repositories, permissions):
+            minted.append((list(repositories), dict(permissions)))
+            return f"tok-{len(minted)}"
+
+    class RecordingGitHub(FakeGitHub):
+        def __init__(self, provider):
+            super().__init__()
+            self.token = provider()
+            clients.append(self)
+
+    monkeypatch.setattr(publish, "TERMINATION_LOG", tmp_path / "termination-log")
+    monkeypatch.setattr(publish, "RESULT", tmp_path / "result.json")
+    monkeypatch.setattr(publish, "PUBLISH", tmp_path / "publish")
+    (tmp_path / "publish").mkdir()
+    monkeypatch.setattr(publish, "load_policy", lambda: make_policy())
+    monkeypatch.setattr(publish.GitHubApp, "from_dir", classmethod(lambda cls, *a, **k: FakeApp()))
+    monkeypatch.setattr(publish.Pushover, "from_dir", classmethod(
+        lambda cls, *a, **k: type("P", (), {"send": lambda self, *a, **k: None})()))
+    monkeypatch.setattr(publish, "GitHub", RecordingGitHub)
+    monkeypatch.setenv("TRIAGE_INCIDENT", inc.to_json())
+    monkeypatch.delenv("TRIAGE_EXISTING_ISSUE", raising=False)
+    (tmp_path / "result.json").write_text(json.dumps(result))
+    assert publish.main() == 0
+    return minted, clients, json.loads((tmp_path / "termination-log").read_text())
+
+
+def test_main_mints_one_token_per_repository_with_only_its_permissions(tmp_path, monkeypatch):
+    minted, clients, summary = _main_with_fakes(tmp_path, monkeypatch, INC, failure("timeout", "killed", 1.0))
+    assert summary["outcome"] == "agent_error"
+    assert minted == [(["triage-reports"], ISSUES_PERMS), (["k8s-vollminlab-cluster"], CLUSTER_PERMS)]
+    for repos, _ in minted:
+        assert len(repos) == 1
+    issue_clients = [c for c in clients if "create_issue" in c.kinds()]
+    assert [c.token for c in issue_clients] == ["tok-1"]           # the issues-only token
+
+
+def test_a_sweep_mints_only_the_issues_token(tmp_path, monkeypatch):
+    result = success(dict(AGENT_OK, **{"class": "none", "patch": None, "app_dir": None, "findings": []}), 0.2, [])
+    minted, _, summary = _main_with_fakes(tmp_path, monkeypatch, Incident("sweep", "nightly-sweep", "", ""), result)
+    assert summary["outcome"] == "sweep_ok"
+    assert minted == [(["triage-reports"], ISSUES_PERMS)]
+
+
 def test_publish_reads_result_json_from_the_result_volume_only():
     assert publish.RESULT == Path("/result/result.json")
     assert not publish.PUBLISH.is_relative_to(publish.RESULT.parent)
@@ -738,7 +797,7 @@ def real_go(tmp_path, result, policy=None, runner=None):
     workdir = tmp_path / "publish"
     workdir.mkdir(exist_ok=True)
     out = publish.publish_incident(INC, result, None, policy or make_policy(**LIVE), gh, "ghs_SECRET_TOKEN",
-                                   lambda *a, **k: None, workdir, runner, run_id=RUN)
+                                   lambda *a, **k: None, workdir, runner, run_id=RUN, cluster_gh=gh)
     return out, gh, runner, workdir / "repo"
 
 

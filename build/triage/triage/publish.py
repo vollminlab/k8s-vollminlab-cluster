@@ -41,6 +41,8 @@ REPO_URL = "https://github.com/{repo}.git"
 TERMINATION_LOG = Path("/dev/termination-log")
 TERMINATION_MAX = 3500          # the kubelet keeps 4096 bytes
 BOT_NAME = "vollminlab-triage[bot]"
+ISSUES_PERMISSIONS = {"issues": "write", "metadata": "read"}                              # reports repo only
+CLUSTER_PERMISSIONS = {"contents": "write", "pull_requests": "write", "metadata": "read"}  # cluster repo only
 BOT_EMAIL = "vollminlab-triage[bot]@users.noreply.github.com"
 HISTORY_DEPTH = 50
 CLONE_TIMEOUT = 180
@@ -384,7 +386,7 @@ def _scrub(text: str, run) -> tuple:
     return _fit(text), []
 
 
-def _gates_and_pr(inc, result, policy, gh, token, workdir: Path, run, run_id: str, g: Gates) -> None:
+def _gates_and_pr(inc, result, policy, cluster_gh, token, workdir: Path, run, run_id: str, g: Gates) -> None:
     evaluate_gates(inc, result, policy, workdir, run, g)
     if g.guard is None or not g.guard.ok:
         return
@@ -403,7 +405,7 @@ def _gates_and_pr(inc, result, policy, gh, token, workdir: Path, run, run_id: st
         g.lines.append(f"✗ leak scan could not run, so no PR: {e}")
     if g.pr_allowed and not g.shadow:
         try:
-            g.pr_url = open_pr(g.repo, gh, policy, draft, g.guard.new_files, token, run)
+            g.pr_url = open_pr(g.repo, cluster_gh, policy, draft, g.guard.new_files, token, run)
             g.preview = None
         except CommitMismatch as e:
             g.lines.append(str(e))
@@ -412,8 +414,12 @@ def _gates_and_pr(inc, result, policy, gh, token, workdir: Path, run, run_id: st
 
 
 def publish_incident(inc, result, existing_issue, policy, gh, token, notify, workdir: Path, run, *,
-                     run_id: str, deadline: float = None, clock=time.time) -> dict:
+                     run_id: str, cluster_gh, deadline: float = None, clock=time.time) -> dict:
     """Issue first, then the gates, then the gate report as a comment.
+
+    Two GitHub identities: `gh` holds an issues-only token for the reports repo and
+    files everything there; `cluster_gh` and `token` (contents + pull_requests on the
+    cluster repo only) are used for the push and the PR and nothing else.
 
     The diagnosis is filed before any gate runs, so nothing the gates do (a crash, a
     hung tool, the Job deadline) can lose it; any exception in the gates becomes a
@@ -443,7 +449,7 @@ def publish_incident(inc, result, existing_issue, policy, gh, token, notify, wor
     g, problems = Gates(), []
     if pending:
         try:
-            _gates_and_pr(inc, result, policy, gh, token, workdir, run, run_id, g)
+            _gates_and_pr(inc, result, policy, cluster_gh, token, workdir, run, run_id, g)
         except Exception as e:
             g.pr_allowed = False
             g.lines.append(f"✗ publish stopped while running the gates, so no PR: "
@@ -568,18 +574,20 @@ def main() -> int:
         result = load_result(RESULT)
         summary["cost_usd"] = float(result.get("cost_usd") or 0.0)
         notify = Pushover.from_dir().send
-        repos = [policy.reports_repo.split("/", 1)[1], policy.cluster_repo.split("/", 1)[1]]
-        token = GitHubApp.from_dir().token(
-            repos, {"issues": "write", "contents": "write", "pull_requests": "write", "metadata": "read"})
-        gh = GitHub(lambda: token)
+        app = GitHubApp.from_dir()
+        # One token per repository, each with only what is done there: a bug or a
+        # confused-deputy path that writes to the wrong repo fails at GitHub.
+        issues_token = app.token([policy.reports_repo.split("/", 1)[1]], ISSUES_PERMISSIONS)
+        gh = GitHub(lambda: issues_token)
         deadline = deadline_from(os.environ, start)
-        if inc.source == "sweep":
+        if inc.source == "sweep":           # never opens a PR, so never holds a cluster token
             summary = publish_sweep(inc, result, policy, gh, notify, subprocess.run, datetime.now(timezone.utc),
                                     workdir=PUBLISH, deadline=deadline)
         else:
-            summary = publish_incident(inc, result, int(existing) if existing else None, policy, gh, token,
+            cluster_token = app.token([policy.cluster_repo.split("/", 1)[1]], CLUSTER_PERMISSIONS)
+            summary = publish_incident(inc, result, int(existing) if existing else None, policy, gh, cluster_token,
                                        notify, PUBLISH, subprocess.run, run_id=run_id_from(os.environ),
-                                       deadline=deadline)
+                                       cluster_gh=GitHub(lambda: cluster_token), deadline=deadline)
     except Exception as e:
         summary["detail"] = f"{type(e).__name__}: {e}"[:500]
         print(f"publish failed: {summary['detail']}", file=sys.stderr)
