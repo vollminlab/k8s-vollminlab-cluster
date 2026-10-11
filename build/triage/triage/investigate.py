@@ -64,9 +64,10 @@ def _cost(out: dict):
 
 
 def interpret(stdout: str, stderr: str, per_run_cap: float) -> dict:
-    """Map the CLI's JSON to a result record. Where the CLI's cost is unknown on an
-    invalid_output failure, the run is charged `per_run_cap` (cost_estimated) so the
-    daily budget sees it."""
+    """Map the CLI's JSON to a result record. Wherever the CLI's cost is unknown on a
+    failure, the run is charged `per_run_cap` (cost_estimated) so the daily budget
+    sees it: a budget_cap run spent the cap by definition, and a max_turns or
+    api_error run very likely spent real money. A reported cost always wins."""
     try:
         out = json.loads(stdout)
     except ValueError:
@@ -76,23 +77,26 @@ def interpret(stdout: str, stderr: str, per_run_cap: float) -> dict:
                        f"claude did not print a JSON object. stdout={stdout[:1500]!r} stderr={stderr[-1500:]!r}",
                        per_run_cap, cost_estimated=True)
     known = _cost(out)
-    cost = known or 0.0
+
+    def failed(reason, detail):
+        if known is None:
+            return failure(reason, detail, per_run_cap, cost_estimated=True)
+        return failure(reason, detail, known)
+
     subtype = out.get("subtype")
     errors = "; ".join(str(e) for e in out.get("errors") or [])
     if subtype == "error_max_turns":
-        return failure("max_turns", errors, cost)
+        return failed("max_turns", errors)
     if subtype == "error_max_budget_usd":
-        return failure("budget_cap", errors, cost)
+        return failed("budget_cap", errors)
     if out.get("is_error") or subtype != "success":
-        return failure("api_error", f"subtype={subtype} api_error_status={out.get('api_error_status')} "
-                                    f"errors={errors} result={str(out.get('result'))[:500]}", cost)
+        return failed("api_error", f"subtype={subtype} api_error_status={out.get('api_error_status')} "
+                                   f"errors={errors} result={str(out.get('result'))[:500]}")
     structured = out.get("structured_output")
     problems = validate_agent_output(structured)
     if problems:
-        if known is None:
-            return failure("invalid_output", "; ".join(problems), per_run_cap, cost_estimated=True)
-        return failure("invalid_output", "; ".join(problems), known)
-    return success(structured, cost, _denials(out))
+        return failed("invalid_output", "; ".join(problems))
+    return success(structured, known or 0.0, _denials(out))
 
 
 def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run, clock=time.monotonic) -> dict:

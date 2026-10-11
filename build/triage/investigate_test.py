@@ -62,6 +62,31 @@ def test_cli_failures_map_to_reasons_and_keep_cost(tmp_path, subtype, reason):
     assert (r["status"], r["failure_reason"], r["cost_usd"]) == ("failed", reason, 0.42)
 
 
+@pytest.mark.parametrize("subtype,reason", [("error_max_turns", "max_turns"),
+                                            ("error_max_budget_usd", "budget_cap"),
+                                            ("error_during_execution", "api_error")])
+@pytest.mark.parametrize("cost", ["missing", None, "lots"])
+def test_cli_failures_without_a_reported_cost_are_charged_the_cap(tmp_path, subtype, reason, cost):
+    out = json.loads(cli(subtype=subtype, structured=None, errors=["boom"]))
+    if cost == "missing":
+        del out["total_cost_usd"]
+    else:
+        out["total_cost_usd"] = cost
+    r = run(tmp_path, Runner(json.dumps(out)))
+    assert r["failure_reason"] == reason
+    assert (r["cost_usd"], r["cost_estimated"]) == (3.0, True)
+
+
+def test_cli_failure_with_a_reported_zero_cost_keeps_it(tmp_path):
+    r = run(tmp_path, Runner(cli(subtype="error_during_execution", structured=None, cost=0)))
+    assert (r["failure_reason"], r["cost_usd"], r["cost_estimated"]) == ("api_error", 0.0, False)
+
+
+def test_cli_failures_with_a_reported_cost_are_not_estimated(tmp_path):
+    r = run(tmp_path, Runner(cli(subtype="error_max_turns", structured=None)))
+    assert (r["cost_usd"], r["cost_estimated"]) == (0.42, False)
+
+
 def test_api_error_status_is_reported(tmp_path):
     r = run(tmp_path, Runner(cli(subtype="success", is_error=True, api_error_status=429)))
     assert r["failure_reason"] == "api_error" and "429" in r["detail"]
