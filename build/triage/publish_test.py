@@ -490,9 +490,40 @@ def test_sweep_files_new_findings_and_skips_recent_ones(workdir):
                                 lambda t, m, url=None: notes.append(t), runner,
                                 datetime(2026, 10, 11, 8, tzinfo=timezone.utc), workdir=workdir)
     assert gh.kinds() == ["create_issue"]
-    assert out == {"outcome": "sweep_ok", "cost_usd": 0.8, "findings": 2, "new": 1}
+    assert out == {"outcome": "sweep_ok", "cost_usd": 0.8, "findings": 2, "new": 1, "capped": 0}
     assert notes == ["Triage sweep"]
     assert all(kw["env"] == publish.clean_env(workdir / "home") for _, kw in runner.calls)
+
+
+def test_sweep_files_at_most_ten_new_issues_and_counts_the_rest_as_capped(workdir):
+    assert publish.MAX_NEW_SWEEP_ISSUES == 10
+    findings = [{"check": "unprotected-pvc", "namespace": "a", "object": f"PersistentVolumeClaim/p{i}",
+                 "summary": "s", "detail": "d"} for i in range(13)]
+    stale = dict(findings[0], object="PersistentVolumeClaim/old")
+    fp_old = sweep_finding_fingerprint("unprotected-pvc", "a", "PersistentVolumeClaim/old")[:12]
+    gh = FakeGitHub(existing={fp_old: {"number": 3, "updated_at": "2026-10-01T06:00:00Z"}})
+    notes = []
+    result = success(dict(AGENT_OK, **{"class": "none", "patch": None, "app_dir": None,
+                                       "findings": findings + [stale]}), 0.8, [])
+    out = publish.publish_sweep(Incident("sweep", "nightly-sweep", "", ""), result, make_policy(), gh,
+                                lambda t, m, url=None: notes.append(m), Runner(workdir),
+                                datetime(2026, 10, 11, 8, tzinfo=timezone.utc), workdir=workdir)
+    assert gh.kinds().count("create_issue") == 10
+    assert gh.kinds().count("comment") == 1               # an existing issue is not a new one
+    assert out == {"outcome": "sweep_ok", "cost_usd": 0.8, "findings": 14, "new": 10, "capped": 3}
+    assert len(notes) == 1 and "10 new finding(s)" in notes[0]
+    assert "3 more new finding(s) not filed" in notes[0].splitlines()[-1]
+
+
+def test_sweep_under_the_cap_reports_zero_capped(workdir):
+    f1 = {"check": "unprotected-pvc", "namespace": "a", "object": "PersistentVolumeClaim/x",
+          "summary": "s", "detail": "d"}
+    notes = []
+    result = success(dict(AGENT_OK, **{"class": "none", "patch": None, "app_dir": None, "findings": [f1]}), 0.8, [])
+    out = publish.publish_sweep(Incident("sweep", "nightly-sweep", "", ""), result, make_policy(), FakeGitHub(),
+                                lambda t, m, url=None: notes.append(m), Runner(workdir),
+                                datetime(2026, 10, 11, 8, tzinfo=timezone.utc), workdir=workdir)
+    assert out["capped"] == 0 and "not filed" not in notes[0]
 
 
 def test_sweep_notify_failure_keeps_the_outcome(workdir):

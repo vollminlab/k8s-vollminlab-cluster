@@ -57,6 +57,9 @@ DIRTY = "✗ publish's own checkout was not clean; refusing to build a PR from i
 # create_issue would lose the diagnosis outright. Every body is cut to this, after
 # redaction, leaving room for GitHub's own counting of what we send.
 MAX_BODY_CHARS = 60000
+# A sweep's findings are model output; a flood of them (or an injected one) must not
+# become a flood of issues and pages. The rest are counted as `capped`.
+MAX_NEW_SWEEP_ISSUES = 10
 GATES_PENDING = ("## PR gates\n\nRunning. The gate report follows as a comment on this issue; "
                  "if none arrives, publish did not finish.")
 
@@ -501,24 +504,33 @@ def publish_sweep(inc, result, policy, gh, notify, run, now: datetime, *, workdi
         _notify_quietly(notify, "Triage sweep failed",
                         f"{result['failure_reason']}: {result.get('detail', '')[:300]}", url=issue["html_url"])
         return {"outcome": "agent_error", "cost_usd": cost, "issue": issue["number"]}
-    new = 0
+    new = capped = 0
     for f in result["findings"]:
         fp = sweep_finding_fingerprint(f["check"], f["namespace"], f["object"])
-        title, body = issuebody.render_finding(f, fp)
-        body, labels = _scrub(body, run)
         existing = gh.find_open_issue(policy.reports_repo, fp[:12])
         if existing:
             updated = datetime.fromisoformat(existing["updated_at"].replace("Z", "+00:00"))
             if now - updated >= timedelta(hours=policy.reinvestigate_after_hours):
+                body, _ = _scrub(issuebody.render_finding(f, fp)[1], run)
                 gh.comment(policy.reports_repo, existing["number"], body)
             continue
+        if new >= MAX_NEW_SWEEP_ISSUES:
+            capped += 1
+            continue
+        title, body = issuebody.render_finding(f, fp)
+        body, labels = _scrub(body, run)
         gh.create_issue(policy.reports_repo, title, body,
                         [f"fp/{fp[:12]}", "sweep", f"check/{f['check']}"] + labels)
         new += 1
     if new:
-        _notify_quietly(notify, "Triage sweep", f"{new} new finding(s). {result['summary'][:300]}",
+        message = f"{new} new finding(s). {result['summary'][:300]}"
+        if capped:
+            message += (f"\n{capped} more new finding(s) not filed: at most {MAX_NEW_SWEEP_ISSUES} "
+                        f"new issues per sweep. A later sweep files them if they persist.")
+        _notify_quietly(notify, "Triage sweep", message,
                         url=f"https://github.com/{policy.reports_repo}/issues?q=is%3Aopen+label%3Asweep")
-    return {"outcome": "sweep_ok", "cost_usd": cost, "findings": len(result["findings"]), "new": new}
+    return {"outcome": "sweep_ok", "cost_usd": cost, "findings": len(result["findings"]), "new": new,
+            "capped": capped}
 
 
 def termination_text(summary: dict) -> str:

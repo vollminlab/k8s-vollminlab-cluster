@@ -192,7 +192,7 @@ The sweep incident's prompt comes from the `sweep_checklist` in `triage-policy`.
 - **Unprotected PVCs.** PVCs protected by neither Velero nor VolSync, using the per-pod mapping method in `velero.md`. Mapping per namespace collapses volume names and gives false results.
 - **Inert Kyverno policies.** ClusterPolicies with zero `pass` results, read from PolicyReports. This check leaves the sweep once the PromQL rule below exists.
 
-Each finding becomes its own incident with fingerprint `sha256("sweep", check, namespace, object)` and goes through deduplication normally. **Sweep findings never open PRs**, regardless of class. They always get diagnosis issues.
+Each finding becomes its own incident with fingerprint `sha256("sweep", check, namespace, object)` and goes through deduplication normally. **Sweep findings never open PRs**, regardless of class. They always get diagnosis issues. At most **10 new issues** are filed per sweep run; findings past that are not filed, are named as a count on one extra line of the Pushover message, and are reported as `capped` in the termination summary. A later sweep files them if they persist.
 
 ---
 
