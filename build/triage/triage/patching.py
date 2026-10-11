@@ -23,8 +23,18 @@ def _path(header: str):
     return p[2:] if p.startswith(("a/", "b/")) else p
 
 
+def _lines(text: str) -> list:
+    """Split on "\n" only. str.splitlines() also breaks on \r, \x0b, \x0c, \x1c-\x1e,
+    \x85, \u2028 and \u2029, which would shift line numbers and, rejoined with "\n",
+    rewrite bytes outside every hunk. A final newline does not start another line."""
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def parse(text: str) -> list:
-    lines = text.splitlines()
+    lines = _lines(text)
     files, cur, i = [], None, 0
     while i < len(lines):
         line = lines[i]
@@ -63,7 +73,7 @@ def parse(text: str) -> list:
 
 
 def apply(original: str, fp: FilePatch) -> str:
-    src = original.splitlines()
+    src = _lines(original)
     out, pos = [], 0
     for old_start, body in fp.hunks:
         start = max(old_start - 1, 0)

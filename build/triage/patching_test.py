@@ -44,3 +44,27 @@ def test_garbage_is_rejected():
         parse("--- a/x\n@@ -1 +1 @@\n")
     with pytest.raises(PatchError):
         parse("--- a/x\n+++ b/x\n@@ -1 +1 @@\n?weird\n")
+
+
+# ---- bytes outside the hunks are preserved exactly ---------------------------------
+# str.splitlines() also breaks on \r, \x0b, \x0c, \x1c-\x1e, \x85,   and  ,
+# and rejoining with \n rewrote a file's line endings and shifted line numbers.
+
+ODD = "a: 1\r\nb: 'x y'\nc: '\x0c\x85'\nd: 4\ne: 5\nf: 6\ng: 7\n"
+
+
+def test_unrelated_hunk_leaves_crlf_and_unicode_separators_untouched():
+    [fp] = parse("--- a/x.yaml\n+++ b/x.yaml\n@@ -6,2 +6,2 @@\n f: 6\n-g: 7\n+g: 8\n")
+    assert apply(ODD, fp) == ODD.replace("g: 7", "g: 8")
+
+
+def test_a_hunk_on_a_crlf_line_keeps_its_carriage_return():
+    [fp] = parse("--- a/x.yaml\n+++ b/x.yaml\n@@ -1,2 +1,2 @@\n-a: 1\r\n+a: 2\r\n b: 'x y'\n")
+    assert apply(ODD, fp) == ODD.replace("a: 1", "a: 2")
+
+
+def test_empty_and_unterminated_files():
+    [fp] = parse("--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n+a: 1\n")
+    assert apply("", fp) == "a: 1"
+    [fp] = parse("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a: 1\n+a: 2\n")
+    assert apply("a: 1\n", fp) == "a: 2\n"
