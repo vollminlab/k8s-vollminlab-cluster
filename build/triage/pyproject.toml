@@ -12,6 +12,11 @@ name = "triage"
 version = "0.1.0"
 requires-python = ">=3.12"
 
+# The agent's only route to VictoriaMetrics and Loki (managed-settings.json allows it
+# and denies curl/wget). Installed into the image's PATH by `pip install /tmp/src`.
+[project.scripts]
+triage-query = "triage.query:main"
+
 [tool.setuptools]
 packages = ["triage"]
 
