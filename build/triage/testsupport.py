@@ -1,0 +1,152 @@
+"""Fixtures shared by the *_test.py modules. Not collected by pytest (no test_ functions)."""
+import copy
+import difflib
+
+from triage.policy import parse_policy
+
+POLICY_RAW = {
+    "model": "claude-opus-5-5",
+    "max_turns": 40,
+    "per_run_budget_usd": 3,
+    "daily_budget_usd": 15,
+    "queue_cap": 10,
+    "reinvestigate_after_hours": 24,
+    "job_deadline_seconds": 2400,
+    "reports_repo": "vollminlab/triage-reports",
+    "cluster_repo": "vollminlab/k8s-vollminlab-cluster",
+    "classes": {
+        "oom-memory-limit": "shadow",
+        "cpu-throttle-limit": "shadow",
+        "renovate-breakage": "shadow",
+    },
+    "renovate_denylist": ["velero-plugin-for-aws"],
+    "sweep_checklist": "1. empty-selector-backup\n2. unprotected-pvc\n",
+}
+
+
+def make_policy(**overrides):
+    raw = copy.deepcopy(POLICY_RAW)
+    raw.update(overrides)
+    return parse_policy(raw)
+
+
+def am_alert(labels, status="firing", fingerprint="aaaa1111", starts="2026-10-11T10:00:00Z"):
+    """One alert as Alertmanager's webhook (version 4) sends it."""
+    return {
+        "status": status,
+        "labels": labels,
+        "annotations": {"summary": "test"},
+        "startsAt": starts,
+        "endsAt": "0001-01-01T00:00:00Z",
+        "generatorURL": "http://prometheus/graph",
+        "fingerprint": fingerprint,
+    }
+
+
+def am_payload(*alerts):
+    return {
+        "version": "4",
+        "groupKey": "{}:{}",
+        "status": "firing",
+        "receiver": "triage",
+        "groupLabels": {},
+        "commonLabels": {},
+        "commonAnnotations": {},
+        "externalURL": "https://alertmanager.vollminlab.com",
+        "alerts": list(alerts),
+    }
+
+
+# A FluxResourceNotReady alert exactly as kube-state-metrics labels it: `namespace`
+# and `pod` belong to KSM itself; the HelmRelease lives in `exported_namespace`.
+FLUX_LABELS = {
+    "alertname": "FluxResourceNotReady",
+    "customresource_group": "helm.toolkit.fluxcd.io",
+    "customresource_kind": "HelmRelease",
+    "exported_namespace": "mediastack",
+    "name": "radarr",
+    "namespace": "monitoring",
+    "pod": "kube-prometheus-stack-kube-state-metrics-65786d78c5-5fdvb",
+    "ready": "False",
+    "reason": "UpgradeFailed",
+    "severity": "warning",
+}
+
+CRASHLOOP_LABELS = {
+    "alertname": "KubePodCrashLooping",
+    "namespace": "mediastack",
+    "pod": "radarr-7d9c8b6f5-x2x9q",
+    "container": "radarr",
+    "severity": "warning",
+}
+
+# --- a tiny repo for diff-guard / publish tests -----------------------------------
+
+APP = "clusters/vollminlab-cluster/demo/demo/app/"
+
+CONFIGMAP = """apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-values
+  namespace: demo
+data:
+  values.yaml: |
+    image:
+      repository: ghcr.io/example/demo
+      tag: 1.4.0
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+"""
+
+HELMRELEASE = """apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: demo
+  namespace: demo
+spec:
+  chart:
+    spec:
+      chart: demo
+      version: 2.0.0
+"""
+
+REPO_FILES = {
+    APP + "configmap.yaml": CONFIGMAP,
+    APP + "helmrelease.yaml": HELMRELEASE,
+    APP + "kustomization.yaml": "resources:\n  - helmrelease.yaml\n  - configmap.yaml\n",
+    APP + "demo-db-externalsecret.yaml": "kind: ExternalSecret\nmetadata:\n  name: demo-db\n  namespace: demo\n",
+    "clusters/vollminlab-cluster/other/other/app/configmap.yaml": CONFIGMAP.replace("namespace: demo", "namespace: other"),
+}
+
+
+def make_patch(path, old, new):
+    return "".join(difflib.unified_diff(
+        old.splitlines(keepends=True), new.splitlines(keepends=True), "a/" + path, "b/" + path))
+
+
+def write_repo(root, files=REPO_FILES):
+    for path, text in files.items():
+        p = root / path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    return root
+
+
+# A structured_output that passes the agent schema.
+AGENT_OK = {
+    "summary": "demo is OOMKilled: limit 256Mi, measured peak 300Mi.",
+    "root_cause": "The container's working set exceeds its memory limit.",
+    "evidence": ["kubectl describe pod: Last State Terminated, Reason OOMKilled"],
+    "confidence": "high",
+    "class": "oom-memory-limit",
+    "app_dir": APP,
+    "patch": make_patch(APP + "configmap.yaml", CONFIGMAP, CONFIGMAP.replace("memory: 256Mi", "memory: 400Mi")),
+    "metrics": {"peak_memory_bytes": 300 * 2**20},
+    "injection_suspected": False,
+    "findings": [],
+}
