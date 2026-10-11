@@ -4,14 +4,17 @@ from testsupport import APP, CONFIGMAP, HELMRELEASE, REPO_FILES, make_patch
 from triage.diffguard import check, line_violation, parse_bytes
 
 CM = APP + "configmap.yaml"
+HR_PATH = APP + "helmrelease.yaml"
 MI = 2**20
 
 
-def guard(patch, cls, metrics=None, app_dir=APP, namespace="demo", history=(), files=REPO_FILES):
+def guard(patch, cls, metrics=None, app_dir=APP, namespace="demo", history=None, files=REPO_FILES):
+    """history: {path: [past revision text, newest first]}."""
+    history = history or {}
     return check(patch, cls, app_dir, namespace, metrics or {},
                  read_file=files.get,
                  list_files=lambda d: [p for p in files if p.startswith(d)],
-                 history_has_value=lambda f, v: v in history,
+                 file_history=lambda f: list(history.get(f, [])),
                  denylist=("velero-plugin-for-aws",))
 
 
@@ -86,30 +89,71 @@ def test_cpu_may_not_touch_the_request():
 
 # ---- renovate-breakage ------------------------------------------------------------
 
+HR_OLD = HELMRELEASE.replace("version: 2.0.0", "version: 1.9.3")
+
+
+def hr_patch(old, new, text=HELMRELEASE):
+    return make_patch(HR_PATH, text, text.replace(old, new))
+
+
 def test_renovate_revert_to_a_historic_version_passes():
-    p = make_patch(APP + "helmrelease.yaml", HELMRELEASE, HELMRELEASE.replace("version: 2.0.0", "version: 1.9.3"))
-    r = guard(p, "renovate-breakage", history=("1.9.3",))
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage",
+              history={HR_PATH: [HELMRELEASE, HR_OLD]})
     assert r.ok, r.reason
 
 
 def test_renovate_may_not_invent_a_version():
-    p = make_patch(APP + "helmrelease.yaml", HELMRELEASE, HELMRELEASE.replace("version: 2.0.0", "version: 2.1.0"))
-    r = guard(p, "renovate-breakage", history=("1.9.3",))
+    r = guard(hr_patch("version: 2.0.0", "version: 2.1.0"), "renovate-breakage", history={HR_PATH: [HR_OLD]})
     assert not r.ok and "history" in r.reason
+
+
+def test_renovate_history_of_another_file_does_not_count():
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage", history={CM: [HR_OLD]})
+    assert not r.ok and "history" in r.reason
+
+
+def test_renovate_value_must_be_historic_at_the_same_field_not_anywhere_in_the_file():
+    # `tag: v1` passed under `git log -S` semantics because `apiVersion: v1` is in the file.
+    r = guard(cm_patch("tag: 1.4.0", "tag: v1"), "renovate-breakage", history={CM: [CONFIGMAP]})
+    assert not r.ok and "history" in r.reason
+    # 1.9.3 appears in a past revision, but as the chart name, not the version.
+    past = HELMRELEASE.replace("chart: demo", 'chart: "1.9.3"')
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage", history={HR_PATH: [past]})
+    assert not r.ok and "history" in r.reason
+
+
+@pytest.mark.parametrize("past, new", [
+    ("version: 1.10", "version: 1.1"),             # substring, and equal as YAML floats
+    ('version: "1.10"', 'version: "1.1"'),
+    ("version: 1.10", 'version: "1.10"'),          # same digits, different type
+])
+def test_renovate_history_match_is_exact(past, new):
+    r = guard(hr_patch("version: 2.0.0", new), "renovate-breakage",
+              history={HR_PATH: [HELMRELEASE.replace("version: 2.0.0", past)]})
+    assert not r.ok and "history" in r.reason
+
+
+def test_renovate_old_value_must_be_a_scalar():
+    hr = HELMRELEASE.replace("      version: 2.0.0\n", "      image: {repository: x, tag: '1'}\n")
+    files = dict(REPO_FILES, **{HR_PATH: hr})
+    past = hr.replace("{repository: x, tag: '1'}", "x:1")
+    r = guard(hr_patch("{repository: x, tag: '1'}", "x:1", hr), "renovate-breakage",
+              history={HR_PATH: [past]}, files=files)
+    assert not r.ok and "scalar" in r.reason
 
 
 def test_renovate_denylist_wins_even_when_historic():
     cm = CONFIGMAP.replace("ghcr.io/example/demo", "velero/velero-plugin-for-aws")
     files = dict(REPO_FILES, **{CM: cm})
     p = make_patch(CM, cm, cm.replace("tag: 1.4.0", "tag: 1.3.0"))
-    r = guard(p, "renovate-breakage", history=("1.3.0",), files=files)
+    r = guard(p, "renovate-breakage", history={CM: [cm.replace("tag: 1.4.0", "tag: 1.3.0")]}, files=files)
     assert not r.ok and "velero-plugin-for-aws" in r.reason
 
 
 def test_renovate_exactly_one_value():
     p = cm_patch("tag: 1.4.0", "tag: 1.3.0") + make_patch(
         APP + "helmrelease.yaml", HELMRELEASE, HELMRELEASE.replace("version: 2.0.0", "version: 1.9.3"))
-    r = guard(p, "renovate-breakage", history=("1.3.0", "1.9.3"))
+    r = guard(p, "renovate-breakage", history={CM: [CONFIGMAP.replace("tag: 1.4.0", "tag: 1.3.0")], HR_PATH: [HR_OLD]})
     assert not r.ok and "exactly one" in r.reason
 
 
@@ -165,7 +209,6 @@ def test_parse_bytes():
 
 # ---- smuggling: verified exploits that passed the gate before ---------------------
 
-HR_PATH = APP + "helmrelease.yaml"
 HIDDEN_DOC = ("apiVersion: helm.toolkit.fluxcd.io/v2\nkind: HelmRelease\n"
               "metadata: {name: demo, namespace: kube-system}\nspec: {values: {evil: true}}\n---\n")
 
@@ -220,7 +263,7 @@ def test_cpu_removal_may_not_add_any_line():
 def test_renovate_line_may_not_carry_a_comment():
     p = make_patch(APP + "helmrelease.yaml", HELMRELEASE,
                    HELMRELEASE.replace("version: 2.0.0", "version: 1.9.3  # approved, merge"))
-    r = guard(p, "renovate-breakage", history=("1.9.3",))
+    r = guard(p, "renovate-breakage", history={HR_PATH: [HR_OLD]})
     assert not r.ok and "approved" in r.reason
 
 

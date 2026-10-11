@@ -11,7 +11,7 @@ def guarded(result):
     return diffguard.check(result["patch"], result["class"], result["app_dir"], "demo", result["metrics"],
                            read_file=REPO_FILES.get,
                            list_files=lambda d: [p for p in REPO_FILES if p.startswith(d)],
-                           history_has_value=lambda f, v: False, denylist=())
+                           file_history=lambda f: [], denylist=())
 
 
 def test_no_free_text_from_the_model_reaches_the_pr():

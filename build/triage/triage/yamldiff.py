@@ -55,7 +55,7 @@ def keyed_docs(text: str) -> dict:
     return out
 
 
-def _expand(value):
+def expand(value):
     """A multi-line string that parses as a mapping or list (Helm values in a
     ConfigMap) is compared structurally, so the guard sees the real field path."""
     if isinstance(value, str) and "\n" in value:
@@ -68,8 +68,25 @@ def _expand(value):
     return value
 
 
+def lookup(doc, path: tuple):
+    """The value at `path` (as Change.path[1:] spells it) inside `doc`, or MISSING."""
+    cur = doc
+    for k in path:
+        cur = expand(cur)
+        if isinstance(cur, dict):
+            hits = [v for kk, v in cur.items() if str(kk) == k]
+            if len(hits) != 1:
+                return MISSING
+            cur = hits[0]
+        elif isinstance(cur, list) and k.isdigit() and int(k) < len(cur):
+            cur = cur[int(k)]
+        else:
+            return MISSING
+    return expand(cur)
+
+
 def _walk(path, a, b, out):
-    a, b = _expand(a), _expand(b)
+    a, b = expand(a), expand(b)
     if isinstance(a, dict) and isinstance(b, dict):
         for k in sorted(set(a) | set(b), key=str):
             _walk(path + (str(k),), a.get(k, MISSING), b.get(k, MISSING), out)

@@ -179,28 +179,54 @@ def _cpu(changes, metrics):
     return None
 
 
-def _renovate(changes, history_has_value, denylist, new_files):
+def _historic(c, added_line, file_history) -> bool:
+    """True only if a past revision of c.file holds exactly c.new at the same
+    document and field path, written the same way. Not a substring search: under
+    `git log -S` semantics `tag: v1` matched `apiVersion: v1`, and `1.1` matched `1.10`."""
+    want = added_line.strip()
+    for text in file_history(c.file) or []:
+        try:
+            docs = yamldiff.keyed_docs(text)
+            past = yamldiff.lookup(docs[c.doc], c.path) if c.doc in docs else MISSING
+        except Exception:            # an unparseable old revision is just not evidence
+            continue
+        if past is MISSING or isinstance(past, (dict, list)):
+            continue
+        if type(past) is type(c.new) and past == c.new and want in (l.strip() for l in text.split("\n")):
+            return True
+    return False
+
+
+def _renovate(changes, file_history, denylist, new_files, added_line):
     if len(changes) != 1:
         return f"renovate-breakage must change exactly one value, not {len(changes)}"
     c = changes[0]
     if not c.path or c.path[-1] not in ("version", "tag", "image"):
         return f"{c.file}: {c.field} is not a version, tag or image field"
-    if c.old is MISSING or c.new is MISSING or isinstance(c.new, (dict, list)):
-        return f"{c.file}: {c.field} must be changed in place to a scalar"
+    if c.old is MISSING or c.new is MISSING or isinstance(c.old, (dict, list)) or isinstance(c.new, (dict, list)):
+        return f"{c.file}: {c.field} must be a scalar changed in place to a scalar"
     new = str(c.new)
     for name in denylist:
         # Checked against the whole file, not just the changed value: a pinned image's
         # name lives in `repository` while the bump changes `tag` beside it.
         if name in c.file or name in new_files[c.file]:
             return f"{name} is pinned by repo policy (see .claude/rules); triage may not change it"
-    if not history_has_value(c.file, new):
-        return (f"{new!r} never appears in {c.file}'s git history: renovate-breakage may only "
-                f"revert to a known value")
+    if not _historic(c, added_line, file_history):
+        return (f"{new!r} is not the value of {c.field} in any past revision of {c.file}'s git "
+                f"history: renovate-breakage may only revert to a known value")
     return None
 
 
 def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files,
-          history_has_value, denylist) -> GuardResult:
+          file_history, denylist) -> GuardResult:
+    """Gate 3.
+
+    read_file(path) -> str | None and list_files(dir) -> [path] read the checkout.
+    file_history(path) -> [str]: the texts of the file's past revisions, newest
+    first, possibly empty (e.g. `git log --format=%H -- <path>` then
+    `git show <rev>:<path>` for each). Including the current revision is harmless.
+    Used only by renovate-breakage, whose new value must equal, at the same document
+    and field path, a value some past revision held."""
     if cls not in ("oom-memory-limit", "cpu-throttle-limit", "renovate-breakage"):
         return _fail(f"no diff rules exist for class {cls!r}")
     if not app_dir:
@@ -251,7 +277,7 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
     rules = {
         "oom-memory-limit": lambda: _oom(changes, metrics),
         "cpu-throttle-limit": lambda: _cpu(changes, metrics),
-        "renovate-breakage": lambda: _renovate(changes, history_has_value, denylist, new_files),
+        "renovate-breakage": lambda: _renovate(changes, file_history, denylist, new_files, edits[0][2][0]),
     }
     reason = rules[cls]()
     if reason:
