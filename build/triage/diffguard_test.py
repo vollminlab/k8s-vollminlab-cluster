@@ -378,3 +378,35 @@ def test_metrics_must_be_a_mapping():
               read_file=REPO_FILES.get, list_files=lambda d: [p for p in REPO_FILES if p.startswith(d)],
               file_history=lambda f: [], denylist=())
     assert not r.ok and "metrics" in r.reason
+
+
+# ---- digits are ASCII only --------------------------------------------------------
+# `\d` and float() accept every Unicode decimal digit. `５１２Mi` renders like 512Mi in
+# the PR, passes the gate, and is rejected by Kubernetes, freezing the Kustomization.
+
+UNICODE_512 = {"fullwidth": "５１２", "math-bold": "\U0001d7d3\U0001d7cf\U0001d7d0",
+               "arabic-indic": "٥١٢"}
+
+
+@pytest.mark.parametrize("digits", UNICODE_512.values(), ids=UNICODE_512.keys())
+def test_oom_non_ascii_digits_are_rejected(digits):
+    r = guard(cm_patch("memory: 256Mi", f"memory: {digits}Mi"), "oom-memory-limit",
+              {"peak_memory_bytes": 300 * MI})
+    assert not r.ok
+
+
+@pytest.mark.parametrize("digits", UNICODE_512.values(), ids=UNICODE_512.keys())
+def test_parse_bytes_rejects_non_ascii_digits(digits):
+    with pytest.raises(ValueError):
+        parse_bytes(f"{digits}Mi")
+
+
+@pytest.mark.parametrize("digits", UNICODE_512.values(), ids=UNICODE_512.keys())
+def test_line_rules_reject_non_ascii_digits(digits):
+    assert line_violation("oom-memory-limit", [("f.yaml", ["    memory: 256Mi"], [f"    memory: {digits}Mi"])])
+    assert line_violation("cpu-throttle-limit", [("f.yaml", [f"    cpu: {digits}m"], [])])
+
+
+def test_parse_bytes_rejects_a_trailing_newline():
+    with pytest.raises(ValueError):
+        parse_bytes("256Mi\n ")

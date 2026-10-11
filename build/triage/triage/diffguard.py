@@ -15,24 +15,29 @@ import yaml
 from . import patching, yamldiff
 from .yamldiff import MISSING
 
-_QUANTITY = re.compile(r"^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|k|M|G|T)?$")
+# Every pattern here is ASCII-only. `\d` (and float()) accept any Unicode decimal digit,
+# so `５１２Mi` (fullwidth) or `𝟓𝟏𝟐Mi` (math bold) would pass, render like 512Mi in the
+# PR, and be rejected by Kubernetes, freezing the Flux Kustomization.
+_QUANTITY = re.compile(r"([0-9]+(?:\.[0-9]+)?)(Ki|Mi|Gi|Ti|k|M|G|T)?", re.ASCII)
 _MULTIPLIER = {None: 1, "Ki": 2**10, "Mi": 2**20, "Gi": 2**30, "Ti": 2**40,
                "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}
 # Gate 3 has two layers. The structural diff says WHICH field changed and checks its
 # value; these line rules say the committed BYTES changed nothing else. Without them a
 # patch can add comments (prose a reviewer reads as authoritative), re-quote or
 # re-indent lines, or add anything else YAML parses to the same tree.
-_MEMORY_LINE = re.compile(r"""^([ \t]*)memory:[ \t]*(["']?)\d+(\.\d+)?(Ki|Mi|Gi|Ti|k|M|G|T)?\2[ \t]*\r?$""")
-_CPU_LINE = re.compile(r"""^[ \t]*cpu:[ \t]*(["']?)[0-9.]+m?\1[ \t]*\r?$""")
+_MEMORY_LINE = re.compile(r"""^([ \t]*)memory:[ \t]*(["']?)[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?\2[ \t]*\r?\Z""", re.ASCII)
+_CPU_LINE = re.compile(r"""^[ \t]*cpu:[ \t]*(["']?)[0-9.]+m?\1[ \t]*\r?\Z""", re.ASCII)
 # Printable ASCII only: PyYAML also breaks lines at \x85, \u2028 and \u2029, which
 # "\n"-split lines would otherwise hide a second YAML line inside.
-_RENOVATE_LINE = re.compile(r"^([ \t]*)(version|tag|image):[ \t]*[\x21-\x7e][\x20-\x7e]*\r?$")
+_RENOVATE_LINE = re.compile(r"^([ \t]*)(version|tag|image):[ \t]*[\x21-\x7e][\x20-\x7e]*\r?\Z", re.ASCII)
 HEADROOM = 1.2
 MAX_GROWTH = 2.0
 
 
 def parse_bytes(q) -> float:
-    m = _QUANTITY.match(str(q).strip())
+    if isinstance(q, bool) or not isinstance(q, (str, int)):
+        raise ValueError(f"not a memory quantity: {q!r}")
+    m = _QUANTITY.fullmatch(str(q))
     if not m:
         raise ValueError(f"not a memory quantity: {q!r}")
     return float(m.group(1)) * _MULTIPLIER[m.group(2)]
