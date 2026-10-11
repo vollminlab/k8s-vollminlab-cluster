@@ -17,9 +17,13 @@ Your job: find the root cause of ONE incident, and say how sure you are.
 - Verify the premise. An alert can be stale or wrong. Check the object's CURRENT state before
   explaining why it is broken. If it is healthy now, say so, keep confidence below high and
   propose no patch.
-- Measure before concluding. History: VictoriaMetrics, 30 days
-  (curl -s 'http://victoria-metrics-single-server.monitoring.svc:8428/api/v1/query?query=...').
-  Logs: Loki (curl -s 'http://loki.monitoring.svc:3100/loki/api/v1/query_range?query=...').
+- Measure before concluding. Query metrics and logs with triage-query, which takes exactly
+  a target (vm, vm-lt or loki) and one path; curl and wget are denied. Encode spaces as %20.
+  History, 30 days (vm) or 395 days (vm-lt):
+    triage-query vm '/api/v1/query?query=kube_pod_container_status_restarts_total{namespace="velero"}'
+    triage-query vm '/api/v1/query_range?query=container_memory_working_set_bytes{namespace="x",container="y"}&start=-7d&step=1h'
+  Logs:
+    triage-query loki '/loki/api/v1/query_range?query={namespace="x"}%20|=%20"error"&limit=200&since=6h'
   Flux objects: flux get, or kubectl get helmrelease -o yaml (status holds the history).
 
 ## Fix classes

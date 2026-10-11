@@ -192,3 +192,17 @@ def test_writes_no_files(server, tmp_path, monkeypatch):
     query.main(["vm", "/api/v1/query?query=up"])
     query.main(["vm", "/api/v1/big"])
     assert list(tmp_path.iterdir()) == []
+
+
+def test_every_example_in_the_prompts_is_accepted():
+    import shlex
+    examples = [line.strip() for p in (HERE / "triage" / "prompts").glob("*.md")
+                for line in p.read_text().splitlines() if line.strip().startswith("triage-query ")]
+    assert len(examples) >= 4
+    for line in examples:
+        argv = shlex.split(line)
+        assert len(argv) == 3, line
+        query.build_url(argv[1], argv[2])
+    for line in query.USAGE.splitlines()[1:3]:
+        argv = shlex.split(line.strip().removeprefix("e.g. "))
+        query.build_url(argv[1], argv[2])
