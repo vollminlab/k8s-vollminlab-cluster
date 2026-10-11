@@ -89,6 +89,73 @@ def test_check_template_rejects_drift(mutate, message):
         jobs.check_template(t)
 
 
+def _inv(t):
+    return _podspec(t)["initContainers"][0]
+
+
+def _pub(t):
+    return _podspec(t)["containers"][0]
+
+
+def _mount(c, name):
+    return next(m for m in c["volumeMounts"] if m["name"] == name)
+
+
+def _set_env(c, name, value):
+    c["env"] = [e for e in c["env"] if e["name"] != name] + [{"name": name, "value": value}]
+
+
+@pytest.mark.parametrize("mutate,message", [
+    # the old layout: one emptyDir holding the checkout, HOME and result.json for both
+    (lambda t: _pub(t)["volumeMounts"].append({"name": "investigate-work", "mountPath": "/work"}),
+     "investigate-work.*shared"),
+    # any other emptyDir shared, e.g. a common /tmp
+    (lambda t: _pub(t)["volumeMounts"].append({"name": "investigate-tmp", "mountPath": "/scratch"}),
+     "investigate-tmp.*shared"),
+    # two volumes backed by the same claim are one shared filesystem
+    (lambda t: (_podspec(t)["volumes"].extend([
+        {"name": "a", "persistentVolumeClaim": {"claimName": "x"}},
+        {"name": "b", "persistentVolumeClaim": {"claimName": "x"}}]),
+        _inv(t)["volumeMounts"].append({"name": "a", "mountPath": "/a"}),
+        _pub(t)["volumeMounts"].append({"name": "b", "mountPath": "/b"})), "persistentVolumeClaim.*shared"),
+    # a shared configMap mounted writable in one of them (kubelet makes it read-only
+    # anyway, but the template must say so)
+    (lambda t: _mount(_pub(t), "policy").pop("readOnly"), "policy"),
+    # result writable in publish, or missing from either container
+    (lambda t: _mount(_pub(t), "result").pop("readOnly"), "result.*readOnly"),
+    (lambda t: _mount(_pub(t), "result").update(readOnly=False), "result.*readOnly"),
+    (lambda t: _pub(t).update(volumeMounts=[m for m in _pub(t)["volumeMounts"] if m["name"] != "result"]),
+     "result.*both"),
+    (lambda t: _inv(t).update(volumeMounts=[m for m in _inv(t)["volumeMounts"] if m["name"] != "result"]),
+     "result.*both"),
+    (lambda t: _mount(_inv(t), "result").update(readOnly=True), "result.*writable"),
+    (lambda t: next(v for v in _podspec(t)["volumes"] if v["name"] == "result").update(
+        emptyDir=None, configMap={"name": "x"}), "result.*emptyDir"),
+    # publish's HOME on the shared volume, on investigate's volume, on no volume, or unset
+    (lambda t: _set_env(_pub(t), "HOME", "/result/home"), "HOME"),
+    (lambda t: (_pub(t)["volumeMounts"].append({"name": "investigate-work", "mountPath": "/work"}),
+                _set_env(_pub(t), "HOME", "/work/home")), "shared|HOME"),
+    (lambda t: _set_env(_pub(t), "HOME", "/home/nonroot"), "HOME"),
+    (lambda t: _pub(t).update(env=[e for e in _pub(t)["env"] if e["name"] != "HOME"]), "HOME"),
+    (lambda t: (_mount(_pub(t), "publish-work").update(readOnly=True)), "HOME"),
+    # python not isolated: user site-packages under a writable HOME would run first
+    (lambda t: _pub(t).update(command=["python", "-m", "triage.publish"]), "-I"),
+    (lambda t: _inv(t).update(command=["python", "-m", "triage.investigate"]), "-I"),
+    (lambda t: _pub(t).pop("command"), "-I"),
+])
+def test_check_template_enforces_the_containment_split(mutate, message):
+    t = copy.deepcopy(TEMPLATE)
+    mutate(t)
+    with pytest.raises(ValueError, match=message):
+        jobs.check_template(t)
+
+
+def test_check_template_allows_a_home_below_a_private_mount():
+    t = copy.deepcopy(TEMPLATE)
+    _set_env(_pub(t), "HOME", "/publish/deeper/home")
+    jobs.check_template(t)
+
+
 def _job(conditions=(), suspend=True, completion=None):
     return NS(metadata=NS(name="j", labels={jobs.FP_LABEL: "abc"}, annotations={}),
               spec=NS(suspend=suspend),

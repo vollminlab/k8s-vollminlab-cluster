@@ -31,8 +31,11 @@ def make_policy(**overrides):
 
 
 # A minimal Job template that passes jobs.check_template: the spec's credential split
-# (Anthropic key only in investigate; GitHub App and Pushover only in publish) and a
-# TTL long enough for the dispatcher's 24h spend accounting.
+# (Anthropic key only in investigate; GitHub App and Pushover only in publish), a TTL
+# long enough for the dispatcher's 24h spend accounting, and the containment split:
+# `result` is the only volume both containers mount (read-only in publish), each has
+# its own work and tmp emptyDirs, publish's HOME is on its own volume, and both run
+# Python isolated (-I: no user site-packages, no cwd or PYTHON* env on sys.path).
 JOB_TEMPLATE = {
     "apiVersion": "batch/v1",
     "kind": "Job",
@@ -43,14 +46,30 @@ JOB_TEMPLATE = {
             "serviceAccountName": "triage-agent",
             "restartPolicy": "Never",
             "initContainers": [{"name": "investigate",
-                                "env": [{"name": "HOME", "value": "/work/home"}],
-                                "volumeMounts": [{"name": "work", "mountPath": "/work"},
+                                "command": ["python", "-I", "-u", "-m", "triage.investigate"],
+                                "env": [{"name": "HOME", "value": "/work/home"},
+                                        {"name": "PYTHONNOUSERSITE", "value": "1"}],
+                                "volumeMounts": [{"name": "investigate-work", "mountPath": "/work"},
+                                                 {"name": "result", "mountPath": "/result"},
+                                                 {"name": "investigate-tmp", "mountPath": "/tmp"},
+                                                 {"name": "policy", "mountPath": "/etc/triage", "readOnly": True},
                                                  {"name": "anthropic", "mountPath": "/var/run/secrets/triage/anthropic"}]}],
             "containers": [{"name": "publish",
-                            "volumeMounts": [{"name": "work", "mountPath": "/work"},
+                            "command": ["python", "-I", "-u", "-m", "triage.publish"],
+                            "env": [{"name": "HOME", "value": "/publish/home"},
+                                    {"name": "PYTHONNOUSERSITE", "value": "1"}],
+                            "volumeMounts": [{"name": "result", "mountPath": "/result", "readOnly": True},
+                                             {"name": "publish-work", "mountPath": "/publish"},
+                                             {"name": "publish-tmp", "mountPath": "/tmp"},
+                                             {"name": "policy", "mountPath": "/etc/triage", "readOnly": True},
                                              {"name": "github", "mountPath": "/var/run/secrets/triage/github"},
                                              {"name": "pushover", "mountPath": "/var/run/secrets/triage/pushover"}]}],
-            "volumes": [{"name": "work", "emptyDir": {}},
+            "volumes": [{"name": "investigate-work", "emptyDir": {}},
+                        {"name": "result", "emptyDir": {}},
+                        {"name": "publish-work", "emptyDir": {}},
+                        {"name": "investigate-tmp", "emptyDir": {}},
+                        {"name": "publish-tmp", "emptyDir": {}},
+                        {"name": "policy", "configMap": {"name": "triage-policy"}},
                         {"name": "anthropic", "secret": {"secretName": "triage-anthropic-apikey"}},
                         {"name": "github", "secret": {"secretName": "triage-github-app"}},
                         {"name": "pushover", "secret": {"secretName": "triage-pushover"}}],

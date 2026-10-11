@@ -16,6 +16,9 @@ SECRET_OWNER = {
     "triage-github-app": "publish",
     "triage-pushover": "publish",
 }
+# The ONE volume both containers mount. investigate writes result.json there;
+# publish mounts it read-only and reads nothing else from it.
+RESULT_VOLUME = "result"
 
 
 def _secret_volumes(pod: dict, secret: str) -> set:
@@ -36,6 +39,70 @@ def _uses_secret(pod: dict, container: dict, secret: str) -> bool:
            for e in container.get("env", [])):
         return True
     return any((e.get("secretRef") or {}).get("name") == secret for e in container.get("envFrom", []))
+
+
+def _backing(v: dict) -> tuple:
+    """What a volume is backed by. Two volume names over the same claim (or host path,
+    ConfigMap, Secret) are one shared filesystem; an emptyDir is private to its name."""
+    for kind, key in (("persistentVolumeClaim", "claimName"), ("hostPath", "path"), ("configMap", "name"),
+                      ("secret", "secretName"), ("nfs", "path"), ("iscsi", "iqn")):
+        if isinstance(v.get(kind), dict):
+            return kind, str(v[kind].get(key))
+    kind = next((k for k in v if k != "name"), "unknown")
+    return kind, v["name"]
+
+
+def _mounts(c: dict) -> dict:
+    return {m["name"]: m for m in c.get("volumeMounts", [])}
+
+
+def _env(c: dict, name: str):
+    return next((e.get("value") for e in c.get("env", []) if e.get("name") == name), None)
+
+
+def _check_containment(pod: dict, inv: dict, pub: dict) -> None:
+    """investigate ran a possibly prompt-injected model, so nothing it could write may
+    reach publish (which holds the GitHub key) except result.json: a shared checkout or
+    HOME let it plant git config (filters, insteadOf, sshCommand), refs, or a Python
+    .pth file that publish would then execute."""
+    volumes = {v["name"]: v for v in pod.get("volumes", [])}
+    im, pm = _mounts(inv), _mounts(pub)
+    rv = volumes.get(RESULT_VOLUME)
+    if rv is None or not isinstance(rv.get("emptyDir"), dict):
+        raise ValueError(f"job template: volume {RESULT_VOLUME!r} must exist and be an emptyDir")
+    if RESULT_VOLUME not in im or RESULT_VOLUME not in pm:
+        raise ValueError(f"job template: volume {RESULT_VOLUME!r} must be mounted in both containers")
+    if pm[RESULT_VOLUME].get("readOnly") is not True:
+        raise ValueError(f"job template: volume {RESULT_VOLUME!r} must be readOnly: true in publish")
+    if im[RESULT_VOLUME].get("readOnly"):
+        raise ValueError(f"job template: volume {RESULT_VOLUME!r} must be writable in investigate")
+    inv_backing = {_backing(volumes[n]): n for n in im if n in volumes}
+    for name in pm:
+        if name not in volumes:
+            continue
+        b = _backing(volumes[name])
+        if b not in inv_backing or name == RESULT_VOLUME:
+            continue
+        other = inv_backing[b]
+        # A ConfigMap is mounted read-only by the kubelet in every container, so it is
+        # no channel from investigate to publish; the template must still say readOnly.
+        if b[0] == "configMap" and im[other].get("readOnly") is True and pm[name].get("readOnly") is True:
+            continue
+        raise ValueError(f"job template: volume {name!r} ({b[0]}) is shared with investigate; only "
+                         f"{RESULT_VOLUME!r} (and read-only ConfigMaps) may be shared")
+    home = _env(pub, "HOME")
+    if not home or not home.startswith("/"):
+        raise ValueError("job template: publish must set HOME to an absolute path on its own volume")
+    owner = max((m for m in pm.values() if home == m["mountPath"] or home.startswith(m["mountPath"].rstrip("/") + "/")),
+                key=lambda m: len(m["mountPath"]), default=None)
+    if owner is None or owner["name"] == RESULT_VOLUME or owner.get("readOnly"):
+        raise ValueError(f"job template: publish HOME {home!r} must be on a writable volume only publish mounts")
+    if owner["name"] not in volumes or _backing(volumes[owner["name"]]) in inv_backing:
+        raise ValueError(f"job template: publish HOME {home!r} is on a volume shared with investigate")
+    for c in (inv, pub):
+        if list(c.get("command") or [])[:2] != ["python", "-I"]:
+            raise ValueError(f"job template: {c['name']} must run `python -I` (isolated: no user "
+                             f"site-packages, no PYTHON* env, no cwd on sys.path)")
 
 
 def check_template(t: dict) -> None:
@@ -62,6 +129,7 @@ def check_template(t: dict) -> None:
         if holders != [owner]:
             raise ValueError(f"job template: secret {secret} must be available to exactly [{owner}] "
                              f"(the credential split), but is in {holders}")
+    _check_containment(pod, containers["investigate"], containers["publish"])
 
 
 def build_job(template: dict, incident, existing_issue, deadline_seconds: int, now: int) -> dict:
