@@ -1,0 +1,57 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: triage-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: triage
+      rules:
+        # Every rule sets namespace="triage" explicitly, so the dispatcher ignores these
+        # alerts (a broken triage must not diagnose itself). The series alone would not
+        # guarantee it: absent() and max() drop the namespace label. They reach Pushover
+        # through Alertmanager's existing routes.
+        - alert: TriageDispatcherDown
+          expr: up{job="triage-dispatcher"} == 0 or absent(up{job="triage-dispatcher"})
+          for: 10m
+          labels:
+            severity: warning
+            namespace: triage
+          annotations:
+            summary: "Triage dispatcher is down"
+            description: "Alerts are not being triaged. kubectl get pods -n triage -l app=triage-dispatcher"
+        # The gauge starts at dispatcher start time, so a restart cannot make it absent.
+        - alert: TriageSweepStale
+          expr: time() - triage_last_sweep_success_timestamp > 26 * 3600
+          for: 30m
+          labels:
+            severity: warning
+            namespace: triage
+          annotations:
+            summary: "Triage nightly sweep has not completed in 26h"
+            description: "Check the triage-sweep CronJob's last Job and the dispatcher log."
+        - alert: TriageAgentErrors
+          expr: max(triage_jobs_24h{outcome="agent_error"}) >= 3
+          for: 10m
+          labels:
+            severity: warning
+            namespace: triage
+          annotations:
+            summary: "Triage investigations are failing"
+            description: >-
+              {{ $value }} investigations in 24h ended as agent-error. Their reasons are in the
+              agent-error issues in vollminlab/triage-reports.
+        - alert: TriagePublishFailing
+          expr: max(triage_jobs_24h{outcome=~"publish_failed|job_crashed"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+            namespace: triage
+          annotations:
+            summary: "A triage Job finished without filing its result"
+            description: "kubectl get jobs -n triage; kubectl logs -n triage job/<name> -c publish"
