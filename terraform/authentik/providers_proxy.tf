@@ -6,6 +6,11 @@ resource "authentik_provider_proxy" "vollminlab_forward_auth" {
   mode               = "forward_domain"
   cookie_domain      = "vollminlab.com"
   skip_path_regex    = "^/api/socket\\.io/"
+  # Default is minutes=10. After that the outpost answers with a 302 to sign-in, which a
+  # page load follows but an in-page API fetch cannot (cross-origin), so app API calls
+  # failed ten minutes after page load. 8h matches the OAuth providers; the trade-off is
+  # that a revoked user keeps access to forward-auth apps for up to 8h.
+  access_token_validity = "hours=8"
 }
 
 # Per-host providers for apps restricted to a group. The domain-wide provider above
