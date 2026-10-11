@@ -1,0 +1,24 @@
+# Installs the `triage` package into the image's site-packages, so every entrypoint
+# can run as `python -I -m triage.<module>`. Isolated mode (-I) drops the current
+# directory, PYTHONPATH and every other PYTHON* variable, and the user site-packages
+# (where a planted .pth file would execute at startup) from sys.path; a package that
+# is only importable from the working directory cannot be run that way.
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triage"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+# The agent's only route to VictoriaMetrics and Loki (managed-settings.json allows it
+# and denies curl/wget). Installed into the image's PATH by `pip install /tmp/src`.
+[project.scripts]
+triage-query = "triage.query:main"
+
+[tool.setuptools]
+packages = ["triage"]
+
+[tool.setuptools.package-data]
+triage = ["agent_output.schema.json", "prompts/*.md"]
