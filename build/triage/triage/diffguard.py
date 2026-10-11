@@ -211,21 +211,33 @@ def _cpu(changes, metrics):
     return None
 
 
+def _same(a, b) -> bool:
+    return type(a) is type(b) and a == b
+
+
 def _historic(c, added_line, file_history) -> bool:
-    """True only if a past revision of c.file holds exactly c.new at the same
-    document and field path, written the same way. Not a substring search: under
-    `git log -S` semantics `tag: v1` matched `apiVersion: v1`, and `1.1` matched `1.10`."""
+    """True only if c.new is the value c.file held at the same document and field
+    path immediately before the current one, written the same way.
+
+    Walks the history newest first, skipping revisions whose value there still
+    equals the current (old) one. The first revision with a different value is
+    the only acceptable target: any older one could skip several majors, past
+    schema migrations (CNPG, Authentik, Harbor) the older version cannot read.
+    If the field did not exist there, or that revision cannot be read, it fails.
+    Not a substring search: under `git log -S` semantics `tag: v1` matched
+    `apiVersion: v1`, and `1.1` matched `1.10`."""
     want = added_line.strip()
     for text in file_history(c.file) or []:
         try:
             docs = yamldiff.keyed_docs(text)
             past = yamldiff.lookup(docs[c.doc], c.path) if c.doc in docs else MISSING
-        except Exception:            # an unparseable old revision is just not evidence
+        except Exception:            # unreadable: it might hide the real previous value
+            return False
+        if _same(past, c.old):
             continue
         if past is MISSING or isinstance(past, (dict, list)):
-            continue
-        if type(past) is type(c.new) and past == c.new and want in (l.strip() for l in text.split("\n")):
-            return True
+            return False
+        return _same(past, c.new) and want in (l.strip() for l in text.split("\n"))
     return False
 
 
@@ -244,8 +256,8 @@ def _renovate(changes, file_history, denylist, new_files, added_line):
         if name in c.file or name in new_files[c.file]:
             return f"{name} is pinned by repo policy (see .claude/rules); triage may not change it"
     if not _historic(c, added_line, file_history):
-        return (f"{new!r} is not the value of {c.field} in any past revision of {c.file}'s git "
-                f"history: renovate-breakage may only revert to a known value")
+        return (f"{new!r} is not the value {c.field} held immediately before {c.old!r} in "
+                f"{c.file}'s git history: renovate-breakage may only revert one step")
     return None
 
 
@@ -262,7 +274,7 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
     first, possibly empty (e.g. `git log --format=%H -- <path>` then
     `git show <rev>:<path>` for each). Including the current revision is harmless.
     Used only by renovate-breakage, whose new value must equal, at the same document
-    and field path, a value some past revision held."""
+    and field path, the value held immediately before the current one."""
     try:
         return _check(patch_text, cls, app_dir, namespace, metrics, read_file=read_file,
                       list_files=list_files, file_history=file_history, denylist=denylist)

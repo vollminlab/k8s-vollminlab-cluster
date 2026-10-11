@@ -25,8 +25,8 @@ CLASS_TEXT = {
     "renovate-breakage": (
         "pin back to the last known-good version",
         "A version bump left this resource failing. This changes one version, tag or image value "
-        "back to a value that already appears in this file's git history. It never introduces a "
-        "new version.",
+        "back to the value it held immediately before the current one in this file's git history. "
+        "It never introduces a new version or skips back more than one step.",
     ),
 }
 REQUIRED_METRIC = {"oom-memory-limit": "peak_memory_bytes", "cpu-throttle-limit": "throttled_ratio",

@@ -457,3 +457,40 @@ def test_oom_two_blocks_each_raising_their_own_limit_pass():
     assert new.count("200Mi") == 1
     r = guard(make_patch(CM, CM_SIDECAR, new), "oom-memory-limit", {"peak_memory_bytes": 150 * MI}, files=files)
     assert r.ok, r.reason
+
+
+# ---- renovate-breakage reverts ONE step: to the value the field held just before ---
+# Any past value used to pass, so a revert could skip several majors, past database
+# schema migrations (CNPG, Authentik, Harbor) the older version cannot read.
+
+HR_OLDER = HELMRELEASE.replace("version: 2.0.0", "version: 1.8.0")
+HR_NO_VERSION = HELMRELEASE.replace("      version: 2.0.0\n", "")
+
+
+def test_renovate_value_two_changes_back_is_rejected():
+    r = guard(hr_patch("version: 2.0.0", "version: 1.8.0"), "renovate-breakage",
+              history={HR_PATH: [HELMRELEASE, HR_OLD, HR_OLDER]})
+    assert not r.ok and "history" in r.reason
+
+
+def test_renovate_immediately_previous_value_passes_past_unrelated_revisions():
+    # Revisions that changed other lines but kept 2.0.0 are skipped.
+    unrelated = HELMRELEASE.replace("chart: demo", "chart: demo2")
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage",
+              history={HR_PATH: [HELMRELEASE, unrelated, HR_OLD, HR_OLDER]})
+    assert r.ok, r.reason
+
+
+@pytest.mark.parametrize("history", [
+    [HELMRELEASE, HR_NO_VERSION],
+    [HELMRELEASE, HR_NO_VERSION, HR_OLD],
+], ids=["never-existed", "absent-in-between"])
+def test_renovate_field_absent_in_the_previous_revision_fails(history):
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage", history={HR_PATH: history})
+    assert not r.ok and "history" in r.reason
+
+
+def test_renovate_unparseable_revision_before_the_target_fails_closed():
+    r = guard(hr_patch("version: 2.0.0", "version: 1.9.3"), "renovate-breakage",
+              history={HR_PATH: [HELMRELEASE, "a: [unclosed\n", HR_OLD]})
+    assert not r.ok
