@@ -185,11 +185,34 @@ def test_prompts_embed_the_incident_and_the_checklist():
 
 
 def test_main_always_writes_result_and_exits_zero(tmp_path, monkeypatch):
-    monkeypatch.setattr(investigate, "WORK", tmp_path)
+    monkeypatch.setattr(investigate, "WORK", tmp_path / "work")
+    monkeypatch.setattr(investigate, "RESULT", tmp_path / "result" / "result.json")
+    (tmp_path / "result").mkdir()
     monkeypatch.delenv("TRIAGE_INCIDENT", raising=False)
     assert investigate.main() == 0
-    written = json.loads((tmp_path / "result.json").read_text())
+    written = json.loads((tmp_path / "result" / "result.json").read_text())
     assert written["failure_reason"] == "setup_failed"
+    assert not (tmp_path / "work").exists()        # result.json is not on the private volume
+
+
+def test_result_is_written_on_its_own_volume_not_the_checkout_volume():
+    # publish mounts only the result volume; the checkout and HOME stay private.
+    assert investigate.RESULT.parent != investigate.WORK
+    assert not investigate.RESULT.is_relative_to(investigate.WORK)
+
+
+def test_main_replaces_a_planted_symlink_instead_of_writing_through_it(tmp_path, monkeypatch):
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("untouched")
+    (tmp_path / "result").mkdir()
+    (tmp_path / "result" / "result.json").symlink_to(target)
+    monkeypatch.setattr(investigate, "WORK", tmp_path / "work")
+    monkeypatch.setattr(investigate, "RESULT", tmp_path / "result" / "result.json")
+    monkeypatch.delenv("TRIAGE_INCIDENT", raising=False)
+    assert investigate.main() == 0
+    assert target.read_text() == "untouched"
+    assert not (tmp_path / "result" / "result.json").is_symlink()
+    assert json.loads((tmp_path / "result" / "result.json").read_text())["status"] == "failed"
 
 
 def test_incident_cannot_close_the_untrusted_block():
@@ -203,6 +226,7 @@ def test_incident_cannot_close_the_untrusted_block():
 
 def test_main_survives_an_unwritable_work_dir(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(investigate, "WORK", tmp_path / "missing")
+    monkeypatch.setattr(investigate, "RESULT", tmp_path / "missing" / "result.json")
     monkeypatch.delenv("TRIAGE_INCIDENT", raising=False)
     assert investigate.main() == 0
     err = capsys.readouterr().err

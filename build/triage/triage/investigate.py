@@ -18,7 +18,11 @@ from .policy import load_policy
 from .result import failure, relaxed_schema, success, validate_agent_output
 
 PROMPTS = Path(__file__).with_name("prompts")
+# Private to this container: the checkout, HOME and scratch. Nothing here is ever
+# read by publish.
 WORK = Path("/work")
+# The only path publish reads: its own volume, mounted read-only there.
+RESULT = Path("/result/result.json")
 REPO_URL = "https://github.com/{repo}.git"
 CLONE_TIMEOUT = 300
 # Seconds of the Job's activeDeadlineSeconds left for publish after claude.
@@ -137,6 +141,17 @@ def investigate(inc: Incident, policy, work: Path = WORK, run=subprocess.run, cl
     return interpret(cp.stdout, cp.stderr, policy.per_run_budget_usd)
 
 
+def write_result(path: Path, text: str) -> None:
+    """Write via a temporary file and rename, so a symlink or FIFO planted at the path
+    during the run is replaced rather than written through (publish then refuses
+    anything that is not a regular file)."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def main() -> int:
     try:
         inc = Incident.from_json(os.environ["TRIAGE_INCIDENT"])
@@ -145,7 +160,7 @@ def main() -> int:
         result = failure("setup_failed", f"{type(e).__name__}: {e}")
     text = json.dumps(result, indent=2)
     try:
-        (WORK / "result.json").write_text(text)
+        write_result(RESULT, text)
     except Exception as e:
         # Still exit 0: publish then finds no result.json and files that as an
         # agent-error; the record itself survives in this container's log.
