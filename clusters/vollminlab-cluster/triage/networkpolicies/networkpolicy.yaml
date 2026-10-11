@@ -1,0 +1,223 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Alertmanager's webhook and Prometheus's scrape -> dispatcher, plus the sweep
+# CronJob -> dispatcher. Container port 8080 (svc 8080 -> named port http -> 8080).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dispatcher-ingress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: triage-dispatcher
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [alertmanager, prometheus]
+        - podSelector:
+            matchLabels:
+              app: triage-sweep
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sweep-egress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: triage-sweep
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: triage-dispatcher
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Dispatcher manages Jobs and reads owners; the agent reads everything except Secrets.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kube-api-egress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [triage-dispatcher, triage-agent]
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 6443
+---
+# Agent -> VictoriaMetrics (both tiers) and Loki. Destination container ports;
+# the monitoring namespace's allow-triage-* policies admit the other side.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agent-monitoring-egress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: triage-agent
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: server
+      ports:
+        - protocol: TCP
+          port: 8428
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: loki
+      ports:
+        - protocol: TCP
+          port: 3100
+---
+# Dispatcher -> Alertmanager API, to re-check an alert before starting its Job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dispatcher-alertmanager-egress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: triage-dispatcher
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
+---
+# HTTPS out: Anthropic API, GitHub (clone, API, push), Pushover, and the kubeconform
+# CRD catalog. RFC1918 excluded: nothing in-cluster is reached on 443. Kubernetes
+# NetworkPolicy cannot filter by FQDN; this open-internet 443 is the spec's accepted
+# residual risk (Security §6).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-https-egress
+  namespace: triage
+  labels:
+    app: triage
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [triage-agent, triage-dispatcher]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
