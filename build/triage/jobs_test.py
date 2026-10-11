@@ -156,6 +156,78 @@ def test_check_template_allows_a_home_below_a_private_mount():
     jobs.check_template(t)
 
 
+def _add_volume(t, volume, container=_pub):
+    _podspec(t)["volumes"].append(dict(volume, name="extra"))
+    container(t)["volumeMounts"].append({"name": "extra", "mountPath": "/extra"})
+
+
+@pytest.mark.parametrize("volume", [
+    {"hostPath": {"path": "/var/run"}},
+    {"persistentVolumeClaim": {"claimName": "x"}},
+    {"csi": {"driver": "x"}},
+    {"ephemeral": {"volumeClaimTemplate": {"spec": {}}}},
+    {"projected": {"sources": [{"configMap": {"name": "x"}}]}},
+    {"downwardAPI": {"items": []}},
+    {"nfs": {"server": "nas", "path": "/x"}},
+    {"iscsi": {"targetPortal": "x", "iqn": "y", "lun": 0}},
+    {"image": {"reference": "x"}},
+    {},
+])
+def test_check_template_allows_only_emptydir_configmap_and_secret_volumes(volume):
+    t = copy.deepcopy(TEMPLATE)
+    _add_volume(t, volume)
+    with pytest.raises(ValueError, match="volume 'extra'.*only emptyDir, configMap and secret"):
+        jobs.check_template(t)
+
+
+def test_an_unmounted_disallowed_volume_is_still_rejected():
+    t = copy.deepcopy(TEMPLATE)
+    _podspec(t)["volumes"].append({"name": "extra", "hostPath": {"path": "/"}})
+    with pytest.raises(ValueError, match="volume 'extra'"):
+        jobs.check_template(t)
+
+
+@pytest.mark.parametrize("key", ["subPath", "subPathExpr"])
+@pytest.mark.parametrize("container", [_inv, _pub])
+def test_check_template_rejects_subpath_mounts(key, container):
+    t = copy.deepcopy(TEMPLATE)
+    _mount(container(t), "result")[key] = "x"
+    with pytest.raises(ValueError, match=key):
+        jobs.check_template(t)
+
+
+@pytest.mark.parametrize("mutate,message", [
+    (lambda t: _pub(t).update(envFrom=[{"configMapRef": {"name": "x"}}]), "envFrom"),
+    (lambda t: _inv(t).update(envFrom=[{"configMapRef": {"name": "x"}}]), "envFrom"),
+    (lambda t: _pub(t)["env"].append({"name": "N", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}}),
+     "fieldRef"),
+    (lambda t: _inv(t)["env"].append({"name": "M", "valueFrom": {"resourceFieldRef": {"resource": "limits.memory"}}}),
+     "resourceFieldRef"),
+    (lambda t: _pub(t)["env"].append({"name": "C", "valueFrom": {"configMapKeyRef": {"name": "x", "key": "y"}}}),
+     "configMapKeyRef"),
+    (lambda t: _podspec(t).update(shareProcessNamespace=True), "shareProcessNamespace"),
+    (lambda t: _podspec(t).update(hostPID=True), "hostPID"),
+    (lambda t: _podspec(t).update(hostIPC=True), "hostIPC"),
+    (lambda t: _podspec(t).update(hostNetwork=True), "hostNetwork"),
+    (lambda t: _inv(t).update(securityContext={"privileged": True}), "privileged"),
+    (lambda t: _pub(t).update(securityContext={"privileged": True}), "privileged"),
+])
+def test_check_template_rejects_process_and_env_escapes(mutate, message):
+    t = copy.deepcopy(TEMPLATE)
+    mutate(t)
+    with pytest.raises(ValueError, match=message):
+        jobs.check_template(t)
+
+
+def test_check_template_keeps_literal_env_and_secret_key_refs():
+    t = copy.deepcopy(TEMPLATE)
+    _inv(t)["env"].append({"name": "K", "valueFrom": {"secretKeyRef": {"name": "triage-anthropic-apikey",
+                                                                       "key": "api_key"}}})
+    _podspec(t).update(shareProcessNamespace=False, hostPID=False, hostNetwork=False)
+    _pub(t)["securityContext"] = {"privileged": False, "readOnlyRootFilesystem": True}
+    jobs.check_template(t)
+
+
 def _job(conditions=(), suspend=True, completion=None):
     return NS(metadata=NS(name="j", labels={jobs.FP_LABEL: "abc"}, annotations={}),
               spec=NS(suspend=suspend),

@@ -105,6 +105,44 @@ def _check_containment(pod: dict, inv: dict, pub: dict) -> None:
                              f"site-packages, no PYTHON* env, no cwd on sys.path)")
 
 
+# Every volume type the Job may use. Anything else (hostPath, a PVC, csi, projected,
+# downwardAPI, nfs, ...) either reaches outside the pod or is a second route around
+# the credential split, which _secret_volumes only checks for plain secret volumes.
+ALLOWED_VOLUME_TYPES = ("emptyDir", "configMap", "secret")
+# Pod-level fields that would let one container see the other's processes (and so
+# its environment, /proc/<pid>/root and open files) or the node's.
+HOST_SHARING = ("shareProcessNamespace", "hostPID", "hostIPC", "hostNetwork")
+
+
+def _check_isolation(pod: dict, containers: dict) -> None:
+    """Volumes are emptyDir, configMap or secret only; no subPath mounts; env is literal
+    values or secretKeyRef only; no shared process namespace, no host namespaces and
+    no privileged container."""
+    for v in pod.get("volumes", []):
+        kinds = [k for k in v if k != "name"]
+        if len(kinds) != 1 or kinds[0] not in ALLOWED_VOLUME_TYPES:
+            raise ValueError(f"job template: volume {v.get('name')!r} is {'/'.join(kinds) or 'untyped'}; "
+                             f"only emptyDir, configMap and secret volumes are allowed")
+    for field in HOST_SHARING:
+        if pod.get(field):
+            raise ValueError(f"job template: {field} must not be set")
+    for name, c in containers.items():
+        for m in c.get("volumeMounts", []):
+            for key in ("subPath", "subPathExpr"):
+                if key in m:
+                    raise ValueError(f"job template: {name} mounts {m.get('name')!r} with {key}; "
+                                     f"subPath mounts are not allowed")
+        if c.get("envFrom"):
+            raise ValueError(f"job template: {name} uses envFrom; list each variable in env")
+        for e in c.get("env", []):
+            source = [k for k in (e.get("valueFrom") or {})]
+            if source and source != ["secretKeyRef"]:
+                raise ValueError(f"job template: {name} env {e.get('name')!r} uses valueFrom.{'/'.join(source)}; "
+                                 f"only a literal value or secretKeyRef is allowed")
+        if (c.get("securityContext") or {}).get("privileged"):
+            raise ValueError(f"job template: {name} must not be privileged")
+
+
 def check_template(t: dict) -> None:
     """Fail the dispatcher at startup, loudly, if the template drifted.
 
@@ -130,6 +168,7 @@ def check_template(t: dict) -> None:
             raise ValueError(f"job template: secret {secret} must be available to exactly [{owner}] "
                              f"(the credential split), but is in {holders}")
     _check_containment(pod, containers["investigate"], containers["publish"])
+    _check_isolation(pod, containers)
 
 
 def build_job(template: dict, incident, existing_issue, deadline_seconds: int, now: int) -> dict:
