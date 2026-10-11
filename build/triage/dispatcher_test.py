@@ -1,18 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 
-from testsupport import CRASHLOOP_LABELS, FLUX_LABELS, am_alert, am_payload, make_policy
+from testsupport import CRASHLOOP_LABELS, FLUX_LABELS, JOB_TEMPLATE, am_alert, am_payload, make_policy
 from triage import jobs
 from triage.dispatcher import Dispatcher
 from triage.incident import Incident
 
 NOW = 1791700000.0
-TEMPLATE = {
-    "metadata": {"namespace": "triage"},
-    "spec": {"template": {"spec": {"serviceAccountName": "triage-agent", "restartPolicy": "Never",
-                                   "initContainers": [{"name": "investigate"}],
-                                   "containers": [{"name": "publish"}]}}},
-}
+TEMPLATE = JOB_TEMPLATE
 OWNERS = {
     ("Pod", "radarr-7d9c8b6f5-x2x9q"): ("ReplicaSet", "radarr-7d9c8b6f5"),
     ("Pod", "radarr-7d9c8b6f5-zzzzz"): ("ReplicaSet", "radarr-7d9c8b6f5"),

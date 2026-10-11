@@ -30,6 +30,35 @@ def make_policy(**overrides):
     return parse_policy(raw)
 
 
+# A minimal Job template that passes jobs.check_template: the spec's credential split
+# (Anthropic key only in investigate; GitHub App and Pushover only in publish) and a
+# TTL long enough for the dispatcher's 24h spend accounting.
+JOB_TEMPLATE = {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {"namespace": "triage", "labels": {"app": "triage-agent"}},
+    "spec": {
+        "ttlSecondsAfterFinished": 90000,
+        "template": {"spec": {
+            "serviceAccountName": "triage-agent",
+            "restartPolicy": "Never",
+            "initContainers": [{"name": "investigate",
+                                "env": [{"name": "HOME", "value": "/work/home"}],
+                                "volumeMounts": [{"name": "work", "mountPath": "/work"},
+                                                 {"name": "anthropic", "mountPath": "/var/run/secrets/triage/anthropic"}]}],
+            "containers": [{"name": "publish",
+                            "volumeMounts": [{"name": "work", "mountPath": "/work"},
+                                             {"name": "github", "mountPath": "/var/run/secrets/triage/github"},
+                                             {"name": "pushover", "mountPath": "/var/run/secrets/triage/pushover"}]}],
+            "volumes": [{"name": "work", "emptyDir": {}},
+                        {"name": "anthropic", "secret": {"secretName": "triage-anthropic-apikey"}},
+                        {"name": "github", "secret": {"secretName": "triage-github-app"}},
+                        {"name": "pushover", "secret": {"secretName": "triage-pushover"}}],
+        }},
+    },
+}
+
+
 def am_alert(labels, status="firing", fingerprint="aaaa1111", starts="2026-10-11T10:00:00Z"):
     """One alert as Alertmanager's webhook (version 4) sends it."""
     return {

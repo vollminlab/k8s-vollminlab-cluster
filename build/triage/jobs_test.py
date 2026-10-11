@@ -5,20 +5,11 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from testsupport import JOB_TEMPLATE
 from triage import jobs
 from triage.incident import Incident
 
-TEMPLATE = {
-    "apiVersion": "batch/v1",
-    "kind": "Job",
-    "metadata": {"namespace": "triage", "labels": {"app": "triage-agent"}},
-    "spec": {"template": {"spec": {
-        "serviceAccountName": "triage-agent",
-        "restartPolicy": "Never",
-        "initContainers": [{"name": "investigate", "env": [{"name": "HOME", "value": "/work/home"}]}],
-        "containers": [{"name": "publish"}],
-    }}},
-}
+TEMPLATE = JOB_TEMPLATE
 INC = Incident("alertmanager", "KubePodCrashLooping", "mediastack", "Deployment/radarr", am_fingerprints=["f"])
 
 
@@ -52,11 +43,43 @@ def test_sweep_jobs_are_labelled_sweep():
     assert jobs.build_job(TEMPLATE, sweep, None, 2400, 1)["metadata"]["labels"][jobs.KIND_LABEL] == "sweep"
 
 
+def _podspec(t):
+    return t["spec"]["template"]["spec"]
+
+
+def test_valid_template_passes_check():
+    jobs.check_template(copy.deepcopy(TEMPLATE))
+
+
 @pytest.mark.parametrize("mutate,message", [
     (lambda t: t["spec"]["template"]["spec"].update(initContainers=[]), "initContainers"),
     (lambda t: t["spec"]["template"]["spec"]["containers"].append({"name": "x"}), "containers"),
     (lambda t: t["spec"]["template"]["spec"].update(restartPolicy="OnFailure"), "restartPolicy"),
     (lambda t: t["spec"]["template"]["spec"].update(serviceAccountName="default"), "serviceAccountName"),
+    (lambda t: t["spec"].pop("ttlSecondsAfterFinished"), "ttlSecondsAfterFinished"),
+    (lambda t: t["spec"].update(ttlSecondsAfterFinished=3600), "ttlSecondsAfterFinished"),
+    # the Anthropic key in publish
+    (lambda t: _podspec(t)["containers"][0]["volumeMounts"].append({"name": "anthropic", "mountPath": "/a"}),
+     "triage-anthropic-apikey"),
+    # the Anthropic key missing from investigate
+    (lambda t: _podspec(t)["initContainers"][0].update(volumeMounts=[]), "triage-anthropic-apikey"),
+    # GitHub App / Pushover credentials in investigate
+    (lambda t: _podspec(t)["initContainers"][0]["volumeMounts"].append({"name": "github", "mountPath": "/g"}),
+     "triage-github-app"),
+    (lambda t: _podspec(t)["initContainers"][0]["volumeMounts"].append({"name": "pushover", "mountPath": "/p"}),
+     "triage-pushover"),
+    # the GitHub App credentials missing from publish
+    (lambda t: _podspec(t)["containers"][0].update(volumeMounts=[{"name": "pushover", "mountPath": "/p"}]),
+     "triage-github-app"),
+    # ... including by a second volume of the same secret, or by env
+    (lambda t: (_podspec(t)["volumes"].append({"name": "gh2", "secret": {"secretName": "triage-github-app"}}),
+                _podspec(t)["initContainers"][0]["volumeMounts"].append({"name": "gh2", "mountPath": "/g"})),
+     "triage-github-app"),
+    (lambda t: _podspec(t)["initContainers"][0]["env"].append(
+        {"name": "T", "valueFrom": {"secretKeyRef": {"name": "triage-pushover", "key": "token"}}}),
+     "triage-pushover"),
+    (lambda t: _podspec(t)["containers"][0].update(envFrom=[{"secretRef": {"name": "triage-anthropic-apikey"}}]),
+     "triage-anthropic-apikey"),
 ])
 def test_check_template_rejects_drift(mutate, message):
     t = copy.deepcopy(TEMPLATE)

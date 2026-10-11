@@ -6,6 +6,34 @@ NAMESPACE = "triage"
 FP_LABEL = "triage.vollminlab.com/fp"
 KIND_LABEL = "triage.vollminlab.com/kind"
 INCIDENT_ANNOTATION = "triage.vollminlab.com/incident"
+MIN_TTL_SECONDS = 86400
+# The credential split: the LLM container never holds a GitHub or Pushover credential,
+# and the container that writes to GitHub never holds the Anthropic key.
+SECRET_OWNER = {
+    "triage-anthropic-apikey": "investigate",
+    "triage-github-app": "publish",
+    "triage-pushover": "publish",
+}
+
+
+def _secret_volumes(pod: dict, secret: str) -> set:
+    names = set()
+    for v in pod.get("volumes", []):
+        if (v.get("secret") or {}).get("secretName") == secret:
+            names.add(v["name"])
+        for src in (v.get("projected") or {}).get("sources", []):
+            if (src.get("secret") or {}).get("name") == secret:
+                names.add(v["name"])
+    return names
+
+
+def _uses_secret(pod: dict, container: dict, secret: str) -> bool:
+    if {m["name"] for m in container.get("volumeMounts", [])} & _secret_volumes(pod, secret):
+        return True
+    if any(((e.get("valueFrom") or {}).get("secretKeyRef") or {}).get("name") == secret
+           for e in container.get("env", [])):
+        return True
+    return any((e.get("secretRef") or {}).get("name") == secret for e in container.get("envFrom", []))
 
 
 def check_template(t: dict) -> None:
@@ -22,6 +50,16 @@ def check_template(t: dict) -> None:
         raise ValueError("job template: restartPolicy must be Never")
     if pod.get("serviceAccountName") != "triage-agent":
         raise ValueError("job template: serviceAccountName must be triage-agent")
+    ttl = t["spec"].get("ttlSecondsAfterFinished")
+    if not isinstance(ttl, int) or ttl < MIN_TTL_SECONDS:
+        raise ValueError(f"job template: spec.ttlSecondsAfterFinished must be >= {MIN_TTL_SECONDS} "
+                         f"(the dispatcher's 24h spend accounting reads finished Jobs), got {ttl!r}")
+    containers = {c["name"]: c for c in pod["initContainers"] + pod["containers"]}
+    for secret, owner in SECRET_OWNER.items():
+        holders = sorted(name for name, c in containers.items() if _uses_secret(pod, c, secret))
+        if holders != [owner]:
+            raise ValueError(f"job template: secret {secret} must be available to exactly [{owner}] "
+                             f"(the credential split), but is in {holders}")
 
 
 def build_job(template: dict, incident, existing_issue, deadline_seconds: int, now: int) -> dict:
