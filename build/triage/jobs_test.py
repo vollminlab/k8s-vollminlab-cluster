@@ -150,6 +150,38 @@ def test_check_template_enforces_the_containment_split(mutate, message):
         jobs.check_template(t)
 
 
+@pytest.mark.parametrize("home", ["/publish/../result/home", "/publish/../work/home", "publish/home", "./home", "/publish/a/../../result"])
+def test_check_template_judges_publish_home_after_normalisation(home):
+    t = copy.deepcopy(TEMPLATE)
+    _set_env(_pub(t), "HOME", home)
+    with pytest.raises(ValueError, match="HOME"):
+        jobs.check_template(t)
+
+
+@pytest.mark.parametrize("pick", [_pub, _inv])
+def test_check_template_rejects_a_duplicate_env_name(pick):
+    # the kubelet uses the last entry for a name, the check used to read the first
+    t = copy.deepcopy(TEMPLATE)
+    pick(t)["env"].append({"name": "HOME", "value": "/result/home"})
+    with pytest.raises(ValueError, match="duplicate.*HOME"):
+        jobs.check_template(t)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda t: _pub(t).update(args=["-c", "import os"]),
+    lambda t: _inv(t).update(args=["-c", "import os"]),
+    lambda t: _pub(t).update(command=["python", "-I"], args=["-c", "import os"]),
+    lambda t: _pub(t).update(command=["python", "-I", "-u", "-m", "triage.publish", "--evil"]),
+    lambda t: _inv(t).update(command=["python", "-I", "-c", "import os"]),
+    lambda t: _inv(t).update(command=["python", "-I", "-u", "-m", "triage.publish"]),
+])
+def test_check_template_requires_the_exact_entrypoint_and_no_args(mutate):
+    t = copy.deepcopy(TEMPLATE)
+    mutate(t)
+    with pytest.raises(ValueError, match="entrypoint|args"):
+        jobs.check_template(t)
+
+
 def test_check_template_allows_a_home_below_a_private_mount():
     t = copy.deepcopy(TEMPLATE)
     _set_env(_pub(t), "HOME", "/publish/deeper/home")

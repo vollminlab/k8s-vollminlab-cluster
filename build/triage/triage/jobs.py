@@ -1,6 +1,7 @@
 """Build triage Jobs from the template, and operate on the suspended-Job queue."""
 import copy
 import json
+import posixpath
 
 NAMESPACE = "triage"
 FP_LABEL = "triage.vollminlab.com/fp"
@@ -60,6 +61,10 @@ def _env(c: dict, name: str):
     return next((e.get("value") for e in c.get("env", []) if e.get("name") == name), None)
 
 
+ENTRYPOINTS = {"investigate": ["python", "-I", "-u", "-m", "triage.investigate"],
+               "publish": ["python", "-I", "-u", "-m", "triage.publish"]}
+
+
 def _check_containment(pod: dict, inv: dict, pub: dict) -> None:
     """investigate ran a possibly prompt-injected model, so nothing it could write may
     reach publish (which holds the GitHub key) except result.json: a shared checkout or
@@ -93,6 +98,9 @@ def _check_containment(pod: dict, inv: dict, pub: dict) -> None:
     home = _env(pub, "HOME")
     if not home or not home.startswith("/"):
         raise ValueError("job template: publish must set HOME to an absolute path on its own volume")
+    # Judge where the path lands, not how it is spelled: /publish/../result/home starts
+    # with /publish but resolves onto the shared result volume.
+    home = posixpath.normpath(home)
     owner = max((m for m in pm.values() if home == m["mountPath"] or home.startswith(m["mountPath"].rstrip("/") + "/")),
                 key=lambda m: len(m["mountPath"]), default=None)
     if owner is None or owner["name"] == RESULT_VOLUME or owner.get("readOnly"):
@@ -100,9 +108,13 @@ def _check_containment(pod: dict, inv: dict, pub: dict) -> None:
     if owner["name"] not in volumes or _backing(volumes[owner["name"]]) in inv_backing:
         raise ValueError(f"job template: publish HOME {home!r} is on a volume shared with investigate")
     for c in (inv, pub):
-        if list(c.get("command") or [])[:2] != ["python", "-I"]:
-            raise ValueError(f"job template: {c['name']} must run `python -I` (isolated: no user "
-                             f"site-packages, no PYTHON* env, no cwd on sys.path)")
+        if c.get("args"):
+            raise ValueError(f"job template: {c['name']} must not set args (they are appended to the "
+                             f"entrypoint, so `command: [python, -I]` + args could run any code)")
+        if list(c.get("command") or []) != ENTRYPOINTS[c["name"]]:
+            raise ValueError(f"job template: {c['name']} must run exactly {ENTRYPOINTS[c['name']]} "
+                             f"(entrypoint; python -I is isolated: no user site-packages, no PYTHON* "
+                             f"env, no cwd on sys.path)")
 
 
 # Every volume type the Job may use. Anything else (hostPath, a PVC, csi, projected,
@@ -162,6 +174,12 @@ def check_template(t: dict) -> None:
         raise ValueError(f"job template: spec.ttlSecondsAfterFinished must be >= {MIN_TTL_SECONDS} "
                          f"(the dispatcher's 24h spend accounting reads finished Jobs), got {ttl!r}")
     containers = {c["name"]: c for c in pod["initContainers"] + pod["containers"]}
+    for name, c in containers.items():
+        names = [e.get("name") for e in c.get("env", [])]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            # the kubelet applies the last entry for a name; _env reads the first
+            raise ValueError(f"job template: {name} has duplicate env names {dupes}")
     for secret, owner in SECRET_OWNER.items():
         holders = sorted(name for name, c in containers.items() if _uses_secret(pod, c, secret))
         if holders != [owner]:
