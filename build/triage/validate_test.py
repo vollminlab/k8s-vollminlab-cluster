@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 from triage.validate import kyverno_policies, validate
 
@@ -46,3 +47,23 @@ def test_a_failing_step_is_reported(tmp_path):
 def test_no_policies_is_an_error_not_a_pass(tmp_path):
     msg = validate(tmp_path, "x/", Runner())
     assert "no Kyverno policies" in msg
+
+
+def test_renders_outside_the_repo_and_leaves_nothing_behind(tmp_path):
+    # publish refuses a checkout with untracked or ignored files, so validation
+    # must not write into it: render into a temporary directory instead.
+    repo = repo_with_policies(tmp_path / "repo")
+    seen = []
+
+    def run(cmd, **kw):
+        if cmd[0] == "kustomize":
+            out = Path(cmd[cmd.index("-o") + 1])
+            out.write_text("kind: ConfigMap\n")
+            seen.append(out)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    before = sorted(p for p in repo.rglob("*"))
+    assert validate(repo, "clusters/vollminlab-cluster/demo/demo/app/", run) is None
+    assert not seen[0].is_relative_to(repo)
+    assert not seen[0].exists()                       # the temporary directory is gone
+    assert sorted(p for p in repo.rglob("*")) == before

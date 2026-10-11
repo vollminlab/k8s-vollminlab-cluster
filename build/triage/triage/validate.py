@@ -1,5 +1,6 @@
 """Gate 4: kustomize build, kubeconform and kyverno apply, as CI runs them."""
 import subprocess
+import tempfile
 from pathlib import Path
 
 CATALOG = ("https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
@@ -26,7 +27,13 @@ def validate(repo: Path, app_dir: str, run=subprocess.run):
         # An empty policy list would make `kyverno apply` vacuous. Refuse rather
         # than report a validation that checked nothing.
         return "no Kyverno policies found under clusters/**/kyverno/**/policies; refusing to pass"
-    rendered = repo / ".triage-rendered.yaml"
+    # Rendered outside the checkout: publish refuses to commit from a checkout that
+    # has any untracked or ignored file, so validation must leave it untouched.
+    with tempfile.TemporaryDirectory(prefix="triage-validate-") as d:
+        return _run_steps(repo, app_dir, policies, Path(d) / "rendered.yaml", run)
+
+
+def _run_steps(repo: Path, app_dir: str, policies: list, rendered: Path, run):
     steps = [
         ("kustomize build", ["kustomize", "build", str(repo / app_dir), "-o", str(rendered)]),
         ("kubeconform", ["kubeconform", "-strict", "-ignore-missing-schemas",
