@@ -1,5 +1,6 @@
 """gitleaks over text before it is posted anywhere."""
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -9,8 +10,15 @@ class LeakScanError(Exception):
     pass
 
 
+# A name becomes a filename, and gitleaks findings are mapped back by its stem.
+_NAME = re.compile(r"[a-z0-9_]{1,40}", re.ASCII)
+
+
 def scan(texts: dict, run=subprocess.run) -> dict:
     """{name: [secret, ...]} for every text with a finding. Names must be filename-safe."""
+    for name in texts:
+        if not isinstance(name, str) or not _NAME.fullmatch(name):
+            raise LeakScanError(f"text name {str(name)[:60]!r} is not ^[a-z0-9_]{{1,40}}$")
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "in"
         root.mkdir()

@@ -44,3 +44,17 @@ def test_redact_longest_first():
 def test_malformed_report_raises_leakscanerror(raw):
     with pytest.raises(LeakScanError):
         scan({"issue": "x"}, Gitleaks(raw=raw))
+
+
+@pytest.mark.parametrize("name", ["../escape", "a/b", "", "x" * 41, "Issue", "a.b", "a-b", "ａ", 1, "a\n"],
+                         ids=["traversal", "slash", "empty", "too-long", "upper", "dot", "dash",
+                              "fullwidth", "int", "newline"])
+def test_names_must_be_filename_safe(name):
+    g = Gitleaks()
+    with pytest.raises(LeakScanError):
+        scan({name: "x"}, g)
+    assert g.cmd is None            # rejected before anything is written or run
+
+
+def test_valid_names_are_accepted():
+    assert scan({"issue_body": "x", "patch": "y", "a" * 40: "z"}, Gitleaks()) == {}
