@@ -41,9 +41,15 @@ def parse_bytes(q) -> float:
 class FieldChange:
     file: str
     doc: tuple           # yamldiff.doc_key: (apiVersion, kind, namespace, name)
-    field: str
+    field: str           # dotted, for display only; keys may contain dots
     old: object
     new: object
+    path: tuple = ()     # the field's real path within the document; match on this
+
+
+_LIMITS_MEMORY = ("resources", "limits", "memory")
+_REQUESTS_MEMORY = ("resources", "requests", "memory")
+_LIMITS_CPU = ("resources", "limits", "cpu")
 
 
 @dataclass
@@ -140,7 +146,7 @@ def _oom(changes, metrics):
         return "oom-memory-limit requires metrics.peak_memory_bytes (measured, not estimated)"
     raised_limit = False
     for c in changes:
-        if not c.field.endswith(("resources.limits.memory", "resources.requests.memory")):
+        if c.path[-3:] not in (_LIMITS_MEMORY, _REQUESTS_MEMORY):
             return f"{c.file}: {c.field} is not a memory request or limit"
         if c.old is MISSING or c.new is MISSING:
             return f"{c.file}: {c.field} was added or removed, not raised"
@@ -152,7 +158,7 @@ def _oom(changes, metrics):
             return f"{c.file}: {c.field} {c.old} -> {c.new} does not raise it"
         if new_b > MAX_GROWTH * old_b:
             return f"{c.file}: {c.field} {c.old} -> {c.new} more than doubles it"
-        if c.field.endswith("limits.memory"):
+        if c.path[-3:] == _LIMITS_MEMORY:
             raised_limit = True
             if new_b < HEADROOM * float(peak):
                 return (f"{c.file}: new limit {c.new} is below {HEADROOM}x the measured peak "
@@ -166,7 +172,7 @@ def _cpu(changes, metrics):
     if "throttled_ratio" not in metrics:
         return "cpu-throttle-limit requires metrics.throttled_ratio (measured)"
     for c in changes:
-        if not c.field.endswith("resources.limits.cpu"):
+        if c.path[-3:] != _LIMITS_CPU:
             return f"{c.file}: {c.field} is not a CPU limit"
         if c.old is MISSING or c.new is not MISSING:
             return f"{c.file}: cpu-throttle-limit may only remove a CPU limit"
@@ -177,7 +183,7 @@ def _renovate(changes, history_has_value, denylist, new_files):
     if len(changes) != 1:
         return f"renovate-breakage must change exactly one value, not {len(changes)}"
     c = changes[0]
-    if c.field.rsplit(".", 1)[-1] not in ("version", "tag", "image"):
+    if not c.path or c.path[-1] not in ("version", "tag", "image"):
         return f"{c.file}: {c.field} is not a version, tag or image field"
     if c.old is MISSING or c.new is MISSING or isinstance(c.new, (dict, list)):
         return f"{c.file}: {c.field} must be changed in place to a scalar"
@@ -233,7 +239,7 @@ def check(patch_text, cls, app_dir, namespace, metrics, *, read_file, list_files
         except yamldiff.DiffError as e:
             return _fail(f"{path}: {e}")
         edits += line_edits(path, old, new)
-        changes += [FieldChange(path, c.path[0], ".".join(c.path[1:]), c.old, c.new) for c in diffs]
+        changes += [FieldChange(path, c.path[0], ".".join(c.path[1:]), c.old, c.new, c.path[1:]) for c in diffs]
         new_files[path] = new
     if not changes:
         return _fail("the patch changes no YAML value")

@@ -250,3 +250,30 @@ def test_oom_line_rules_accept_a_plain_raise():
 def test_renovate_line_may_not_hide_a_yaml_line_break(sep):
     edits = [("f.yaml", ["      version: 2.0.0"], [f"      version: 1.9.3{sep}      evil: x"])]
     assert line_violation("renovate-breakage", edits)
+
+
+# ---- field matching is by path segment, not dotted-string suffix ------------------
+
+@pytest.mark.parametrize("block", [
+    "    sidecar.resources.limits:\n      memory: 64Mi\n",          # a key containing dots
+    "    xresources:\n      limits:\n        memory: 64Mi\n",       # no segment boundary
+])
+def test_oom_matches_field_paths_by_segment(block):
+    cm = CONFIGMAP.replace("    image:\n", block + "    image:\n")
+    files = dict(REPO_FILES, **{CM: cm})
+    p = make_patch(CM, cm, cm.replace("memory: 64Mi", "memory: 100Mi"))
+    r = guard(p, "oom-memory-limit", {"peak_memory_bytes": 1}, files=files)
+    assert not r.ok and "not a memory request or limit" in r.reason
+
+
+def test_cpu_matches_field_paths_by_segment():
+    cm = CONFIGMAP.replace("    image:\n", "    xresources:\n      limits:\n        cpu: 100m\n        memory: 1Mi\n    image:\n")
+    files = dict(REPO_FILES, **{CM: cm})
+    p = make_patch(CM, cm, cm.replace("        cpu: 100m\n", ""))
+    r = guard(p, "cpu-throttle-limit", {"throttled_ratio": 0.4}, files=files)
+    assert not r.ok and "not a CPU limit" in r.reason
+
+
+def test_changes_carry_a_path_tuple():
+    r = guard(cm_patch("memory: 256Mi", "memory: 400Mi"), "oom-memory-limit", {"peak_memory_bytes": 300 * MI})
+    assert r.changes[0].path == ("data", "values.yaml", "resources", "limits", "memory")
