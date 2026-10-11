@@ -222,3 +222,23 @@ def test_tool_denials_are_capped_in_count_and_length(tmp_path):
     got = load_result(tmp_path / "r.json")["tool_denials"]
     assert len(got) == 50 and all(len(d) == 500 for d in got)
     assert got[0].startswith("Bash: 0 ") and got[-1].startswith("Bash: 49 ")
+
+
+def _load(tmp_path, **changes):
+    (tmp_path / "r.json").write_text(json.dumps(success(dict(AGENT_OK, **changes), 0.1, [])))
+    return load_result(tmp_path / "r.json")
+
+
+def test_a_trailing_newline_is_rejected_in_app_dir_and_metric_names(tmp_path):
+    # jsonschema matches with re.search, where `$` also matches before a final \n
+    assert _load(tmp_path)["status"] == "ok"
+    for bad in (AGENT_OK["app_dir"] + "\n", AGENT_OK["app_dir"].rstrip("/") + "\n"):
+        assert _load(tmp_path, app_dir=bad)["failure_reason"] == "invalid_output", repr(bad)
+    assert _load(tmp_path, metrics={"peak_memory_bytes\n": 1})["failure_reason"] == "invalid_output"
+    assert _load(tmp_path, metrics={"peak_memory_bytes": 1})["status"] == "ok"
+
+
+def test_relaxed_schema_still_accepts_a_valid_output_after_the_newline_fix():
+    import jsonschema
+    jsonschema.Draft202012Validator(relaxed_schema()).validate(AGENT_OK)
+    assert "(?!" not in json.dumps(relaxed_schema())

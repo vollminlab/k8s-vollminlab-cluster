@@ -11,10 +11,10 @@
     "confidence": {"enum": ["low", "medium", "high"]},
     "class": {"enum": ["oom-memory-limit", "cpu-throttle-limit", "renovate-breakage", "none"]},
     "app_dir": {"type": ["string", "null"],
-                "pattern": "^clusters/vollminlab-cluster/[a-z0-9-]+/[a-z0-9-]+/app/?$"},
+                "pattern": "^(?![\\s\\S]*\\n)clusters/vollminlab-cluster/[a-z0-9-]+/[a-z0-9-]+/app/?$"},
     "patch": {"type": ["string", "null"], "maxLength": 20000},
     "metrics": {"type": "object",
-                "propertyNames": {"pattern": "^[a-z_]{1,40}$"},
+                "propertyNames": {"pattern": "^(?![\\s\\S]*\\n)[a-z_]{1,40}$"},
                 "additionalProperties": {"type": "number"}},
     "injection_suspected": {"type": "boolean"},
     "findings": {
