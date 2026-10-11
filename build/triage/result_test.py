@@ -1,6 +1,8 @@
 import copy
 import json
 
+import pytest
+
 from testsupport import AGENT_OK
 from triage.result import (AGENT_SCHEMA, failure, load_result, relaxed_schema, success,
                            validate_agent_output)
@@ -55,3 +57,44 @@ def test_load_result_handles_missing_bad_and_tampered_files(tmp_path):
     failed = failure("max_turns", "hit 40")
     (tmp_path / "f.json").write_text(json.dumps(failed))
     assert load_result(tmp_path / "f.json")["failure_reason"] == "max_turns"
+
+
+def test_relaxed_schema_keeps_properties_named_like_keywords():
+    schema = {"type": "object",
+              "properties": {"pattern": {"type": "string", "pattern": "^a$"},
+                             "maxLength": {"type": "integer"},
+                             "maxItems": {"type": "array", "maxItems": 3}},
+              "required": ["pattern"]}
+    r = relaxed_schema(schema)
+    assert set(r["properties"]) == {"pattern", "maxLength", "maxItems"}
+    assert r["properties"]["pattern"] == {"type": "string"}
+    assert r["properties"]["maxItems"] == {"type": "array"}
+    assert r["required"] == ["pattern"]
+
+
+def test_relaxed_schema_strips_keywords_inside_property_names_schemas():
+    # propertyNames' value is a schema, so `pattern` there IS a keyword.
+    assert relaxed_schema({"propertyNames": {"pattern": "^x$"}}) == {"propertyNames": {}}
+
+
+@pytest.mark.parametrize("text", ["[]", '"x"', "3", "null"])
+def test_load_result_non_object_json_is_a_failure_record(tmp_path, text):
+    (tmp_path / "r.json").write_text(text)
+    r = load_result(tmp_path / "r.json")
+    assert r["status"] == "failed" and r["failure_reason"] == "invalid_output"
+
+
+@pytest.mark.parametrize("cost", ["lots", [1], {"a": 1}])
+def test_load_result_non_numeric_cost_is_a_failure_record(tmp_path, cost):
+    tampered = dict(success(dict(AGENT_OK, confidence="certain"), 0.1, []), cost_usd=cost)
+    (tmp_path / "r.json").write_text(json.dumps(tampered))
+    r = load_result(tmp_path / "r.json")
+    assert r["failure_reason"] == "invalid_output" and r["cost_usd"] == 0.0
+    good = dict(success(AGENT_OK, 0.1, []), cost_usd=cost)
+    (tmp_path / "g.json").write_text(json.dumps(good))
+    assert load_result(tmp_path / "g.json")["failure_reason"] == "invalid_output"
+
+
+def test_failure_records_whether_cost_is_estimated():
+    assert failure("timeout", "x")["cost_estimated"] is False
+    assert failure("timeout", "x", 3.0, cost_estimated=True)["cost_estimated"] is True
