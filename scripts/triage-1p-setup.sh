@@ -3,7 +3,7 @@
 # Secrets are read with hidden prompts or from files and piped to `op` as a JSON template on
 # stdin, so no value lands on a command line, in shell history, or on screen.
 #
-# Usage: bash ~/triage-1p-setup.sh ~/Downloads/vollminlab-triage.<date>.private-key.pem
+# Usage: bash scripts/triage-1p-setup.sh ~/Downloads/vollminlab-triage.<date>.private-key.pem
 set -euo pipefail
 umask 077
 VAULT=Homelab
