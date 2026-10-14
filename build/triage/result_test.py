@@ -1,5 +1,8 @@
 import copy
 import json
+import os
+import shutil
+import subprocess
 
 import pytest
 
@@ -29,6 +32,27 @@ def test_relaxed_schema_drops_length_and_pattern_limits_only():
     assert "maxLength" not in r and "pattern" not in r and "maxItems" not in r
     assert r.count('"enum"') == json.dumps(AGENT_SCHEMA).count('"enum"')
     assert relaxed_schema()["additionalProperties"] is False
+
+
+def test_relaxed_schema_drops_the_draft_declaration():
+    assert "$schema" in AGENT_SCHEMA
+    assert "$schema" not in json.dumps(relaxed_schema())
+
+
+@pytest.mark.skipif(shutil.which("claude") is None, reason="needs the claude binary (present in the image)")
+def test_real_claude_accepts_the_relaxed_schema(tmp_path):
+    """The binary's own schema check, which no fixture can stand in for.
+
+    0.1.0 shipped `$schema: draft/2020-12` to `--json-schema`; claude refused it before
+    making any API call, so every investigation ended `invalid_output`. Runs with an
+    invalid key and an empty HOME, so it can fail authentication but never spend.
+    """
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "ANTHROPIC_API_KEY": "sk-ant-invalid-test"}
+    proc = subprocess.run(
+        ["claude", "-p", "x", "--max-turns", "1", "--output-format", "json",
+         "--json-schema", json.dumps(relaxed_schema())],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+    assert "not a valid JSON Schema" not in proc.stdout + proc.stderr
 
 
 def test_failure_record_shape():
