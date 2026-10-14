@@ -15,7 +15,10 @@ MAX_RESULT_BYTES = 1 << 20
 # characters, so an unbounded list could suppress the whole issue.
 MAX_DENIALS = 50
 MAX_DENIAL_CHARS = 500
-_RELAXED_DROP = ("pattern", "maxLength", "maxItems")
+# `$schema` goes too: Claude Code's --json-schema validator knows only its default draft
+# and rejects a 2020-12 declaration outright ("no schema with key or ref"), so claude
+# exits before any API call. validate_agent_output still applies the full 2020-12 schema.
+_RELAXED_DROP = ("pattern", "maxLength", "maxItems", "$schema")
 
 
 # Keywords whose value maps NAMES to subschemas; their keys are never keywords.
