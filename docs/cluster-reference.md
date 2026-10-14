@@ -1264,10 +1264,11 @@ Exportarr instances for Radarr, Sonarr and SABnzbd are documented under Media St
 | Image | `harbor.vollminlab.com/vollminlab/triage:0.1.0` (source `build/triage/`, tag `triage/vX.Y.Z` to release) |
 | Dispatcher | Deployment `triage-dispatcher`, 1 replica, `Recreate`; container port 8080 (`/alertmanager`, `/sweep`, `/healthz`, `/metrics`) |
 | Per-incident Job | init `investigate` (Claude Code, Anthropic key, read-only `triage-agent` SA) → main `publish` (no LLM, GitHub App + Pushover) |
-| Triggers | Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`), CronJob `triage-sweep` `30 7 * * *` |
+| Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`) **not yet added** as of 2026-10-14 (plan Task 37) |
 | Reports | private repo `vollminlab/triage-reports`; one issue per fingerprint, label `fp/<12 hex>` |
 | Policy | ConfigMap `triage-policy` from `triage/triage/app/policy.yaml`: model, caps, and the `shadow`/`live` mode per fix class |
 | Alerts | `TriageDispatcherDown`, `TriageSweepStale`, `TriageAgentErrors`, `TriagePublishFailing` |
+| Runbook | `docs/runbooks/triage-agent.md`: credentials, verification, pause/stop, image releases |
 | Spec / plan | `docs/superpowers/specs/triage-agent-design.md`, `docs/superpowers/plans/triage-agent.md` |
 
 Turns every alert into a private root-cause diagnosis. For three fix classes it can also open a PR
@@ -1280,8 +1281,9 @@ consecutive `shadow-correct` with no `shadow-wrong` between them, set that class
 `policy.yaml` by PR.
 
 **Stopping it:** to keep diagnoses but stop all PRs, set every class to `shadow`. To stop
-everything, set `replicas: 0` on `triage-dispatcher`. Both are git changes; nothing needs a manual
-apply.
+everything, set `replicas: 0` on `triage-dispatcher` and `suspend: true` on `triage-sweep`. Both are
+git changes. A bare `kubectl scale` is reverted by Flux within 10 minutes; the emergency and
+out-of-cluster stops are in `docs/runbooks/triage-agent.md`.
 
 **Did it actually run?** Check the artifact, not the status: an issue in `triage-reports`,
 `triage_jobs_24h` by outcome, and `kubectl get jobs -n triage`. A Job that finished with no

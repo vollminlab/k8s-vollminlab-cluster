@@ -17,7 +17,7 @@ GitOps-managed Kubernetes cluster using Flux CD. All workloads are Helm-based Fl
 - `.claude/rules/docs.md` — which doc a change belongs in, and the CI check that enforces it
 
 **Operational runbooks** (reference when needed, not loaded every session):
-`docs/runbooks/` — flux-templates, kyverno-recovery, homepage, external-dns, incidents, tofu-provider-bumps
+`docs/runbooks/` — flux-templates, kyverno-recovery, homepage, external-dns, incidents, tofu-provider-bumps, triage-agent
 
 ## Hard constraints
 
