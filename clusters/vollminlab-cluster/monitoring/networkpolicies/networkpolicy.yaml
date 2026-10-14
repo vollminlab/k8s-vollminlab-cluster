@@ -193,3 +193,88 @@ spec:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
+---
+# triage agent Jobs -> VictoriaMetrics, both tiers (app: server), for metric history.
+# Container port 8428; the services are headless. Verified 2026-10-11.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-triage-victoria-metrics
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: triage
+          podSelector:
+            matchLabels:
+              app: triage-agent
+      ports:
+        - protocol: TCP
+          port: 8428
+---
+# triage agent Jobs -> Loki for logs. Container port 3100.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-triage-loki
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: loki
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: triage
+          podSelector:
+            matchLabels:
+              app: triage-agent
+      ports:
+        - protocol: TCP
+          port: 3100
+---
+# triage dispatcher -> Alertmanager API (re-check before dispatch). Container port 9093.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-triage-alertmanager
+  namespace: monitoring
+  labels:
+    app: monitoring
+    env: production
+    category: security
+spec:
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: triage
+          podSelector:
+            matchLabels:
+              app: triage-dispatcher
+      ports:
+        - protocol: TCP
+          port: 9093

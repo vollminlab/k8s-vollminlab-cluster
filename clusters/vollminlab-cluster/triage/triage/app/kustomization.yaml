@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Required with configMapGenerator: generated ConfigMaps carry no namespace otherwise.
+namespace: triage
+resources:
+  - rbac.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml
+  - triage-github-app-externalsecret.yaml
+  - triage-anthropic-apikey-externalsecret.yaml
+  - triage-pushover-externalsecret.yaml
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+  - cronjob-sweep.yaml
+configMapGenerator:
+  - name: triage-policy
+    files:
+      - policy.yaml
+  - name: triage-job-template
+    files:
+      - job-template.yaml
+generatorOptions:
+  # Stable names: job-template.yaml refers to triage-policy by name from inside a
+  # ConfigMap, where kustomize cannot rewrite a hashed name. Reloader restarts the
+  # dispatcher on change instead.
+  disableNameSuffixHash: true
+  labels:
+    app: triage
+    env: production
+    category: observability

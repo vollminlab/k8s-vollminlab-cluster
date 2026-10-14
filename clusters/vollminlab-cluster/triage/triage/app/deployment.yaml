@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triage-dispatcher
+  namespace: triage
+  labels:
+    app: triage-dispatcher
+    env: production
+    category: observability
+  annotations:
+    # Restart on triage-policy / triage-job-template changes: the dispatcher reads both at startup.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # Exactly one dispatcher: two would race to un-suspend Jobs. Recreate guarantees
+  # the old pod is gone before the new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: triage-dispatcher
+  template:
+    metadata:
+      labels:
+        app: triage-dispatcher
+        env: production
+        category: observability
+    spec:
+      serviceAccountName: triage-dispatcher
+      imagePullSecrets:
+        - name: harbor-vollminlab-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dispatcher
+          image: harbor.vollminlab.com/vollminlab/triage:0.1.0
+          command: ["python", "-I", "-u", "-m", "triage.server"]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/triage
+              readOnly: true
+            - name: github
+              mountPath: /var/run/secrets/triage/github
+              readOnly: true
+            - name: pushover
+              mountPath: /var/run/secrets/triage/pushover
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: triage-policy
+              - configMap:
+                  name: triage-job-template
+        - name: github
+          secret:
+            secretName: triage-github-app
+        - name: pushover
+          secret:
+            secretName: triage-pushover
+        - name: tmp
+          emptyDir: {}

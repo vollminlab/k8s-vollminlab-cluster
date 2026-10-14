@@ -18,6 +18,7 @@ resources:
   - prometheusrule-data-loss.yaml
   - prometheusrule-eso.yaml
   - prometheusrule-gitops.yaml
+  - prometheusrule-triage.yaml
   - prometheusrule-victoria-metrics.yaml
   - prometheusrule-volsync.yaml
   - nodes-dashboard-configmap.yaml

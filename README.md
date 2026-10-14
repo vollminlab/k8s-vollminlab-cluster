@@ -127,6 +127,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   tailscale/                            # Tailscale operator
   tailscale-connector/                  # Subnet router / connector
   tofu/                                 # tofu-controller (OpenTofu IaC reconciliation)
+  triage/                               # Alert triage agent (private diagnosis issues)
   trivy-system/                         # Trivy operator (image + config scanning)
   velero/                               # Cluster backup (MinIO + Backblaze B2)
   volsync-system/                       # VolSync (PVC replication to backup targets)
@@ -206,6 +207,7 @@ StorageClasses: `longhorn` (default), `longhorn-r1`, `longhorn-r2`, `longhorn-dm
 | b2-exporter | monitoring | Backblaze B2 bucket metrics (plain Deployment, not Helm) |
 | Goldilocks | goldilocks | Resource request recommendations |
 | Trivy Operator | trivy-system | Image + config vulnerability scanning |
+| Triage agent | triage | Investigates alerts with Claude Code; files private diagnosis issues |
 
 ### Applications
 

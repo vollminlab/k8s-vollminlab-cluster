@@ -1,0 +1,33 @@
+# triage-policy. The dispatcher reloads on change (Reloader); each Job reads it fresh.
+# Promote a class to `live` only after 3 consecutive shadow-correct issues for it
+# with no shadow-wrong between them (spec: "Shadow mode as the acceptance test").
+model: claude-opus-5-5
+max_turns: 40
+per_run_budget_usd: 3
+daily_budget_usd: 15
+queue_cap: 10
+reinvestigate_after_hours: 24
+job_deadline_seconds: 2400
+reports_repo: vollminlab/triage-reports
+cluster_repo: vollminlab/k8s-vollminlab-cluster
+classes:
+  oom-memory-limit: shadow
+  cpu-throttle-limit: shadow
+  renovate-breakage: shadow
+renovate_denylist:
+  - velero-plugin-for-aws
+sweep_checklist: |
+  1. empty-selector-backup: for every Velero Schedule that sets a labelSelector, take its most
+     recent Backup from the last 26 hours and count its PodVolumeBackups with
+     `kubectl get podvolumebackups.velero.io -n velero -l velero.io/backup-name=<backup> --no-headers`.
+     Zero means it backed up nothing while reporting Completed. Also confirm the selector
+     matches a label on the PVC, not only on the pod (velero.md).
+  2. unprotected-pvc: a PVC is protected if a VolSync ReplicationSource covers it, or a
+     PodVolumeBackup from the last 26 hours covers the pod volume that mounts it. Map
+     PodVolumeBackups to PVCs per POD, never per namespace (velero.md explains why the
+     per-namespace join reports false orphans). PVCs on the smb StorageClass, PVCs labelled
+     backup.vollminlab.com/volsync=true, and PVCs in namespaces velero.md lists with a stated
+     reason are not findings.
+  3. inert-kyverno-policy: ClusterPolicies with zero `pass` results across all PolicyReports,
+     counted with the snippet in kyverno.md. Remove this item once the
+     KyvernoPolicyNoPassResults alert is live (plan Task 3).
