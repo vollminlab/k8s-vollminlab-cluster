@@ -39,11 +39,18 @@ class Incident:
     started_at: str = ""
     am_fingerprints: list = field(default_factory=list)   # Alertmanager's own, for re-checks
     status: str = "firing"
+    alerts: list = field(default_factory=list)  # every alertname merged into this incident
 
     @property
     def fingerprint(self) -> str:
         # Deliberately excludes labels, timestamps and messages: five restarting
-        # pods of one Deployment must be one incident.
+        # pods of one Deployment must be one incident. With a workload it excludes the
+        # alertname too: a crash-looping Deployment fires KubePodCrashLooping,
+        # KubePodNotReady and KubeDeploymentReplicasMismatch at once, and that is one
+        # problem, not three investigations (the 2026-10-15 canary filed 10 issues for
+        # 2 workloads). An alert with no workload has nothing else to tell it apart.
+        if self.workload:
+            return fingerprint(self.source, self.namespace, self.workload)
         return fingerprint(self.source, self.reason, self.namespace, self.workload)
 
     @property
@@ -124,6 +131,7 @@ def from_alertmanager(payload: dict) -> list:
             started_at=alert.get("startsAt", ""),
             am_fingerprints=[alert["fingerprint"]] if alert.get("fingerprint") else [],
             status=alert.get("status", "firing"),
+            alerts=[labels.get("alertname", "unknown")],
         ))
     return incidents
 

@@ -134,3 +134,36 @@ def test_scraper_rule_applies_only_to_ksm_and_node_exporter_jobs():
     assert raw_workload(ne) == ("Node", "k8sworker01")
     no_job = {"namespace": "monitoring", "service": KSM_SERVICE, "pod": KSM_POD}
     assert raw_workload(no_job) == ("Pod", KSM_POD)
+
+
+def test_alerts_on_one_workload_are_one_incident_whatever_their_alertname():
+    # A crash-looping Deployment fires KubePodCrashLooping, KubePodNotReady and
+    # KubeDeploymentReplicasMismatch together; the 2026-10-15 canary filed 10 issues for 2
+    # workloads this way.
+    a = Incident("alertmanager", "KubePodCrashLooping", "mediastack", "Deployment/radarr")
+    b = Incident("alertmanager", "KubeDeploymentReplicasMismatch", "mediastack", "Deployment/radarr")
+    assert a.fingerprint == b.fingerprint
+
+
+def test_the_same_workload_name_in_two_namespaces_is_two_incidents():
+    a = Incident("alertmanager", "KubePodCrashLooping", "mediastack", "Deployment/x")
+    b = Incident("alertmanager", "KubePodCrashLooping", "other", "Deployment/x")
+    assert a.fingerprint != b.fingerprint
+
+
+def test_cluster_level_alerts_are_still_told_apart_by_alertname():
+    # Nothing but the alertname identifies an alert with no workload.
+    a = Incident("alertmanager", "NodeDiskWriteLatencyHigh", "", "")
+    b = Incident("alertmanager", "etcdDatabaseHighFragmentationRatio", "", "")
+    assert a.fingerprint != b.fingerprint
+
+
+def test_alertmanager_incident_lists_its_alertname():
+    [inc] = from_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    assert inc.alerts == ["KubePodCrashLooping"]
+
+
+def test_incident_from_an_older_image_has_no_alerts_list():
+    # Queued Jobs outlive a dispatcher rollout; their annotation predates the field.
+    old = '{"source": "alertmanager", "reason": "R", "namespace": "ns", "workload": "Deployment/x"}'
+    assert Incident.from_json(old).alerts == []

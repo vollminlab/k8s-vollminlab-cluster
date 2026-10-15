@@ -352,17 +352,23 @@ the PEM or App ID is wrong.
 
 | Event | Result |
 |---|---|
-| New incident | Issue `[<alertname>] <namespace>/<Kind>/<name>` in `triage-reports`, labels `fp/<12 hex>`, `class/<class>`, plus one Pushover message |
+| New incident | Issue `[<alertname>, …] <namespace>/<Kind>/<name>` in `triage-reports`, labels `fp/<12 hex>`, `class/<class>`, plus one Pushover message |
 | Same fingerprint, open issue updated **≥ 24h** ago | Re-investigated; the result is a **comment** on that issue, with no Pushover |
 | Same fingerprint, open issue updated < 24h ago | Dropped (`deduped_recent`) |
 | Same fingerprint, Job already queued or running | Dropped (`deduped_inflight`) |
-| Alert resolves | Dispatcher comments `Resolved at …`, closes the issue, deletes any queued Job for it. Open PRs are left alone |
+| Alert resolves, nothing else firing on the workload | Dispatcher comments `Resolved at …`, closes the issue, deletes any queued Job for it. Open PRs are left alone |
+| Alert resolves, another alert on the workload still firing | Nothing closes (`resolved_partial`); the last one to resolve closes the issue |
 | Sweep | One issue per finding, `[sweep] <check>: <ns>/<object>`, labels `sweep`, `check/<check>`, `fp/<12 hex>`. At most 10 new per run; the rest are counted as `capped` and filed by a later sweep |
 | Namespace `triage` | Ignored (`ignored_self`); triage never diagnoses itself |
 
-The fingerprint is `sha256(source, reason, namespace, workload)` with the pod resolved to its
+The fingerprint is `sha256(source, namespace, workload)` with the pod resolved to its
 Deployment/StatefulSet/DaemonSet/CronJob, so five crash-looping pods of one Deployment are one
-incident. The issue body carries `<!-- fp:<full hash> -->`, and dedup searches **open** issues by
+incident, and so are the different alerts that one broken workload fires together
+(`KubePodCrashLooping`, `KubePodNotReady`, `KubeDeploymentReplicasMismatch`). The issue title
+lists the alerts that were firing when it was filed. An alert with no workload (cluster-level,
+e.g. `etcdDatabaseHighFragmentationRatio`) keeps the alertname in its fingerprint, since nothing
+else tells two of them apart: `sha256(source, reason, namespace, "")`. Until 0.1.3 the alertname
+was always included, and the 2026-10-15 canary filed 10 issues for 2 workloads. The issue body carries `<!-- fp:<full hash> -->`, and dedup searches **open** issues by
 the `fp/<12 hex>` label. Closing an issue therefore re-arms its fingerprint.
 
 "Updated" is GitHub's `updated_at`. Any human comment or label change restarts the 24h window.
@@ -445,8 +451,11 @@ A run whose cost is unknown (`cost_estimated: true`, or a crash) is charged at
   holds, and "Triage daily budget reached" is sent at most once per 24h. Jobs resume as spend
   ages out. To clear it sooner, raise the cap by PR. Deleting finished Jobs also removes them
   from the sum, but it destroys the evidence.
-- **Alertmanager unreachable at start time:** the alert is treated as still firing, so a flaky
-  re-check costs money rather than losing an incident.
+- **Still firing?** Both the start-time re-check and a resolve ask Alertmanager whether *any*
+  active alert maps to the incident's workload, not whether the original alert is still active.
+- **Alertmanager unreachable at start time:** the incident is treated as still firing, so a flaky
+  re-check costs money rather than losing an incident. **Unreachable on a resolve:** the issue is
+  closed anyway, because no second resolve would arrive to close it later.
 
 ### Metrics
 
@@ -549,9 +558,8 @@ changes nothing is reported as `skip`, so `mutate-default-sa-pod-automount` show
 while the admission metric counted them; and `restrict-default-namespace` can never pass at all.
 Those were triage-reports #5 and #6.
 
-The image's output schema and sweep prompt still list `inert-kyverno-policy` as a valid check name.
-That is harmless, because `sweep_checklist` in `policy.yaml` decides what the sweep runs; drop the
-name in the next image release.
+Image 0.1.3 removed the name from the output schema and the sweep prompt, so a finding with that
+check is now `invalid_output`.
 
 ## Pausing and stopping
 

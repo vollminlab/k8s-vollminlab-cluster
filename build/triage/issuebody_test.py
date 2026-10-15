@@ -47,3 +47,13 @@ def test_gate_report_carries_the_gates_and_the_preview():
     assert "- ✓ g1" in text and "- ✗ g2" in text and "PRBODY" in text and "(shadow mode)" in text
     opened = issuebody.render_gate_report(INC, ["✓ g1"], "https://x/pull/1", None, "")
     assert "**PR opened:** https://x/pull/1" in opened and "would have been opened" not in opened
+
+
+def test_title_names_every_alert_merged_into_the_incident():
+    from triage.incident import Incident
+    from triage.issuebody import incident_title
+    inc = Incident("alertmanager", "KubePodCrashLooping", "mediastack", "Deployment/radarr",
+                   alerts=["KubePodCrashLooping", "KubePodNotReady"])
+    assert incident_title(inc) == "[KubePodCrashLooping, KubePodNotReady] mediastack/Deployment/radarr"
+    old = Incident("alertmanager", "KubePodCrashLooping", "mediastack", "Deployment/radarr")
+    assert incident_title(old) == "[KubePodCrashLooping] mediastack/Deployment/radarr"

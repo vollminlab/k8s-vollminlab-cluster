@@ -100,7 +100,7 @@ def main():
     dispatcher = Dispatcher(
         policy=policy, queue=jobs.JobQueue(batch), template=template, github=github,
         get_owner=kube_owner_lookup(core, apps, batch),
-        still_firing=lambda fps: alertmanager.still_firing(fps, session),
+        active_alerts=lambda: alertmanager.active_alerts(session),
         notify=pushover.send,
         read_outcome=lambda name: jobs.read_outcome(core, jobs.NAMESPACE, name),
     )
