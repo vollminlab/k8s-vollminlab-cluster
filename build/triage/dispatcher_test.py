@@ -64,19 +64,56 @@ class FakeGitHub:
         self.calls.append(("close", n))
 
 
+class FakeAlertmanager:
+    """Alertmanager's active-alert set, driven by the same payloads the test posts to the
+    dispatcher: a firing alert becomes active, a resolved one leaves. `down` makes the
+    API unreachable; `muted` keeps the set empty whatever is posted."""
+    def __init__(self, muted=False):
+        self.active, self.down, self.muted, self.calls = {}, False, muted, 0
+
+    def observe(self, payload):
+        for a in payload.get("alerts", []):
+            key = a.get("fingerprint") or repr(sorted(a["labels"].items()))
+            if a.get("status") == "resolved":
+                self.active.pop(key, None)
+            elif not self.muted:
+                self.active[key] = {"labels": a["labels"], "fingerprint": a.get("fingerprint", ""),
+                                    "startsAt": a.get("startsAt", ""), "status": {"state": "active"}}
+
+    def alerts(self):
+        self.calls += 1
+        if self.down:
+            raise ConnectionError("alertmanager down")
+        return list(self.active.values())
+
+
+def other_workload(name, **extra):
+    """Crash-loop labels for a different (owner-less) pod, so a different incident."""
+    return dict(CRASHLOOP_LABELS, pod=name, **extra)
+
+
 def make(github=None, firing=True, outcomes=None, policy=None, clock=None, queue=None):
     notes = []
+    am = FakeAlertmanager(muted=not firing)
     d = Dispatcher(
         policy=policy or make_policy(),
         queue=queue or FakeQueue(),
         template=TEMPLATE,
         github=github or FakeGitHub(),
         get_owner=lambda kind, ns, name: OWNERS.get((kind, name)),
-        still_firing=lambda fps: firing,
+        active_alerts=am.alerts,
         notify=lambda title, msg, url=None: notes.append(title),
         read_outcome=lambda name: (outcomes or {}).get(name),
         clock=clock or (lambda: NOW),
     )
+    post = d.handle_alertmanager
+
+    def handle_alertmanager(payload):
+        am.observe(payload)
+        return post(payload)
+
+    d.handle_alertmanager = handle_alertmanager
+    d.am = am
     return d, notes
 
 
@@ -162,7 +199,7 @@ def test_queue_full_drops_and_notifies_once():
     d, notes = make(policy=make_policy(queue_cap=1))
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
     for i in range(2):
-        labels = dict(CRASHLOOP_LABELS, alertname=f"Other{i}")
+        labels = other_workload(f"other{i}-pod")
         assert d.handle_alertmanager(am_payload(am_alert(labels))) == ["dropped_queue_full"]
     assert notes == ["Triage queue full"]
 
@@ -170,7 +207,7 @@ def test_queue_full_drops_and_notifies_once():
 def test_tick_starts_oldest_when_idle_and_waits_when_busy():
     d, _ = make()
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
-    d.handle_alertmanager(am_payload(am_alert(dict(CRASHLOOP_LABELS, alertname="Second"))))
+    d.handle_alertmanager(am_payload(am_alert(other_workload("second-pod"), fingerprint="bbbb2222")))
     first, second = (j.metadata.name for j in d.queue.jobs)
     assert d.tick() == f"started {first}"
     assert d.tick() == "busy"
@@ -203,7 +240,7 @@ def test_budget_hold_after_daily_spend_and_one_notification():
     first = d.queue.jobs[0].metadata.name
     _finish(d, first, datetime.fromtimestamp(NOW - 60, timezone.utc))
     d.read_outcome = lambda name: {"outcome": "issue_created", "cost_usd": 1.5}
-    d.handle_alertmanager(am_payload(am_alert(dict(CRASHLOOP_LABELS, alertname="Second"))))
+    d.handle_alertmanager(am_payload(am_alert(other_workload("second-pod"), fingerprint="bbbb2222")))
     assert d.tick() == "budget_hold"
     assert d.tick() == "budget_hold"
     assert notes == ["Triage daily budget reached"]
@@ -318,7 +355,7 @@ def test_waiting_job_with_a_bad_incident_annotation_is_dropped_not_blocking(anno
     from triage.dispatcher import EVENTS
     d, _ = make()
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
-    d.handle_alertmanager(am_payload(am_alert(dict(CRASHLOOP_LABELS, alertname="Second"))))
+    d.handle_alertmanager(am_payload(am_alert(other_workload("second-pod"), fingerprint="bbbb2222")))
     bad, good = (j.metadata.name for j in d.queue.jobs)
     d.queue.jobs[0].metadata.annotations = annotations
     before = EVENTS.labels("unknown", "dropped_invalid")._value.get()
@@ -456,3 +493,109 @@ def test_outcome_is_still_counted_if_the_job_cannot_be_annotated():
     d.read_outcome = lambda n: {"outcome": "issue_created", "cost_usd": 0.5}
     d.tick()
     assert d._spend_24h == 0.5 and notes == []
+
+
+# ---- 0.1.3: one incident per workload -----------------------------------------------
+
+def test_different_alerts_on_one_workload_in_one_webhook_are_one_job_listing_both():
+    d, _ = make()
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    result = d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a"),
+                                              am_alert(ready, fingerprint="b")))
+    assert result == ["dispatched_new"]
+    inc = Incident.from_json(env_of(d.queue.jobs[0])["TRIAGE_INCIDENT"])
+    assert inc.alerts == ["KubePodCrashLooping", "KubePodNotReady"]
+    assert sorted(inc.am_fingerprints) == ["a", "b"]
+
+
+def test_a_second_alert_on_a_queued_workload_dedupes():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a")))
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    assert d.handle_alertmanager(am_payload(am_alert(ready, fingerprint="b"))) == ["deduped_inflight"]
+    assert len(d.queue.jobs) == 1
+
+
+def test_resolving_one_alert_keeps_the_incident_while_another_on_the_workload_fires():
+    gh = FakeGitHub()
+    d, _ = make(github=gh)
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a")))
+    d.handle_alertmanager(am_payload(am_alert(ready, fingerprint="b")))
+    gh.issue = {"number": 4, "updated_at": "2026-10-11T09:00:00Z"}
+    result = d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved", fingerprint="a")))
+    assert result == ["resolved_partial"]
+    assert len(d.queue.jobs) == 1 and gh.calls == []
+    # ...and the last one resolving closes it.
+    assert d.handle_alertmanager(am_payload(am_alert(ready, status="resolved", fingerprint="b"))) == ["resolved"]
+    assert d.queue.jobs == [] and [c[0] for c in gh.calls] == ["comment", "close"]
+
+
+def test_an_alert_on_another_workload_does_not_hold_an_incident_open():
+    gh = FakeGitHub()
+    d, _ = make(github=gh)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a"),
+                                     am_alert(other_workload("sonarr-pod"), fingerprint="b")))
+    gh.issue = {"number": 4, "updated_at": "2026-10-11T09:00:00Z"}
+    result = d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved", fingerprint="a")))
+    assert result == ["resolved"]
+
+
+def test_resolve_still_closes_when_alertmanager_cannot_be_asked():
+    # The pre-0.1.3 behaviour: a resolve webhook closes. Leaving it open on an outage
+    # would strand the issue, since no second resolve arrives.
+    gh = FakeGitHub()
+    d, _ = make(github=gh)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a")))
+    gh.issue = {"number": 4, "updated_at": "2026-10-11T09:00:00Z"}
+    d.am.down = True
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved", fingerprint="a"))) \
+        == ["resolved"]
+
+
+def test_tick_runs_a_job_whose_first_alert_resolved_while_another_on_the_workload_fires():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a")))
+    # The first alert leaves Alertmanager without a resolve webhook reaching us (e.g. it
+    # was silenced); a second alert on the same workload is still firing.
+    d.am.active.pop("a")
+    d.am.observe(am_payload(am_alert(dict(CRASHLOOP_LABELS, alertname="KubePodNotReady"), fingerprint="b")))
+    assert d.tick().startswith("started ")
+
+
+def test_tick_starts_the_job_when_alertmanager_cannot_be_asked():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.am.down = True
+    assert d.tick().startswith("started ")
+
+
+def test_cluster_level_alerts_with_different_names_stay_separate_jobs():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert({"alertname": "NodeDiskWriteLatencyHigh"}, fingerprint="a")))
+    d.handle_alertmanager(am_payload(am_alert({"alertname": "etcdDatabaseHighFragmentationRatio"},
+                                              fingerprint="b")))
+    assert len(d.queue.jobs) == 2
+
+
+def test_alertmanager_is_not_asked_for_an_ordinary_new_alert():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    assert d.am.calls == 0
+
+
+def test_an_owner_lookup_failure_is_unknown_not_resolved():
+    # The active alert names a pod; if its owner cannot be looked up, its fingerprint is
+    # the pod's, which never matches the Deployment's. Reading that as "nothing firing"
+    # would make the tick drop a live incident and a resolve close a live issue.
+    gh = FakeGitHub()
+    d, _ = make(github=gh)
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, fingerprint="a")))
+    d.handle_alertmanager(am_payload(am_alert(ready, fingerprint="b")))
+
+    def broken(kind, ns, name):
+        raise RuntimeError("apiserver 503")
+    d.get_owner = broken
+    assert d._still_firing(Incident.from_json(env_of(d.queue.jobs[0])["TRIAGE_INCIDENT"])) is None
+    assert d.tick().startswith("started ")

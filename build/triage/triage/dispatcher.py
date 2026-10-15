@@ -35,10 +35,10 @@ def _failed(job) -> bool:
 
 
 class Dispatcher:
-    def __init__(self, policy, queue, template, github, get_owner, still_firing, notify, read_outcome,
+    def __init__(self, policy, queue, template, github, get_owner, active_alerts, notify, read_outcome,
                  clock=time.time):
         self.policy, self.queue, self.template, self.github = policy, queue, template, github
-        self.get_owner, self.still_firing, self.notify, self.read_outcome = get_owner, still_firing, notify, read_outcome
+        self.get_owner, self.active_alerts, self.notify, self.read_outcome = get_owner, active_alerts, notify, read_outcome
         self.clock = clock
         self._queue_full_alerted = False
         self._budget_alerted_at = 0.0
@@ -71,6 +71,7 @@ class Dispatcher:
                 # and some not: any firing alert keeps the incident open.
                 merged = firing[0]
                 merged.am_fingerprints = sorted({f for i in firing for f in i.am_fingerprints})
+                merged.alerts = sorted({a for i in firing for a in i.alerts})
                 results.append(self._enqueue(merged))
             else:
                 results.append(self._resolved(incs[0]))
@@ -79,13 +80,17 @@ class Dispatcher:
     def handle_sweep(self) -> str:
         return self._enqueue(sweep_incident(_utc(self.clock()).isoformat()))
 
-    def _resolve_workload(self, inc: Incident) -> Incident:
+    def _resolve_workload(self, inc: Incident, strict: bool = False) -> Incident:
+        """Key the incident on the pod's top-level owner. A failed lookup keeps the
+        unresolved workload, unless `strict`, when it raises instead."""
         if "/" not in inc.workload:
             return inc
         kind, name = inc.workload.split("/", 1)
         try:
             kind, name = resolve(kind, inc.namespace, name, self.get_owner)
         except Exception as e:
+            if strict:
+                raise
             # Owner lookup must never drop an alert; worst case the incident is keyed
             # on the pod instead of its Deployment.
             log.warning("owner lookup failed for %s %s/%s (%s); fingerprinting unresolved",
@@ -125,7 +130,44 @@ class Dispatcher:
         EVENTS.labels(inc.source, action.value).inc()
         return action.value
 
+    def _still_firing(self, inc: Incident):
+        """Whether any alert Alertmanager still holds maps to this incident: True, False,
+        or None when Alertmanager cannot be asked.
+
+        One incident now covers every alert on its workload, so one alert resolving (or
+        leaving Alertmanager unannounced, e.g. silenced) does not end it while another
+        is still firing. The check is by incident, not by Alertmanager fingerprint, for
+        the same reason.
+        """
+        try:
+            active = self.active_alerts()
+        except Exception as e:
+            log.warning("alertmanager re-check for fp/%s failed (%s: %s)", inc.fp12, type(e).__name__, e)
+            return None
+        unknown = False
+        for other in from_alertmanager({"alerts": active}):
+            # Namespace first: it is free, and owner lookup costs an API call per alert.
+            if other.namespace != inc.namespace:
+                continue
+            try:
+                if self._resolve_workload(other, strict=True).fp12 == inc.fp12:
+                    return True
+            except Exception as e:
+                # An unresolved pod never matches its Deployment's fingerprint, so a
+                # failed lookup must not count as "this alert is about something else".
+                log.warning("owner lookup for %s failed during re-check of fp/%s (%s: %s)",
+                            other.workload, inc.fp12, type(e).__name__, e)
+                unknown = True
+        return None if unknown else False
+
     def _resolved(self, inc: Incident) -> str:
+        if self._still_firing(inc):
+            EVENTS.labels("alertmanager", "resolved_partial").inc()
+            log.info("resolved_partial: %s resolved on %s %s, other alerts still firing (fp/%s)",
+                     inc.reason, inc.namespace or "-", inc.workload or "-", inc.fp12)
+            return "resolved_partial"
+        # Alertmanager unreachable (None) still closes: no second resolve webhook would
+        # arrive to do it later, and a later firing alert simply files a new incident.
         dropped = 0
         for j in self.queue.list():
             if jobs.fp_of(j) == inc.fp12 and jobs.is_suspended(j) and not jobs.finished(j):
@@ -181,7 +223,9 @@ class Dispatcher:
                 self.queue.delete(job.metadata.name)
                 EVENTS.labels("unknown", "dropped_invalid").inc()
                 continue
-            if inc.source == "alertmanager" and not self.still_firing(inc.am_fingerprints):
+            # None (Alertmanager unreachable) runs the Job: a wasted run costs a few
+            # dollars, a dropped one loses the incident.
+            if inc.source == "alertmanager" and self._still_firing(inc) is False:
                 self.queue.delete(job.metadata.name)
                 EVENTS.labels(inc.source, "dropped_resolved").inc()
                 continue

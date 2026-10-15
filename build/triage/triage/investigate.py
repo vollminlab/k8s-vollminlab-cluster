@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .incident import Incident
 from .policy import load_policy
-from .result import failure, relaxed_schema, success, validate_agent_output
+from .result import failure, normalize_metric_names, relaxed_schema, success, validate_agent_output
 
 PROMPTS = Path(__file__).with_name("prompts")
 # Private to this container: the checkout, HOME and scratch. Nothing here is ever
@@ -98,7 +98,7 @@ def interpret(stdout: str, stderr: str, per_run_cap: float) -> dict:
     if out.get("is_error") or subtype != "success":
         return failed("api_error", f"subtype={subtype} api_error_status={out.get('api_error_status')} "
                                    f"errors={errors} result={str(out.get('result'))[:500]}")
-    structured = out.get("structured_output")
+    structured = normalize_metric_names(out.get("structured_output"))
     problems = validate_agent_output(structured)
     if problems:
         return failed("invalid_output", "; ".join(problems))

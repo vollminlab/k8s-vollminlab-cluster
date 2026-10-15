@@ -274,3 +274,10 @@ def test_metric_names_may_contain_digits():
     assert validate_agent_output(dict(AGENT_OK, metrics={"k8sworker01_write_iops": 1})) == []
     assert validate_agent_output(dict(AGENT_OK, metrics={"x" * 41: 1}))
     assert validate_agent_output(dict(AGENT_OK, metrics={"K8sWorker01": 1}))
+
+
+def test_inert_kyverno_policy_is_no_longer_a_sweep_check():
+    # Replaced by the KyvernoPolicyNoPassResults alert (#1371); see the runbook.
+    from triage.result import AGENT_SCHEMA
+    checks = AGENT_SCHEMA["properties"]["findings"]["items"]["properties"]["check"]["enum"]
+    assert checks == ["empty-selector-backup", "unprotected-pvc"]

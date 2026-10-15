@@ -24,7 +24,7 @@ check produces.
 ## Output
 
 Return one entry in findings per problem, and nothing for checks that pass.
-check: one of empty-selector-backup, unprotected-pvc, inert-kyverno-policy.
+check: one of empty-selector-backup, unprotected-pvc.
 namespace and object identify the affected object, e.g. "mediastack" and
 "PersistentVolumeClaim/config-radarr-0". summary: one sentence. detail: the evidence.
 

@@ -364,3 +364,25 @@ def test_an_unremovable_planted_result_json_is_reported_not_trusted(result_dir, 
     assert investigate.main() == 0
     assert (result_dir / "result.json").is_dir()
     assert "could not write result.json" in capsys.readouterr().err
+
+
+def test_metric_names_the_model_capitalised_are_normalised_not_fatal(tmp_path):
+    # 2026-10-15: a $0.72 run was discarded over `actions_runner_peak_write_MBps`.
+    metrics = {"actions_runner_peak_write_MBps": 41.5, "worker02 latency-ms": 9.0, "peak_memory_bytes": 1.0}
+    r = run(tmp_path, Runner(cli(structured=dict(AGENT_OK, metrics=metrics))))
+    assert r["status"] == "ok"
+    assert r["metrics"] == {"actions_runner_peak_write_mbps": 41.5, "worker02_latency_ms": 9.0,
+                            "peak_memory_bytes": 1.0}
+
+
+def test_metric_names_that_collide_once_normalised_stay_invalid(tmp_path):
+    # Silently keeping one of two values would publish a number the model did not mean.
+    metrics = {"Peak_Bytes": 1.0, "peak_bytes": 2.0}
+    r = run(tmp_path, Runner(cli(structured=dict(AGENT_OK, metrics=metrics))))
+    assert r["failure_reason"] == "invalid_output" and "Peak_Bytes" in r["detail"]
+
+
+def test_a_metric_name_too_long_once_normalised_stays_invalid(tmp_path):
+    # Truncating could merge two names; let the schema reject it with its own message.
+    r = run(tmp_path, Runner(cli(structured=dict(AGENT_OK, metrics={"A" * 41: 1.0}))))
+    assert r["failure_reason"] == "invalid_output"

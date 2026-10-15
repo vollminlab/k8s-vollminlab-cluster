@@ -25,7 +25,7 @@
         "additionalProperties": false,
         "required": ["check", "namespace", "object", "summary", "detail"],
         "properties": {
-          "check": {"enum": ["empty-selector-backup", "unprotected-pvc", "inert-kyverno-policy"]},
+          "check": {"enum": ["empty-selector-backup", "unprotected-pvc"]},
           "namespace": {"type": "string", "maxLength": 253},
           "object": {"type": "string", "maxLength": 400},
           "summary": {"type": "string", "maxLength": 500},

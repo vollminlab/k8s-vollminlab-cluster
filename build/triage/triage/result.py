@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 import stat
 from pathlib import Path
 
@@ -45,6 +46,31 @@ def relaxed_schema(schema=AGENT_SCHEMA):
     if isinstance(schema, list):
         return [relaxed_schema(v) for v in schema]
     return schema
+
+
+_METRIC_NAME = re.compile(r"[a-z0-9_]{1,40}", re.ASCII)
+
+
+def normalize_metric_names(data):
+    """Lower-case the agent's metric names and turn other characters into `_`, so
+    `peak_write_MBps` is kept rather than failing the whole (already paid-for) run.
+
+    Only a name that does not already conform is touched, and only when the result is
+    itself conforming and unclaimed. Otherwise the original name is kept and the schema
+    rejects it with its own message: truncating or merging names could attach a value
+    to a name the model did not give it. Returns a new dict; `data` is not modified.
+    """
+    if not isinstance(data, dict) or not isinstance(data.get("metrics"), dict):
+        return data
+    metrics = data["metrics"]
+    out = {}
+    for name, value in metrics.items():
+        if isinstance(name, str) and not _METRIC_NAME.fullmatch(name):
+            fixed = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")
+            if _METRIC_NAME.fullmatch(fixed) and fixed not in metrics and fixed not in out:
+                name = fixed
+        out[name] = value
+    return dict(data, metrics=out)
 
 
 def validate_agent_output(data) -> list:

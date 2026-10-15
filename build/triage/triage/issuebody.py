@@ -3,7 +3,9 @@
 
 def incident_title(inc) -> str:
     target = "/".join(p for p in (inc.namespace, inc.workload) if p) or "cluster"
-    return f"[{inc.reason}] {target}"[:200]
+    # Every alert merged into the incident, so a workload's issue names all of them.
+    names = ", ".join(inc.alerts or [inc.reason])
+    return f"[{names}] {target}"[:200]
 
 
 def render_incident(inc, result, gate_lines, pr_url, preview, preview_note) -> str:

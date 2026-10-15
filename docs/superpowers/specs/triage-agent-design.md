@@ -102,7 +102,7 @@ For pod-keyed alerts, the dispatcher resolves the pod to its top-level owner (Po
 
 ### 2. Fingerprint
 
-`sha256(source, reason, namespace, workload)`, truncated to 12 hex characters for labels. Volatile values (pod hashes, messages, timestamps) are excluded.
+`sha256(source, namespace, workload)`, truncated to 12 hex characters for labels. Volatile values (pod hashes, messages, timestamps) are excluded, and so is the alertname whenever there is a workload: one broken workload fires several alerts at once, and they are one incident. An incident with no workload keeps the alertname: `sha256(source, reason, namespace, "")`. (Changed in 0.1.3; the original design always included `reason`, and the 2026-10-15 canary filed 10 issues for 2 workloads.)
 
 ### 3. Deduplication: GitHub issues are the state
 
@@ -117,7 +117,7 @@ There is no database and no CRD. Each issue body carries `<!-- fp:<full-hash> --
 
 Alertmanager already applies `for:` and grouping, so events are queued immediately. `FluxResourceNotReady` has `for: 15m`, which already absorbs Flux's own retries.
 
-Each Job is created with `spec.suspend: true`, so the queue *is* Kubernetes and survives a dispatcher restart. When no triage Job is running, the dispatcher un-suspends the oldest one. Just before un-suspending, it re-checks that the alert is still firing (Alertmanager API). If not, it deletes the Job.
+Each Job is created with `spec.suspend: true`, so the queue *is* Kubernetes and survives a dispatcher restart. When no triage Job is running, the dispatcher un-suspends the oldest one. Just before un-suspending, it re-checks with the Alertmanager API that some active alert still maps to the incident's workload. If none does, it deletes the Job.
 
 When `queue_cap` is reached, new events are dropped and a single Pushover message is sent until the queue drains.
 
@@ -179,7 +179,7 @@ One Pushover message per new issue: the summary's first line (private channel, s
 
 ### 8. Resolution
 
-When Alertmanager sends `resolved`, the dispatcher:
+When Alertmanager sends `resolved` and no other active alert maps to the same incident, the dispatcher:
 - Comments "resolved at <time>" on the open issue for that fingerprint and closes it.
 - Deletes any suspended Job for that fingerprint.
 
