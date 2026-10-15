@@ -502,8 +502,8 @@ print(parse_policy(yaml.safe_load(open('clusters/vollminlab-cluster/triage/triag
 |---|---|---|
 | `model` | `claude-opus-5-5` | `--model` for `claude -p` |
 | `max_turns` | 40 | `--max-turns`; hitting it gives `agent-error` `max_turns` |
-| `per_run_budget_usd` | 3 | `--max-budget-usd`, enforced by the CLI. Also what a run of unknown cost is charged |
-| `daily_budget_usd` | 15 | Rolling-24h hold on starting Jobs. Accounting, not a security boundary |
+| `per_run_budget_usd` | 2 | `--max-budget-usd`, enforced by the CLI. Also what a run of unknown cost is charged |
+| `daily_budget_usd` | 10 | Rolling-24h hold on starting Jobs. Accounting, not a security boundary |
 | `queue_cap` | 10 | Waiting Jobs before new events are dropped |
 | `reinvestigate_after_hours` | 24 | How old an open issue's last update must be before a recurrence is re-investigated (as a comment). Also governs sweep re-comments |
 | `job_deadline_seconds` | 2400 | The Job's `activeDeadlineSeconds`. Minimum 600. investigate gets this minus 300 s (publish) minus 120 s (startup) minus clone time, and does not start claude with ≤ 60 s left |
