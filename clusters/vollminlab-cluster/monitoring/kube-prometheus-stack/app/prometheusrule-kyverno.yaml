@@ -1,0 +1,61 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kyverno-alerts
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    env: production
+    category: observability
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: kyverno
+      rules:
+        # A policy that produces no `pass` result may be evaluating nothing: admission
+        # lets everything through, and Policy Reporter shows 0 fail because it also shows
+        # 0 pass. Three policies were silently inert this way until 2026-08-19 (#1104,
+        # #1109). kyverno_policy_rule_info_total is the inventory, so a policy that
+        # emits no results at all still appears here; measured 2026-10-15, it lists all
+        # 20 ClusterPolicies plus the one namespaced Policy.
+        #
+        # 23h, not 24h: Prometheus keeps 24h, so a 24h range is truncated at the edge.
+        #
+        # Excluded: four policies measured quiet but working on 2026-10-15. Each had
+        # zero admission passes in 23h for a known reason:
+        # - dmz-enforce-node-placement and mutate-default-sa-automount act only when a
+        #   DMZ pod or a ServiceAccount is created. Their PolicyReports show passes (1, 3).
+        # - patch-shlink-backend-probes acts only when the shlink-backend pod is created.
+        #   It has no PolicyReport results; the live pod carries its patched probes.
+        # - restrict-default-namespace is an unconditional deny matched to `default`, so
+        #   by construction it can only fail or skip, never pass.
+        # An excluded policy is unmonitored by this rule. Re-measure before adding one.
+        - alert: KyvernoPolicyNoPassResults
+          expr: |
+            count by (policy_name) (
+              kyverno_policy_rule_info_total{policy_name!~"dmz-enforce-node-placement|mutate-default-sa-automount|patch-shlink-backend-probes|restrict-default-namespace"} == 1
+            )
+            unless
+            count by (policy_name) (increase(kyverno_policy_results_total{rule_result="pass"}[23h]) > 0)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kyverno policy {{ $labels.policy_name }} has produced no pass results in 23h"
+            description: >-
+              Policy {{ $labels.policy_name }} recorded no `pass` result in 23 hours. A
+              policy whose foreach.list does not root at request.object evaluates nothing
+              and reports nothing; see .claude/rules/kyverno.md. If it is quiet by design
+              (it acts only on rare events), verify that from its PolicyReports and add it
+              to this rule's exclusions with the reason.
+        - alert: KyvernoNoMetrics
+          expr: absent(kyverno_policy_rule_info_total)
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No Kyverno metrics being scraped"
+            description: >-
+              Prometheus has no kyverno_policy_rule_info_total series, so
+              KyvernoPolicyNoPassResults cannot fire. Check the kyverno ServiceMonitors
+              and `up{namespace="kyverno"}`.

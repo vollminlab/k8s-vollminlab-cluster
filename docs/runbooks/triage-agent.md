@@ -524,12 +524,21 @@ gh issue list -R vollminlab/triage-reports --state all --label class/oom-memory-
 
 To stop all PRs while keeping diagnoses, set every class back to `shadow`.
 
-### Sweep checklist item 3
+### Inert Kyverno policies are an alert, not a sweep item
 
-`inert-kyverno-policy` stays in the sweep only until the `KyvernoPolicyNoPassResults`
-PrometheusRule ships (plan Task 3). The rule is a deterministic, free check, so once it is live,
-delete item 3 from `sweep_checklist` in the same PR or right after it. The design's rule is: if a
-metric can express a check, it is an alert rule, not a sweep item.
+The sweep's third check, `inert-kyverno-policy`, was removed on 2026-10-15 when the
+`KyvernoPolicyNoPassResults` PrometheusRule (`prometheusrule-kyverno.yaml`) replaced it. The
+design's rule is that a check a metric can express is an alert rule, not a sweep item: the rule is
+deterministic and free, and the sweep only spends tokens on what PromQL cannot see.
+
+The sweep version also read PolicyReports, which misreport two policies. A Kyverno mutation that
+changes nothing is reported as `skip`, so `mutate-default-sa-pod-automount` showed zero passes there
+while the admission metric counted them; and `restrict-default-namespace` can never pass at all.
+Those were triage-reports #5 and #6.
+
+The image's output schema and sweep prompt still list `inert-kyverno-policy` as a valid check name.
+That is harmless, because `sweep_checklist` in `policy.yaml` decides what the sweep runs; drop the
+name in the next image release.
 
 ## Pausing and stopping
 
@@ -608,10 +617,10 @@ alert intake without touching the cluster. See Task 37 for the safe edit procedu
 
 From the plan, in order:
 
-- **Task 2: measure Kyverno.** The Kyverno ServiceMonitors are in place. Check
-  `up{namespace="kyverno"}`, then whether `kyverno_policy_rule_info_total` lists every
-  ClusterPolicy, and which policies show zero passes over 23h. That decides Task 3.
-- **Task 3: `KyvernoPolicyNoPassResults`**, only if Task 2 supports it. Then drop sweep item 3.
+- **Tasks 2 and 3: done 2026-10-15.** Kyverno's `kyverno_policy_rule_info_total` lists all 20
+  ClusterPolicies plus the one namespaced Policy, so `KyvernoPolicyNoPassResults` shipped. Four
+  policies are excluded as quiet but working, each with its reason in the rule's comment, and sweep
+  item 3 was removed (see above).
 - **Task 37: route alerts to the dispatcher.** All of `alertmanager.yaml` lives in the 1Password
   item **`Alertmanager Config`** (field `config`), because the ExternalSecret has no template. The
   edit adds a `triage` webhook receiver (`http://triage-dispatcher.triage.svc:8080/alertmanager`,
