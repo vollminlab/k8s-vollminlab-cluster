@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Validates every PrometheusRule in clusters/ with promtool, then runs the unit tests in
-# scripts/prometheus-rule-tests/. Needs promtool and python3 with PyYAML.
+# scripts/prometheus-rule-tests/. Needs promtool and yq v4 (the CI runner has no PyYAML).
 #
 # Nothing else in CI parses PromQL: kubeconform checks the CRD shape, and the first
 # real parse is prometheus-operator's admission webhook at Flux apply time, where one
@@ -15,23 +15,18 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/rules"
 
-python3 - "$root/clusters" "$work/rules" <<'PY'
-import pathlib, sys, yaml
-src, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-n = 0
-for f in sorted(src.rglob("*.yaml")):
-    try:
-        docs = list(yaml.safe_load_all(f.read_text()))
-    except yaml.YAMLError:
-        continue  # not ours to judge; the YAML syntax step reports it
-    for d in docs:
-        if isinstance(d, dict) and d.get("kind") == "PrometheusRule":
-            m = d["metadata"]
-            name = "%s-%s.yaml" % (m.get("namespace", "default"), m["name"])
-            (out / name).write_text(yaml.safe_dump({"groups": d["spec"]["groups"]}, sort_keys=False))
-            n += 1
-print("extracted %d PrometheusRules" % n)
-PY
+n=0
+while IFS= read -r f; do
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    ns=${name%%/*} obj=${name#*/}
+    NAME="$obj" yq e 'select(.kind == "PrometheusRule" and .metadata.name == strenv(NAME)) | {"groups": .spec.groups}' "$f" \
+      > "$work/rules/$ns-$obj.yaml"
+    n=$((n + 1))
+  done < <(yq e 'select(.kind == "PrometheusRule") | (.metadata.namespace // "default") + "/" + .metadata.name' "$f")
+done < <(grep -rlE --include='*.yaml' '^kind: PrometheusRule$' "$root/clusters" | sort)
+echo "extracted $n PrometheusRules"
+[ "$n" -gt 0 ] || { echo "no PrometheusRules found under clusters/" >&2; exit 1; }
 
 promtool check rules "$work"/rules/*.yaml
 cp "$root"/scripts/prometheus-rule-tests/*.yaml "$work"/
