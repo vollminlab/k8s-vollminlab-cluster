@@ -1,0 +1,70 @@
+# KyvernoPolicyNoPassResults fires for a policy in the inventory with no `pass` results,
+# including one that emits no results at all, and stays quiet for a passing or excluded
+# policy. KyvernoNoMetrics fires when the inventory metric is missing.
+rule_files:
+  - rules/monitoring-kyverno-alerts.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      # Emits no results at all: the fully inert case the inventory exists to catch.
+      - series: 'kyverno_policy_rule_info_total{policy_name="inert", rule_name="r"}'
+        values: '1x120'
+      # Only skips, never a pass.
+      - series: 'kyverno_policy_rule_info_total{policy_name="skips-only", rule_name="r"}'
+        values: '1x120'
+      - series: 'kyverno_policy_results_total{policy_name="skips-only", rule_result="skip"}'
+        values: '0+1x120'
+      - series: 'kyverno_policy_results_total{policy_name="skips-only", rule_result="pass"}'
+        values: '0x120'
+      # Healthy.
+      - series: 'kyverno_policy_rule_info_total{policy_name="working", rule_name="r"}'
+        values: '1x120'
+      - series: 'kyverno_policy_results_total{policy_name="working", rule_result="pass"}'
+        values: '0+1x120'
+      # Excluded: quiet by design.
+      - series: 'kyverno_policy_rule_info_total{policy_name="restrict-default-namespace", rule_name="r"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: KyvernoPolicyNoPassResults
+        exp_alerts:
+          - exp_labels: {severity: warning, policy_name: inert}
+            exp_annotations:
+              summary: "Kyverno policy inert has produced no pass results in 23h"
+              description: >-
+                Policy inert recorded no `pass` result in 23 hours. A policy whose
+                foreach.list does not root at request.object evaluates nothing and reports
+                nothing; see .claude/rules/kyverno.md. If it is quiet by design (it acts
+                only on rare events), verify that from its PolicyReports and add it to
+                this rule's exclusions with the reason.
+          - exp_labels: {severity: warning, policy_name: skips-only}
+            exp_annotations:
+              summary: "Kyverno policy skips-only has produced no pass results in 23h"
+              description: >-
+                Policy skips-only recorded no `pass` result in 23 hours. A policy whose
+                foreach.list does not root at request.object evaluates nothing and reports
+                nothing; see .claude/rules/kyverno.md. If it is quiet by design (it acts
+                only on rare events), verify that from its PolicyReports and add it to
+                this rule's exclusions with the reason.
+      - eval_time: 90m
+        alertname: KyvernoNoMetrics
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'up{namespace="kyverno"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: KyvernoNoMetrics
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "No Kyverno metrics being scraped"
+              description: >-
+                Prometheus has no kyverno_policy_rule_info_total series, so
+                KyvernoPolicyNoPassResults cannot fire. Check the kyverno ServiceMonitors
+                and `up{namespace="kyverno"}`.
