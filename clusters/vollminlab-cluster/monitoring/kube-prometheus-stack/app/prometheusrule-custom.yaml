@@ -248,6 +248,14 @@ spec:
     # any healthy job, including the monthly and twice-yearly ones.
     #
     # Suspended CronJobs are excluded: a deliberately paused job is not a fault.
+    #
+    # So is a CronJob with a run in progress. That measurement only held because
+    # every job then finished within minutes. While a run is active, lastScheduleTime
+    # is already the new run's slot but lastSuccessfulTime is still the previous
+    # one, so a daily job reads ~+24h and fires after 15 minutes of normal running.
+    # jellyfin-subtitle-warmer (5h budget) did exactly that on 2026-10-15. A run
+    # that never finishes is not lost: KubeJobNotCompleted fires on any Job active
+    # for 12h, and an activeDeadlineSeconds kill fires KubeJobFailed.
     - name: cronjobs
       rules:
         - alert: CronJobNotSucceeding
@@ -257,6 +265,7 @@ spec:
                 - on(namespace, cronjob) kube_cronjob_status_last_successful_time
             ) > 2 * 3600
             and on(namespace, cronjob) kube_cronjob_spec_suspend == 0
+            unless on(namespace, cronjob) kube_cronjob_status_active > 0
           for: 15m
           labels:
             severity: warning

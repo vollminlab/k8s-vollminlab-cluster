@@ -158,6 +158,27 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
           yq --version
 
+      # Nothing else in CI parses PromQL. kubeconform checks only the CRD shape, so a
+      # broken expression first meets prometheus-operator's admission webhook at Flux
+      # apply time, where one rejected object fails the whole Kustomization's dry-run.
+      # Also runs the alert unit tests in scripts/prometheus-rule-tests/. Unconditional
+      # and in this job for the same reasons as the README and doc-currency checks;
+      # placed after the yq install, which the script needs. promtool is pinned to the
+      # cluster's Prometheus version and checksum-verified.
+      - name: Validate and unit-test PrometheusRules
+        env:
+          PROMETHEUS_VERSION: "3.14.0"
+          PROMETHEUS_SHA256: "f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d"
+        run: |
+          set -euo pipefail
+          tarball="prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          curl -fsSLo "/tmp/$tarball" "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/$tarball"
+          echo "${PROMETHEUS_SHA256}  /tmp/$tarball" | sha256sum -c -
+          tar -xzf "/tmp/$tarball" -C /tmp "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          export PATH="/tmp/prometheus-${PROMETHEUS_VERSION}.linux-amd64:$PATH"
+          promtool --version | head -1
+          ./scripts/test-prometheus-rules.sh
+
       - name: Get changed files
         id: get-changed-files
         run: |

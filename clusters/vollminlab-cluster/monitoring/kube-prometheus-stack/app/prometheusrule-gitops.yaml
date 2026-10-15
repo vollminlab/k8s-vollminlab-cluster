@@ -84,12 +84,23 @@ spec:
         # identity — resolving and re-firing while nothing about the CronJob changed.
         # `max` also picks the most recent success if two KSM pods ever overlap, which is
         # the correct reading of "last succeeded".
+        #
+        # Two states are excluded, in both this rule and the weekly one. A suspended
+        # CronJob is paused on purpose; jellyfin-subtitle-warmer was suspended
+        # 2026-10-11 to 10-15 and alerted the whole time. And a CronJob with a run in
+        # progress: right after an unsuspend, the catch-up run is in flight while the
+        # last success is still days old. A run that hangs is covered by
+        # KubeJobNotCompleted (12h) or, past activeDeadlineSeconds, KubeJobFailed.
+        # `unless ... == 1` rather than `and ... == 0`, so a missing suspend series
+        # can never silence the alert.
         - alert: CronJobNotSucceededRecently
           expr: |
             (
               time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time)
               and on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_info{schedule=~".*[*] [*] [*]"})
             ) > 93600
+            unless on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_spec_suspend) == 1
+            unless on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_status_active) > 0
           for: 15m
           labels:
             severity: warning
@@ -126,6 +137,8 @@ spec:
               time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time)
               and on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_info{schedule=~".*[*] [*] [^*]+"})
             ) > 691200
+            unless on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_spec_suspend) == 1
+            unless on (namespace, cronjob) max by (namespace, cronjob) (kube_cronjob_status_active) > 0
           for: 1h
           labels:
             severity: warning
