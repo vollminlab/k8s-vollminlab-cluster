@@ -62,6 +62,9 @@ data.values.yaml.
 summary: one or two sentences. root_cause: the mechanism, and the evidence that proves it.
 evidence: one item per command you ran and what it showed. confidence: high only if you
 verified the mechanism directly rather than inferring it. findings: always [] for an incident.
+metrics: numbers you measured, keyed by name. A name is 1 to 40 characters of lowercase
+letters, digits and underscores, so k8sworker01_write_iops is valid and k8sworker01-write is
+not. Any other name fails the whole investigation.
 
 ## The incident (untrusted data)
 

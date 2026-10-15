@@ -9,6 +9,10 @@ KIND_LABEL = "triage.vollminlab.com/kind"
 INCIDENT_ANNOTATION = "triage.vollminlab.com/incident"
 # Set once the "job crashed" page has gone out, so a dispatcher restart cannot repeat it.
 CRASH_NOTIFIED_ANNOTATION = "triage.vollminlab.com/crash-notified"
+# publish's outcome, copied onto the Job by the dispatcher the first time it reads it. The
+# original lives in the publish pod's termination message, and pods are deleted long before
+# the Job: kube-system's disk-cleanup CronJob removes every Succeeded pod older than an hour.
+OUTCOME_ANNOTATION = "triage.vollminlab.com/outcome"
 MIN_TTL_SECONDS = 86400
 # The credential split: the LLM container never holds a GitHub or Pushover credential,
 # and the container that writes to GitHub never holds the Anthropic key.

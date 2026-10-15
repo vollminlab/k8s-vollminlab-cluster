@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
 
@@ -189,6 +190,13 @@ def _finish(d, name, ts):
     j.status = NS(conditions=[NS(type="Complete", status="True", last_transition_time=ts)], completion_time=ts)
 
 
+def _fail(d, name, ts):
+    """publish was killed (OOM, deadline): the Job ends Failed with no termination message."""
+    j = next(j for j in d.queue.jobs if j.metadata.name == name)
+    j.spec.suspend = False
+    j.status = NS(conditions=[NS(type="Failed", status="True", last_transition_time=ts)], completion_time=None)
+
+
 def test_budget_hold_after_daily_spend_and_one_notification():
     d, notes = make(policy=make_policy(daily_budget_usd=1))
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
@@ -204,7 +212,7 @@ def test_budget_hold_after_daily_spend_and_one_notification():
 def test_crashed_job_is_counted_and_notified_once():
     d, notes = make()
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
-    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    _fail(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
     d.tick()
     d.tick()
     assert notes == ["Triage job crashed"]
@@ -231,7 +239,7 @@ def _spend(d):
 def test_crashed_job_is_charged_the_per_run_cap():
     d, _ = make()
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
-    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    _fail(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
     d.tick()
     assert d._spend_24h == 3.0 and _spend(d) == 3.0
 
@@ -283,7 +291,7 @@ def test_crash_page_is_not_repeated_after_a_dispatcher_restart():
     d, notes = make(queue=queue)
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
     name = queue.jobs[0].metadata.name
-    _finish(d, name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    _fail(d, name, datetime.fromtimestamp(NOW - 60, timezone.utc))
     d.tick()
     assert notes == ["Triage job crashed"]
     assert queue.annotated == [(name, jobs.CRASH_NOTIFIED_ANNOTATION, "true")]
@@ -299,7 +307,7 @@ def test_crash_page_waits_if_the_job_cannot_be_annotated():
             raise RuntimeError("apiserver down")
     d, notes = make(queue=Unannotatable())
     d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
-    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    _fail(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
     d.tick()
     assert notes == []        # at most once: no page we could not record
 
@@ -392,3 +400,59 @@ def test_forbidden_deployment_read_loses_the_resolve():
     d, gh, result = _fire_then_resolve_after_replacement(cluster)
     assert result == ["resolved_unmatched"]
     assert gh.calls == []
+
+
+def test_outcome_is_copied_onto_the_job_the_first_time_it_is_read():
+    # The nightly disk-cleanup CronJob deletes every Succeeded pod older than an hour, and
+    # the outcome lives in the publish pod's termination message. Copied onto the Job, it
+    # outlives the pod.
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    name = d.queue.jobs[0].metadata.name
+    _finish(d, name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.read_outcome = lambda n: {"outcome": "issue_created", "cost_usd": 0.6, "issue": 8}
+    d.tick()
+    assert [(k, json.loads(v)) for n, k, v in d.queue.annotated if n == name] == \
+        [(jobs.OUTCOME_ANNOTATION, {"outcome": "issue_created", "cost_usd": 0.6, "issue": 8})]
+    d.read_outcome = lambda n: None          # the pod is gone
+    d.tick()
+    assert d._spend_24h == 0.6
+    assert len(d.queue.annotated) == 1        # read from the Job, not written again
+
+
+def test_completed_job_whose_pod_vanished_is_lost_not_crashed():
+    # A Complete Job means publish exited 0, which it only does after writing its outcome.
+    # Missing pod + Complete is a lost record, not a crash: no page, charged the cap.
+    from triage.dispatcher import JOBS_24H
+    d, notes = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.tick()
+    d.tick()
+    assert notes == []
+    assert d._spend_24h == 3.0
+    assert JOBS_24H.labels("outcome_lost")._value.get() == 1
+    assert JOBS_24H.labels("job_crashed")._value.get() == 0
+
+
+def test_unreadable_stored_outcome_falls_back_to_the_pod():
+    d, _ = make()
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    name = d.queue.jobs[0].metadata.name
+    _finish(d, name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.queue.jobs[0].metadata.annotations[jobs.OUTCOME_ANNOTATION] = "{not json"
+    d.read_outcome = lambda n: {"outcome": "issue_created", "cost_usd": 0.4}
+    d.tick()
+    assert d._spend_24h == 0.4
+
+
+def test_outcome_is_still_counted_if_the_job_cannot_be_annotated():
+    class Unannotatable(FakeQueue):
+        def annotate(self, name, key, value):
+            raise RuntimeError("apiserver down")
+    d, notes = make(queue=Unannotatable())
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    _finish(d, d.queue.jobs[0].metadata.name, datetime.fromtimestamp(NOW - 60, timezone.utc))
+    d.read_outcome = lambda n: {"outcome": "issue_created", "cost_usd": 0.5}
+    d.tick()
+    assert d._spend_24h == 0.5 and notes == []

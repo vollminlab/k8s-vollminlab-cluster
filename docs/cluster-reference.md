@@ -1287,8 +1287,9 @@ git changes. A bare `kubectl scale` is reverted by Flux within 10 minutes; the e
 out-of-cluster stops are in `docs/runbooks/triage-agent.md`.
 
 **Did it actually run?** Check the artifact, not the status: an issue in `triage-reports`,
-`triage_jobs_24h` by outcome, and `kubectl get jobs -n triage`. A Job that finished with no
-termination message is counted as `job_crashed` and paged once.
+`triage_jobs_24h` by outcome, and `kubectl get jobs -n triage`. Each run's outcome is stored on its
+Job as `triage.vollminlab.com/outcome`. A Job that Failed with no outcome is counted as `job_crashed`
+and paged once.
 
 ---
 
