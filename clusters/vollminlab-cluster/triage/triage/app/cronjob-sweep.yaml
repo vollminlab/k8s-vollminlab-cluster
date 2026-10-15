@@ -40,7 +40,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: sweep
-              image: harbor.vollminlab.com/vollminlab/triage:0.1.1
+              image: harbor.vollminlab.com/vollminlab/triage:0.1.2
               command: ["python", "-I", "-u", "-m", "triage.sweep_tick"]
               env:
                 - name: DISPATCHER_URL
