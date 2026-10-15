@@ -47,6 +47,22 @@ data:
       sbomGenerationEnabled: false
       scanJobsConcurrentLimit: 1
 
+      # ClientServer mode. In the default Standalone mode every scan pod
+      # downloads the vulnerability DB (~128 MB compressed, several hundred MB
+      # unpacked) into an emptyDir before scanning anything. On 2026-10-15 that
+      # was 99-215 MB/s of writes from scan pods on k8sworker02 in the 20
+      # minutes before the shared datastore stalled for ~50 s and faulted the
+      # MinIO volume. With the built-in server the DB is downloaded once, by
+      # the trivy-server StatefulSet, and scan jobs run as clients against it.
+      builtInTrivyServer: true
+
+      # Chart default 30s. A scan that fails deterministically retried forever:
+      # prowlarr's report exceeded the API object size limit (2,641,054 vs
+      # 2,097,152 bytes) and an unpullable minio image failed every time, each
+      # one re-running a full scan every 10-30 minutes. 6h bounds a permanent
+      # failure to 4 attempts a day while still retrying transient ones.
+      scanJobsRetryDelay: 6h
+
       # NOTE ON SCAN-JOB TOLERATIONS — deliberately absent.
       # An `operator.scanJobTolerations` block lived here until 2026-09-11, with a
       # comment asserting `operator.` was the correct parent. It is not: chart
@@ -68,6 +84,27 @@ data:
       # plane with 1.2 GB free.
     trivy:
       ignoreUnfixed: true
+
+      # Chart default is UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL. Combined with
+      # ignoreUnfixed this reports what can actually be patched and is worth
+      # acting on, and it is what brings large reports (prowlarr, above) under
+      # the API object size limit. It also shrinks every VulnerabilityReport
+      # held in etcd. Widen it if MEDIUM findings ever need tracking.
+      severity: HIGH,CRITICAL
+
+      # Built-in server storage. An emptyDir, not a PVC: the cache is a
+      # re-downloadable DB, and a default Longhorn PVC would write it three
+      # times over to the same datastore this change is meant to relieve. A
+      # server restart costs one DB download.
+      storageClassEnabled: false
+      labels:
+        app: trivy-operator
+        env: production
+        category: security
+      podLabels:
+        app: trivy-operator
+        env: production
+        category: security
       # Use an in-memory analysis cache for scan jobs. Trivy >=0.66 added a
       # lock timeout on the filesystem (BoltDB) cache; pods whose containers
       # share an image (e.g. longhorn-driver-deployer's init + main container
