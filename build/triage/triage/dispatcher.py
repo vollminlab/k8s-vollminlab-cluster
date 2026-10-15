@@ -1,4 +1,5 @@
 """The dispatcher's decisions: what to queue, what to drop, and when to run it."""
+import json
 import logging
 import math
 import time
@@ -20,12 +21,17 @@ QUEUE = Gauge("triage_queue_depth", "Suspended triage Jobs waiting to run")
 LAST_SWEEP = Gauge("triage_last_sweep_success_timestamp",
                    "Completion time of the last clean sweep (dispatcher start time until one is seen)")
 
-OUTCOMES = ("issue_created", "commented", "sweep_ok", "agent_error", "publish_failed", "job_crashed")
+OUTCOMES = ("issue_created", "commented", "sweep_ok", "agent_error", "publish_failed", "job_crashed",
+            "outcome_lost")
 DAY = 86400
 
 
 def _utc(ts: float) -> datetime:
     return datetime.fromtimestamp(ts, timezone.utc)
+
+
+def _failed(job) -> bool:
+    return any(c.type == "Failed" and c.status == "True" for c in (job.status.conditions or []))
 
 
 class Dispatcher:
@@ -194,10 +200,18 @@ class Dispatcher:
             done = jobs.finished_at(j)
             if done is None or now - done.timestamp() > DAY:
                 continue
-            outcome = self.read_outcome(j.metadata.name)
-            if outcome is None:
+            outcome = self._outcome_of(j)
+            if outcome is None and _failed(j):
                 outcome = {"outcome": "job_crashed", "cost_usd": None}
                 self._notify_crash_once(j)
+            elif outcome is None:
+                # Complete means publish exited 0, which it does only after writing its
+                # outcome, so the record was lost (pod deleted before it was first read),
+                # not the run. Recorded once so it is logged once; cost unknown, so capped.
+                outcome = {"outcome": "outcome_lost", "cost_usd": None}
+                log.warning("%s completed but its pod is gone and its outcome was never read; "
+                            "charging the per-run cap", j.metadata.name)
+                self._store_outcome(j.metadata.name, outcome)
             name = outcome.get("outcome")
             counts[name if name in counts else "publish_failed"] += 1
             spend += self._cost_of(outcome)
@@ -208,6 +222,31 @@ class Dispatcher:
         self._spend_24h = spend
         SPEND_24H.set(spend)
         LAST_SWEEP.set(self.last_sweep)
+
+    def _outcome_of(self, job):
+        """The stored copy if there is one, else publish's termination message, which is
+        then stored on the Job so it outlives the pod."""
+        stored = (job.metadata.annotations or {}).get(jobs.OUTCOME_ANNOTATION)
+        if stored is not None:
+            try:
+                value = json.loads(stored)
+            except ValueError:
+                value = None
+            if isinstance(value, dict):
+                return value
+            log.warning("%s has an unreadable %s; reading the pod instead",
+                        job.metadata.name, jobs.OUTCOME_ANNOTATION)
+        outcome = self.read_outcome(job.metadata.name)
+        if outcome is not None:
+            self._store_outcome(job.metadata.name, outcome)
+        return outcome
+
+    def _store_outcome(self, name: str, outcome: dict) -> None:
+        # Best effort: a failed write is retried on the next tick, while the pod still exists.
+        try:
+            self.queue.annotate(name, jobs.OUTCOME_ANNOTATION, json.dumps(outcome, separators=(",", ":")))
+        except Exception as e:
+            log.warning("could not store the outcome on %s (%s); will retry", name, e)
 
     def _cost_of(self, outcome: dict) -> float:
         """The outcome's reported cost; an unknown cost counts as the per-run cap,
