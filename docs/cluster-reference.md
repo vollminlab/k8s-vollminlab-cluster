@@ -506,7 +506,7 @@ All ingresses use `ingressClassName: nginx`, TLS termination via `wildcard-tls`,
 | `pvc-jellyfin-config` | mediastack | 30Gi | longhorn | RWO |
 | `pvc-minecraft-datadir` | dmz | 20Gi | longhorn-dmz | RWX |
 | `portainer` | portainer | 1Gi | longhorn | RWO |
-| `minio` | minio | 75Gi | longhorn | RWO |
+| `minio` | minio | 100Gi | longhorn | RWO |
 
 ---
 
@@ -620,16 +620,26 @@ Kubernetes manifests are **not** backed up by Velero — they are restored by Fl
 
 | Parameter | Value |
 |---|---|
-| Chart | bitnami/minio 17.0.23 |
-| Helm repo | https://charts.bitnami.com/bitnami |
+| Chart | minio/minio 5.4.0 |
+| Helm repo | https://charts.min.io/ |
+| Image | `harbor.vollminlab.com/vollminlab/minio:RELEASE.2024-12-18T13-15-44Z` (digest-pinned) |
+| Hook image | `harbor.vollminlab.com/vollminlab/mc:RELEASE.2025-08-13T08-35-41Z` (post-upgrade bucket/user job) |
 | Namespace | `minio` |
 | Mode | standalone |
-| Storage | 75Gi Longhorn PVC |
+| Storage | 100Gi Longhorn PVC |
 | API endpoint (in-cluster) | `http://minio.minio.svc.cluster.local:9000` |
 | Console | `minio.vollminlab.com` (port 9001) |
 | Root user | `root` (password in 1Password: **MinIO**) |
 | Buckets | `velero`, `loki`, `cnpg-backups`, `terraform-state` (auto-provisioned on startup) |
 | Service accounts | `cnpg-svc` (cnpg-policy, `cnpg-backups` only), `tofu-svc` (tofu-state-policy, `terraform-state` only) |
+
+**The images come from Harbor, not upstream.** MinIO withdrew its public images in 2026:
+`quay.io/minio/minio` and `quay.io/minio/mc` return UNAUTHORIZED and dl.min.io returns 410. On
+2026-10-15 the server was running only from k8sworker04's containerd cache, so a reschedule to any
+other node would have meant ImagePullBackOff. The Harbor copies were exported from that cache and
+are byte-identical linux/amd64 images. Harbor's Docker Hub proxy cache does not protect against
+this: it only serves what upstream still serves. There is no upstream to bump to, so moving off
+this release means choosing a replacement object store, not a version.
 
 ### cnpg-b2-mirror (CNPG offsite copy)
 

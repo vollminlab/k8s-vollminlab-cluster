@@ -9,5 +9,6 @@ resources:
   - tofu-minio-user-externalsecret.yaml
   - minio-credentials-externalsecret.yaml
   - minio-oidc-credentials-externalsecret.yaml
+  - harbor-vollminlab-pull-externalsecret.yaml
   - servicemonitor.yaml
   - prometheusrule.yaml
