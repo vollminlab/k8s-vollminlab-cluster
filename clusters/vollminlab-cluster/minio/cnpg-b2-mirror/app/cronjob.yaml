@@ -8,9 +8,9 @@ metadata:
     env: production
     category: storage
 spec:
-  # 09:00 UTC. After the last CNPG ScheduledBackup (jellystat, 03:00) so the
-  # day's base backups are included, and clear of every other window: VolSync
-  # 00:00-02:00, the other four ScheduledBackups 01:00-01:45, velero daily-full
+  # 09:00 UTC. After the CNPG ScheduledBackups (all six run 20:00-21:15 UTC,
+  # measured 2026-10-15) so the previous evening's base backups are included,
+  # and clear of every other window: VolSync 00:00-02:00, velero daily-full
   # 03:00, daily-b2 04:00, grafana-b2 05:00, monthly-b2 06:00, vmbackup 07:30
   # with a 2h ceiling.
   schedule: "0 9 * * *"
@@ -52,13 +52,15 @@ spec:
               type: RuntimeDefault
           containers:
             - name: mirror
-              # MinIO deleted the minio/mc repository from Docker Hub -- the whole
-              # repo 404s, not just this tag, so the pull fails `not found` and the
-              # CronJob has failed every night since 2026-09-16. The identical tag is
-              # still published on quay.io, which Kyverno's restrict-image-registries
-              # already allows. A pinned tag protects against a surprise change; it
-              # does not protect against the tag being withdrawn.
-              image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+              # rclone, not mc. MinIO withdrew mc from Docker Hub (2026-09-16),
+              # then from quay.io, and dl.min.io now answers 410 Gone for the
+              # binaries too: on 2026-10-15 the pull failed with `unauthorized`
+              # and the Job sat in ImagePullBackOff until activeDeadlineSeconds.
+              # It ran at all until then only because nodes had the old image
+              # cached. rclone is an independent, maintained project that speaks
+              # S3 to MinIO and B2's native API, so neither end's vendor can
+              # strand this job again. Pinned by digest as well as tag.
+              image: docker.io/rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -66,6 +68,10 @@ spec:
                   drop:
                     - ALL
               env:
+                # Both remotes are defined entirely by RCLONE_CONFIG_<NAME>_*
+                # variables, so no config file is written and no credential
+                # ever appears on a command line or passes through the shell.
+                #
                 # Source: the existing cnpg-svc principal, whose MinIO policy
                 # (cnpg-policy, in minio/app/configmap.yaml) is already scoped to
                 # the cnpg-backups bucket and nothing else. This job only ever
@@ -77,68 +83,92 @@ spec:
                 # `accessKey: cnpg-svc` in the MinIO chart values. Only the secret
                 # key comes from 1Password, via the cnpg-minio-user ExternalSecret
                 # this namespace already has for the Helm post-job.
-                - name: MINIO_ACCESS_KEY
+                - name: RCLONE_CONFIG_SRC_TYPE
+                  value: s3
+                - name: RCLONE_CONFIG_SRC_PROVIDER
+                  value: Minio
+                - name: RCLONE_CONFIG_SRC_ENDPOINT
+                  value: http://minio.minio.svc.cluster.local:9000
+                - name: RCLONE_CONFIG_SRC_ACCESS_KEY_ID
                   value: cnpg-svc
-                - name: MINIO_SECRET_KEY
+                - name: RCLONE_CONFIG_SRC_SECRET_ACCESS_KEY
                   valueFrom:
                     secretKeyRef:
                       name: cnpg-minio-user
                       key: secretKey
-                - name: B2_ACCESS_KEY
+                # Destination: B2's native API, not its S3 endpoint. The S3
+                # endpoint rejects headers that newer AWS SDKs send by default
+                # (x-amz-tagging, and the checksum headers; see velero.md), and
+                # the native backend has none of that surface. A B2 application
+                # key is the same credential under either API: key ID = account.
+                - name: RCLONE_CONFIG_B2_TYPE
+                  value: b2
+                - name: RCLONE_CONFIG_B2_ACCOUNT
                   valueFrom:
                     secretKeyRef:
                       name: cnpg-b2-credentials
                       key: B2_ACCESS_KEY
-                - name: B2_SECRET_KEY
+                - name: RCLONE_CONFIG_B2_KEY
                   valueFrom:
                     secretKeyRef:
                       name: cnpg-b2-credentials
                       key: B2_SECRET_KEY
+                # readOnlyRootFilesystem: point everything rclone might write
+                # at the /tmp emptyDir. The config path need not exist.
+                - name: RCLONE_CONFIG
+                  value: /tmp/rclone.conf
+                - name: RCLONE_CACHE_DIR
+                  value: /tmp/cache
+                - name: HOME
+                  value: /tmp
               command:
                 - /bin/sh
                 - -c
                 - |
                   set -eu
 
-                  MC="mc --config-dir /tmp/mc"
-
-                  # >/dev/null on both: `mc alias set` echoes the alias it just
-                  # created, and a failure here must not print the credential.
-                  $MC alias set src http://minio.minio.svc.cluster.local:9000 \
-                      "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" > /dev/null
-                  $MC alias set b2 https://s3.us-west-000.backblazeb2.com \
-                      "$B2_ACCESS_KEY" "$B2_SECRET_KEY" > /dev/null
-
-                  # Prove both endpoints answer before mirroring. Without this a
-                  # credential or endpoint fault would surface as "0 objects
-                  # copied" and exit 0, which is indistinguishable from "already
+                  # Prove both endpoints answer before copying. Without this a
+                  # credential or endpoint fault could surface as "nothing to
+                  # copy" and exit 0, which is indistinguishable from "already
                   # up to date" and is exactly how a backup reports success while
                   # protecting nothing.
-                  $MC ls src/cnpg-backups > /dev/null
-                  $MC ls b2/vollminlab-k8s-cnpg > /dev/null
+                  rclone lsf --max-depth 1 src:cnpg-backups > /dev/null
+                  rclone lsf --max-depth 1 b2:vollminlab-k8s-cnpg > /dev/null
 
-                  # No --remove. B2 therefore keeps objects after MinIO's 7d
-                  # (authentik) / 14d (the rest) retention has expired them, so
-                  # the offsite copy reaches further back than the local one.
-                  # Bound it with a B2 lifecycle rule, not with --remove.
-                  # --retry retries the individual objects that errored.
-                  # Without it a single transient B2 fault fails the whole run:
-                  #   Failed to copy ... Put "https://s3.us-west-000...":
-                  #   net/http: HTTP/1.x transport connection broken:
-                  #   http: ContentLength=802670 with Body length 0
-                  # mc continues past a failed object but still exits non-zero,
-                  # and `set -e` above turns that into a failed day. Note this
-                  # is NOT --skip-errors: that would exit 0 with objects
-                  # missing, which is the silent-success failure this script
-                  # exists to avoid.
-                  $MC mirror --retry src/cnpg-backups b2/vollminlab-k8s-cnpg
+                  # copy, not sync: nothing is ever deleted from B2, so the
+                  # offsite copy reaches back past MinIO's 7d (authentik) / 14d
+                  # (the rest) retention. Bound it with a B2 lifecycle rule.
+                  #
+                  # --size-only: barman-cloud writes every object exactly once
+                  # under a unique name (WAL segment, base backup id), so name +
+                  # size is a complete identity. It also keeps the first run from
+                  # re-uploading the ~20k objects mc wrote: they carry no rclone
+                  # mtime, and MinIO (MD5) and B2 (SHA-1) share no hash. mc's own
+                  # mirror only checked existence, so this is strictly stronger.
+                  #
+                  # Memory: each transfer buffers up to chunk-size x
+                  # upload-concurrency for large files. 4 x 2 x 32M = 256M,
+                  # inside the 512Mi limit. rclone's defaults (96M x 4 per file)
+                  # would need ~1.5Gi.
+                  #
+                  # Retries: rclone retries failed objects (--low-level-retries)
+                  # and then the whole pass (--retries) and exits non-zero if any
+                  # object still failed. It never exits 0 with objects missing.
+                  rclone copy src:cnpg-backups b2:vollminlab-k8s-cnpg \
+                      --size-only \
+                      --transfers 4 \
+                      --b2-chunk-size 32M \
+                      --b2-upload-cutoff 32M \
+                      --b2-upload-concurrency 2 \
+                      --retries 3 \
+                      --stats 1m --stats-one-line --stats-log-level NOTICE
 
-                  # Content guard. A mirror that copies nothing into an empty
-                  # destination still exits 0.
-                  n="$($MC ls --recursive b2/vollminlab-k8s-cnpg | wc -l)"
-                  echo "objects in B2 after mirror: $n"
+                  # Content guard. A copy into an empty destination that copied
+                  # nothing still exits 0.
+                  n="$(rclone lsf -R --files-only b2:vollminlab-k8s-cnpg | wc -l)"
+                  echo "objects in B2 after copy: $n"
                   if [ "$n" -le 0 ]; then
-                    echo "ERROR: destination is empty after a successful mirror" >&2
+                    echo "ERROR: destination is empty after a successful copy" >&2
                     exit 1
                   fi
               volumeMounts:
@@ -151,9 +181,8 @@ spec:
                 limits:
                   memory: 512Mi
           volumes:
-            # readOnlyRootFilesystem is on. mc writes its config and session
-            # state under --config-dir, and scratch files under /tmp, so one
-            # emptyDir at /tmp covers both. Skipped by Velero FSB globally via
+            # readOnlyRootFilesystem is on. rclone's config path, cache dir
+            # and HOME all point under /tmp, so one emptyDir covers them. Skipped by Velero FSB globally via
             # the volumeTypes: [emptyDir] rule in velero-skip-smb-policy.
             - name: tmp
               emptyDir: {}
