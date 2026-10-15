@@ -633,16 +633,17 @@ Kubernetes manifests are **not** backed up by Velero — they are restored by Fl
 
 ### cnpg-b2-mirror (CNPG offsite copy)
 
-CronJob in the `minio` namespace that mirrors the `cnpg-backups` bucket to Backblaze B2.
+CronJob in the `minio` namespace that copies the `cnpg-backups` bucket to Backblaze B2 with rclone
+(`copy --size-only`, never deletes). It used `mc` until 2026-10-15, when MinIO had withdrawn the
+image from Docker Hub and quay.io and the binaries from dl.min.io (410 Gone).
 
 | Parameter | Value |
 |---|---|
 | Manifests | `./clusters/vollminlab-cluster/minio/cnpg-b2-mirror/app` |
-| Image | `docker.io/minio/mc:RELEASE.2025-08-13T08-35-41Z` |
+| Image | `docker.io/rclone/rclone:1.75.1` (pinned by digest) |
 | Schedule | 09:00 UTC daily |
 | Source | `s3://cnpg-backups` via the `cnpg-svc` principal (read only in practice) |
-| Destination | `s3://vollminlab-k8s-cnpg` |
-| B2 endpoint | `https://s3.us-west-000.backblazeb2.com` |
+| Destination | B2 bucket `vollminlab-k8s-cnpg`, via the native B2 API |
 | B2 credentials | 1Password: **Backblaze B2 - vollminlab-k8s-cnpg** (fields `keyID`, `credential`) |
 | Retention | none applied by the job; set a B2 lifecycle rule on the bucket |
 
@@ -682,7 +683,6 @@ that copies nothing into an empty bucket otherwise exits 0, which is indistingui
 | Primary BSL | `minio` (default) |
 | Secondary BSL | `b2` (Backblaze B2, DR use only) |
 | B2 bucket | `vollminlab-k8s-backups` |
-| B2 endpoint | `https://s3.us-west-000.backblazeb2.com` |
 | B2 credentials | 1Password: **Backblaze B2 - vollminlab-k8s-velero** |
 | Schedule: `daily-full` | 02:00 daily → MinIO, 14-day retention |
 | Schedule: `daily-b2` | 04:00 daily → B2, 90-day retention |
