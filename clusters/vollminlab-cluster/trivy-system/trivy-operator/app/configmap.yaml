@@ -85,12 +85,29 @@ data:
     trivy:
       ignoreUnfixed: true
 
-      # Chart default is UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL. Combined with
-      # ignoreUnfixed this reports what can actually be patched and is worth
-      # acting on, and it is what brings large reports (prowlarr, above) under
-      # the API object size limit. It also shrinks every VulnerabilityReport
-      # held in etcd. Widen it if MEDIUM findings ever need tracking.
-      severity: HIGH,CRITICAL
+      # Chart default is UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL. LOW and UNKNOWN are
+      # dropped as not actionable; MEDIUM stays, because MEDIUM is where most
+      # patchable library findings sit.
+      severity: MEDIUM,HIGH,CRITICAL
+
+      # Ignore linux-libc-dev: it is the kernel *headers* package, and Trivy
+      # matches every kernel CVE against it. A container runs on the node's
+      # kernel, never the one those headers describe, so none of these findings
+      # apply to the image. Measured 2026-10-15 on prowlarr (Ubuntu 24.04 base):
+      # 4,217 of its 5,286 fixable findings were this one package, which made
+      # the report too large to store (a VulnerabilityReport is ~760 B per
+      # finding against a ~1.5 MiB object limit). With it ignored, prowlarr is
+      # 906 findings at MEDIUM+. Kernel CVEs belong to the node OS, which is
+      # patched by the node playbooks, not by image rebuilds.
+      # The key prefix "ignorePolicy" makes this apply to every namespace.
+      ignorePolicy: |
+        package trivy
+
+        import rego.v1
+
+        default ignore := false
+
+        ignore if input.PkgName == "linux-libc-dev"
 
       # Built-in server storage. An emptyDir, not a PVC: the cache is a
       # re-downloadable DB, and a default Longhorn PVC would write it three

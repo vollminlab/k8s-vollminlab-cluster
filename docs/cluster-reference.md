@@ -1044,7 +1044,7 @@ right-sized from its data.
 | Chart | trivy-operator 0.36.0 (HelmRepository) |
 | Produces | `VulnerabilityReport` and `ConfigAuditReport` CRs |
 | Mode | ClientServer, via the built-in `trivy-server` StatefulSet (DB cached in an emptyDir) |
-| Severity | HIGH, CRITICAL; fixed vulnerabilities only (`ignoreUnfixed`) |
+| Severity | MEDIUM, HIGH, CRITICAL; fixed vulnerabilities only (`ignoreUnfixed`); `linux-libc-dev` (kernel headers) ignored via `ignorePolicy` |
 | Scan concurrency | 1 job; a failed scan retries after 6h |
 | Tolerations | Node collector only: DMZ and control-plane nodes. Scan jobs carry none |
 
