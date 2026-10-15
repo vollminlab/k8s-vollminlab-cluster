@@ -26,7 +26,15 @@ spec:
   # Suspended 2026-10-11 to 2026-10-15: the first run filled pvc-jellyfin-config
   # (then 20Gi) with 13.7 GB of PGS image subtitles. warm.py now skips any file
   # with an embedded image subtitle, so the cache grows by text tracks only.
-  suspend: false
+  #
+  # Suspended again 2026-10-15: I/O contention. Each extraction reads a whole mkv
+  # from TrueNAS at 170-270 MB/s, and TrueNAS also serves every worker VMDK
+  # (pool_1, iSCSI). Worker disk latency (vmware_vm_disk_maxTotalLatency_latest,
+  # 30m max) rose from ~100-160 ms to 200-641 ms during the 2026-10-11 run, and
+  # to 2,283 ms during the 2026-10-15 catch-up run, which overlapped Longhorn
+  # replica rebuilds. It fell to 17-31 ms within two minutes of stopping the
+  # Job. Re-enable only with the reads rate-limited or routed off the iSCSI path.
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
