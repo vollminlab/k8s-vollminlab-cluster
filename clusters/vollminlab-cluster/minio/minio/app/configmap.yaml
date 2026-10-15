@@ -8,6 +8,23 @@ data:
     mode: standalone
     replicas: 1
 
+    # MinIO withdrew its public images: quay.io/minio/{minio,mc} return UNAUTHORIZED
+    # and dl.min.io returns 410 (2026-10-15). The chart defaults could no longer be
+    # pulled; the server kept running only because k8sworker04 had it cached, so any
+    # reschedule meant ImagePullBackOff for Loki, CNPG backups and Velero's MinIO tier.
+    # These are byte-identical copies of the linux/amd64 images exported from that
+    # node's containerd cache into Harbor. Digest-pinned so a tag re-push can't change
+    # them. mc is pinned to the build that was cached (the chart default,
+    # RELEASE.2024-11-21, was not); it runs only the post-upgrade bucket/user hook.
+    image:
+      repository: harbor.vollminlab.com/vollminlab/minio
+      tag: RELEASE.2024-12-18T13-15-44Z@sha256:75300684910cf47df8ecf6bdaf132e397e84a8de94bd6ae0557c5b4dc7cb41c5
+    mcImage:
+      repository: harbor.vollminlab.com/vollminlab/mc
+      tag: RELEASE.2025-08-13T08-35-41Z@sha256:dce495b4f330bf87354c62743e06c3c7d68eedd23f8f94853a441931469cebdb
+    imagePullSecrets:
+      - name: harbor-vollminlab-pull
+
     deploymentUpdate:
       type: Recreate
 
