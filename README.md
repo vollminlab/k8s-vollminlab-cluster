@@ -128,6 +128,7 @@ clusters/vollminlab-cluster/            # Everything Flux reconciles
   tailscale-connector/                  # Subnet router / connector
   tofu/                                 # tofu-controller (OpenTofu IaC reconciliation)
   triage/                               # Alert triage agent (private diagnosis issues)
+  triage-canary/                        # Temporary broken workloads for triage live checks
   trivy-system/                         # Trivy operator (image + config scanning)
   velero/                               # Cluster backup (MinIO + Backblaze B2)
   volsync-system/                       # VolSync (PVC replication to backup targets)

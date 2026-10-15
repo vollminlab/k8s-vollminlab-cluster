@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: triage-canary
+  namespace: flux-system
+  labels:
+    app: triage-canary
+    env: production
+    category: observability
+spec:
+  interval: 10m
+  path: ./clusters/vollminlab-cluster/triage-canary
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m
