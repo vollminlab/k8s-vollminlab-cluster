@@ -1,0 +1,159 @@
+# The three CronJob staleness alerts must stay quiet for a suspended CronJob and for one
+# with a run in progress, and must still fire for a CronJob whose last run failed.
+# Timestamps are seconds from the test's epoch; time() at eval_time is the same scale.
+rule_files:
+  - rules/monitoring-gitops-control-plane-alerts.yaml
+  - rules/monitoring-vollminlab-custom-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # Daily jobs, evaluated at 30h. Each last succeeded at t=0, so all are 30h stale
+  # against a 26h threshold.
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="failed", schedule="0 6 * * *"}'
+        values: '1x1800'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="failed"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="failed"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="failed"}'
+        values: '0x1800'
+
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="suspended", schedule="0 6 * * *"}'
+        values: '1x1800'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="suspended"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="suspended"}'
+        values: '1x1800'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="suspended"}'
+        values: '0x1800'
+
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="running", schedule="0 6 * * *"}'
+        values: '1x1800'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="running"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="running"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="running"}'
+        values: '1x1800'
+
+      # No suspend or active series at all: absence must never silence the alert.
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="unlabelled", schedule="0 6 * * *"}'
+        values: '1x1800'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="unlabelled"}'
+        values: '0x1800'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: CronJobNotSucceededRecently
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: ns, cronjob: failed}
+            exp_annotations:
+              summary: "CronJob has not succeeded in over 26h"
+              description: >-
+                CronJob ns/failed last completed successfully 1d 6h 0m 0s ago. A daily
+                job that has not succeeded in 26h is failing silently — check for
+                admission rejection (PSS/Kyverno) or a stuck Forbid-policy job:
+                `kubectl get jobs -n ns`.
+          - exp_labels: {severity: warning, namespace: ns, cronjob: unlabelled}
+            exp_annotations:
+              summary: "CronJob has not succeeded in over 26h"
+              description: >-
+                CronJob ns/unlabelled last completed successfully 1d 6h 0m 0s ago. A daily
+                job that has not succeeded in 26h is failing silently — check for
+                admission rejection (PSS/Kyverno) or a stuck Forbid-policy job:
+                `kubectl get jobs -n ns`.
+
+  # Weekly jobs, evaluated at 9d against an 8d threshold. Sampled every minute: hourly
+  # samples go stale after 5m and keep resetting the rule's `for: 1h`.
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="weekly-failed", schedule="17 8 * * 1"}'
+        values: '1x12960'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="weekly-failed"}'
+        values: '0x12960'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="weekly-failed"}'
+        values: '0x12960'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="weekly-failed"}'
+        values: '0x12960'
+
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="weekly-suspended", schedule="17 8 * * 1"}'
+        values: '1x12960'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="weekly-suspended"}'
+        values: '0x12960'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="weekly-suspended"}'
+        values: '1x12960'
+
+      - series: 'kube_cronjob_info{namespace="ns", cronjob="weekly-running", schedule="17 8 * * 1"}'
+        values: '1x12960'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="weekly-running"}'
+        values: '0x12960'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="weekly-running"}'
+        values: '1x12960'
+    alert_rule_test:
+      - eval_time: 9d
+        alertname: WeeklyCronJobNotSucceededRecently
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: ns, cronjob: weekly-failed}
+            exp_annotations:
+              summary: "Weekly CronJob has not succeeded in over 8 days"
+              description: >-
+                CronJob ns/weekly-failed runs weekly and last completed successfully
+                9d 0h 0m 0s ago (threshold 8d). Check for admission rejection or a
+                stuck Forbid-policy job: `kubectl get jobs -n ns`.
+
+  # Schedule-relative rule: the latest slot (t=24h) is 24h after the last success (t=0).
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_status_last_schedule_time{namespace="ns", cronjob="failed"}'
+        values: '86400x60'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="failed"}'
+        values: '0x60'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="failed"}'
+        values: '0x60'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="failed"}'
+        values: '0x60'
+
+      - series: 'kube_cronjob_status_last_schedule_time{namespace="ns", cronjob="running"}'
+        values: '86400x60'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="running"}'
+        values: '0x60'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="running"}'
+        values: '0x60'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="running"}'
+        values: '1x60'
+
+      - series: 'kube_cronjob_status_last_schedule_time{namespace="ns", cronjob="suspended"}'
+        values: '86400x60'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="suspended"}'
+        values: '0x60'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="suspended"}'
+        values: '1x60'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="suspended"}'
+        values: '0x60'
+
+      # Healthy: success landed after its slot.
+      - series: 'kube_cronjob_status_last_schedule_time{namespace="ns", cronjob="healthy"}'
+        values: '86400x60'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="ns", cronjob="healthy"}'
+        values: '86460x60'
+      - series: 'kube_cronjob_spec_suspend{namespace="ns", cronjob="healthy"}'
+        values: '0x60'
+      - series: 'kube_cronjob_status_active{namespace="ns", cronjob="healthy"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: CronJobNotSucceeding
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: ns, cronjob: failed}
+            exp_annotations:
+              summary: "CronJob ns/failed has not succeeded since it was last scheduled"
+              description: >-
+                Its most recent scheduled run was 1d 0h 0m 0s before its last success, so
+                the latest run has not completed successfully. The CronJob object stays
+                healthy-looking, so check the Jobs directly: `kubectl get jobs -n ns | grep
+                failed`. Failed Job pods are garbage-collected quickly and their logs are
+                not reliably retained in Loki, so if the pods are already gone, re-run it
+                to capture the failure live: `kubectl create job -n ns
+                --from=cronjob/failed failed-diag`.
