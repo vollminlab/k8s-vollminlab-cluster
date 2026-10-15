@@ -28,6 +28,3 @@ sweep_checklist: |
      per-namespace join reports false orphans). PVCs on the smb StorageClass, PVCs labelled
      backup.vollminlab.com/volsync=true, and PVCs in namespaces velero.md lists with a stated
      reason are not findings.
-  3. inert-kyverno-policy: ClusterPolicies with zero `pass` results across all PolicyReports,
-     counted with the snippet in kyverno.md. Remove this item once the
-     KyvernoPolicyNoPassResults alert is live (plan Task 3).

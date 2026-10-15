@@ -1264,7 +1264,8 @@ Exportarr instances for Radarr, Sonarr and SABnzbd are documented under Media St
 | Image | `harbor.vollminlab.com/vollminlab/triage:0.1.1` (source `build/triage/`, tag `triage/vX.Y.Z` to release) |
 | Dispatcher | Deployment `triage-dispatcher`, 1 replica, `Recreate`; container port 8080 (`/alertmanager`, `/sweep`, `/healthz`, `/metrics`) |
 | Per-incident Job | init `investigate` (Claude Code, Anthropic key, read-only `triage-agent` SA) → main `publish` (no LLM, GitHub App + Pushover) |
-| Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`) **not yet added** as of 2026-10-14 (plan Task 37) |
+| Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`), first child route with `continue: true`, every alert except `Watchdog` and `InfoInhibitor` (since 2026-10-14) |
+| Canary | `triage-canary` namespace: temporary verification workloads (one OOMs, one crash-loops logging a prompt-injection attempt), removed by plan Task 40 |
 | Reports | private repo `vollminlab/triage-reports`; one issue per fingerprint, label `fp/<12 hex>` |
 | Policy | ConfigMap `triage-policy` from `triage/triage/app/policy.yaml`: model, caps, and the `shadow`/`live` mode per fix class |
 | Alerts | `TriageDispatcherDown`, `TriageSweepStale`, `TriageAgentErrors`, `TriagePublishFailing` |
@@ -1286,8 +1287,9 @@ git changes. A bare `kubectl scale` is reverted by Flux within 10 minutes; the e
 out-of-cluster stops are in `docs/runbooks/triage-agent.md`.
 
 **Did it actually run?** Check the artifact, not the status: an issue in `triage-reports`,
-`triage_jobs_24h` by outcome, and `kubectl get jobs -n triage`. A Job that finished with no
-termination message is counted as `job_crashed` and paged once.
+`triage_jobs_24h` by outcome, and `kubectl get jobs -n triage`. Each run's outcome is stored on its
+Job as `triage.vollminlab.com/outcome`. A Job that Failed with no outcome is counted as `job_crashed`
+and paged once.
 
 ---
 
