@@ -29,7 +29,7 @@ def source(msid, *streams):
 
 class PickStreamTest(unittest.TestCase):
     def test_first_embedded_text_subtitle(self):
-        ms = source("a", sub(2, codec="hdmv_pgs_subtitle", text=False), sub(3), sub(4))
+        ms = source("a", sub(2, external=True), sub(3), sub(4))
         self.assertEqual(warm.pick_stream(ms), 3)
 
     def test_no_subtitles(self):
@@ -43,6 +43,17 @@ class PickStreamTest(unittest.TestCase):
         # Clients only fetch text subtitles out-of-band (StreamBuilder), so a
         # PGS-only file never stalls playback.
         self.assertIsNone(warm.pick_stream(source("a", sub(2, codec="hdmv_pgs_subtitle", text=False))))
+
+    def test_source_with_any_image_subtitle_is_skipped(self):
+        # Fetching the text track would extract every track, PGS included, and
+        # PGS caches at ~18 MB per track (median, 2026-10-14).
+        ms = source("a", sub(2), sub(3, codec="hdmv_pgs_subtitle", text=False))
+        self.assertIsNone(warm.pick_stream(ms))
+
+    def test_external_image_subtitle_does_not_skip(self):
+        # A sidecar is never extracted, so it adds nothing to the cache.
+        ms = source("a", sub(2), sub(3, codec="hdmv_pgs_subtitle", text=False, external=True))
+        self.assertEqual(warm.pick_stream(ms), 2)
 
     def test_stream_without_external_support_is_ignored(self):
         self.assertIsNone(warm.pick_stream(source("a", sub(2, supports_external=False))))

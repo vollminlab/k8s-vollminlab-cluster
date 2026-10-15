@@ -44,8 +44,23 @@ class Stats:
     remaining: int = 0
 
 
+def has_image_subtitle(media_source):
+    return any(
+        s.get("Type") == "Subtitle" and not s.get("IsExternal") and not s.get("IsTextSubtitleStream")
+        for s in media_source.get("MediaStreams") or []
+    )
+
+
 def pick_stream(media_source):
-    """Index of the first subtitle a client would fetch out-of-band, or None."""
+    """Index of the first subtitle a client would fetch out-of-band, or None.
+
+    None too when the file embeds any image subtitle (PGS, VobSub). Fetching the
+    text track extracts every track, and image tracks are bitmaps: 13.7 of the
+    first backfill's 14 GB, from 79 of 1,363 items, filled pvc-jellyfin-config
+    (2026-10-11). Those files keep a slow first play; the rest are warmed.
+    """
+    if has_image_subtitle(media_source):
+        return None
     for s in media_source.get("MediaStreams") or []:
         if (
             s.get("Type") == "Subtitle"
@@ -143,7 +158,9 @@ def main():
     log = lambda msg: print(msg, flush=True)
     items = list_items(lambda p: json.loads(get(p, 120)))
     tgts = list(targets(items))
-    log("%d items, %d media sources with embedded text subtitles" % (len(items), len(tgts)))
+    skipped = sum(has_image_subtitle(ms) for i in items for ms in i.get("MediaSources") or [])
+    log("%d items, %d media sources with embedded text subtitles, %d skipped for image subtitles"
+        % (len(items), len(tgts), skipped))
 
     stats = run(
         tgts,
