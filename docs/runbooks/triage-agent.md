@@ -418,7 +418,20 @@ kubectl get pods -n triage -l job-name=$J \
 | `sweep_ok` | Clean sweep; also carries `findings`, `new` and `capped` |
 | `agent_error` | The investigation failed; the issue says why |
 | `publish_failed` | publish raised; a "Triage publish failed" Pushover went out with the diagnosis attached |
-| `job_crashed` | Dispatcher-assigned: the Job finished with **no** termination message (killed, OOM, deadline). Paged once, and the Job is annotated `triage.vollminlab.com/crash-notified=true` |
+| `job_crashed` | Dispatcher-assigned: the Job **Failed** with no outcome (publish killed, OOM, deadline). Paged once, and the Job is annotated `triage.vollminlab.com/crash-notified=true` |
+| `outcome_lost` | Dispatcher-assigned: the Job **completed**, but its pod was deleted before the dispatcher first read the outcome. The run worked; its record did not survive. Charged the cap, not paged |
+
+**The outcome lives on the Job, not the pod.** publish writes it to its termination message, and
+the dispatcher copies it onto the Job as `triage.vollminlab.com/outcome` the first time it reads
+it. That copy is what the 24h accounting uses afterwards. It has to be: kube-system's
+`disk-cleanup-cronjob` deletes every Succeeded pod older than an hour at 02:00 UTC. Before 0.1.2
+the outcome lived only in the pod, so every night each run of the past day turned into a
+`job_crashed`, paged "Triage job crashed", fired `TriagePublishFailing`, and was charged $3 against
+the daily cap.
+
+```bash
+kubectl get jobs -n triage -o custom-columns='NAME:.metadata.name,OUTCOME:.metadata.annotations.triage\.vollminlab\.com/outcome'
+```
 
 A run whose cost is unknown (`cost_estimated: true`, or a crash) is charged at
 `per_run_budget_usd`.

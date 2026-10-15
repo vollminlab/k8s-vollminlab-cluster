@@ -266,3 +266,11 @@ def test_relaxed_schema_still_accepts_a_valid_output_after_the_newline_fix():
     import jsonschema
     jsonschema.Draft202012Validator(relaxed_schema()).validate(AGENT_OK)
     assert "(?!" not in json.dumps(relaxed_schema())
+
+
+def test_metric_names_may_contain_digits():
+    # Node names do (k8sworker01). 0.1.1 rejected every node-alert diagnosis on this after
+    # the model had already spent the money (2026-10-15, triage-reports #9-#11).
+    assert validate_agent_output(dict(AGENT_OK, metrics={"k8sworker01_write_iops": 1})) == []
+    assert validate_agent_output(dict(AGENT_OK, metrics={"x" * 41: 1}))
+    assert validate_agent_output(dict(AGENT_OK, metrics={"K8sWorker01": 1}))
