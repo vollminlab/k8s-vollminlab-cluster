@@ -73,11 +73,21 @@ data:
           #
           # Validated over the 7 days to 2026-08-12: zero matches on every day except the
           # one on which these probe queries ran, and that day's only source was loki-0.
+          #
+          # `container!="longhorn-manager"` keeps a log flood from becoming a Loki outage.
+          # This rule reads every line from every stream each minute, so its cost scales
+          # with log volume. On 2026-10-15/16 a crash-looping engine made longhorn-manager
+          # re-print its log at ~10k lines/s: 8.1 GB of the 9.2 GB Loki took in per hour,
+          # against 0.08 GB in a normal hour. The two all-stream rules pinned loki-0 at its
+          # CPU limit for ~34h (a CPU profile put 95% of it in these filters). longhorn-manager
+          # produced zero matches for either rule in the 7 days before the flood. It does not
+          # mount data volumes, and the engine output it re-prints is an echo, not a reader
+          # hitting the error. longhorn-csi-plugin is a different container and stays in.
           - alert: FilesystemCorruptionDetected
             expr: |
               sum by (namespace, pod) (
                 count_over_time(
-                  {job=~".+", pod!~"loki-.*"}
+                  {job=~".+", pod!~"loki-.*", container!="longhorn-manager"}
                     |~ `(?i)(structure needs cleaning|EUCLEAN|EBADMSG|system error -117|system error -74)`
                     [1h]
                 )
@@ -232,13 +242,17 @@ data:
       #
       # longhorn-system/longhorn-csi-plugin is deliberately NOT excluded — it reports EIO
       # it genuinely encountered, which is corroborating signal rather than an echo.
+      #
+      # longhorn-system/longhorn-manager IS excluded, for the cost reason recorded on
+      # FilesystemCorruptionDetected: it re-prints engine logs (an echo), and a crash-looping
+      # engine made it 89% of all log volume on 2026-10-16, which pinned loki-0.
       - name: stale-mount
         rules:
           - alert: StaleMountErrorsPersisting
             expr: |
               sum by (namespace, pod) (
                 count_over_time(
-                  {job=~".+", pod!~"loki-.*|promtail-.*"}
+                  {job=~".+", pod!~"loki-.*|promtail-.*", container!="longhorn-manager"}
                     |~ `(?i)(input/output error|database disk image is malformed)`
                     [15m]
                 )
