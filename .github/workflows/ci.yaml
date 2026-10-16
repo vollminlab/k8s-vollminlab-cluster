@@ -203,7 +203,9 @@ jobs:
           fi
           
           # All changed YAML files, then scoped subsets
-          CHANGED_YAML=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -E '\.(yaml|yml)$' || echo "")
+          # --diff-filter=d: a deleted file cannot be linted or validated. The
+          # kustomization.yaml or index that stopped listing it is still in scope.
+          CHANGED_YAML=$(git diff --name-only --diff-filter=d "$BASE_SHA" "$HEAD_SHA" | grep -E '\.(yaml|yml)$' || echo "")
 
           # Lint scope: clusters/ + bootstrap/ (bootstrap is in the workflow
           # triggers but was previously filtered out and never validated)
@@ -226,7 +228,11 @@ jobs:
                 echo "$f"
                 if [[ "$f" == */app/* ]]; then
                   UNIT="${f%%/app/*}/app"
-                  [[ -d "$UNIT" ]] && find "$UNIT" -maxdepth 1 \( -name '*.yaml' -o -name '*.yml' \)
+                  # `if`, not `[[ ]] &&`: a false test as the loop's last command
+                  # becomes the pipeline's status and kills the step under pipefail.
+                  if [[ -d "$UNIT" ]]; then
+                    find "$UNIT" -maxdepth 1 \( -name '*.yaml' -o -name '*.yml' \)
+                  fi
                 fi
               done | sort -u
             )
