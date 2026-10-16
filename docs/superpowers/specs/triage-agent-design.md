@@ -1,7 +1,7 @@
 # Triage Agent Design
 
 **Date:** 2026-10-11
-**Status:** Design approved, not yet planned
+**Status:** Implemented 2026-10-16; all classes in shadow
 **Revised:** 2026-10-11 — detection split (PromQL first); Flux notification trigger dropped as redundant
 **Goal:** When something in the cluster breaks, have a root-cause diagnosis waiting before anyone opens a terminal. For a short allowlist of well-understood failure classes, also open the fix PR without being asked. A human still merges.
 
@@ -75,14 +75,14 @@ The investigate and publish containers share one Job and exactly one `emptyDir`,
 - **No Flux notification-controller wiring.** Flux failures already reach Alertmanager through `FluxResourceNotReady` and `TerraformResourceNotReady` (`prometheusrule-gitops.yaml`, built on kube-state-metrics' `gotk_resource_info`). An earlier draft added a Flux `Provider` and `Alert` on the mistaken premise that Flux failures notify nowhere. It was dropped as a redundant second path.
 - **Prerequisite: Kyverno metrics scraping** (see *Detection split*).
 
-### Configuration defaults (initial values, recalibrated in Live verification step 6)
+### Configuration defaults (caps calibrated 2026-10-15; see Implementation notes)
 
-| Key | Initial value |
+| Key | Value |
 |---|---|
 | `model` | `claude-opus-5-5` |
 | `max_turns` | 40 |
-| `per_run_budget_usd` | 3 |
-| `daily_budget_usd` | 15 |
+| `per_run_budget_usd` | 2 (initially 3) |
+| `daily_budget_usd` | 10 (initially 15) |
 | `queue_cap` | 10 |
 | `reinvestigate_after_hours` | 24 |
 | `sweep_schedule` | `30 7 * * *` UTC (after the 03:00–06:00 backup window) |
@@ -358,3 +358,66 @@ Each shadow issue is labelled `shadow-correct` or `shadow-wrong` by a human. A c
 - `docs/cluster-reference.md`: the `triage` namespace, dispatcher, agent image and sweep CronJob (CI enforces this).
 - `.claude/rules/networkpolicy.md`: port table rows for `triage` and the `monitoring` `allow-triage` rule.
 - `.claude/rules/kyverno.md`: no change. `observability` is an existing category.
+
+---
+
+## Implementation notes
+
+Recorded when the plan (`docs/superpowers/plans/triage-agent.md`) finished on 2026-10-16. Where these
+differ from the sections above, these win.
+
+### Deviations from this spec
+
+1. **One image** (`build/triage/`), with a different `command` per role, not two images. CI builds each `build/*/` directory in isolation, so shared code can live in only one.
+2. **No `helm`.** `helm history` needs `get secrets`, which the agent must never have. Flux status and the HelmRelease's `status.history` replace it.
+3. The dispatcher **mints an Issues-only token for `triage-reports`**, because it has to comment on and close issues when an alert resolves.
+4. **24h gauges recomputed from finished Jobs** (`triage_jobs_24h`, `triage_spend_usd_24h`), not counters. A counter resets on restart and would wipe the daily cap. `TriagePublishFailing` was added.
+5. A **`setup_failed`** failure reason, for a failed clone or a missing CLI.
+6. The Alertmanager webhook route is **a 1Password edit** (item "Alertmanager Config"), because the whole `alertmanager.yaml` lives there.
+7. **`git clone --filter=blob:none`**, not a shallow clone, because the `renovate-breakage` guard needs file history.
+8. Kyverno's top-level `serviceMonitor.enabled` is **silently ignored** by chart 3.9.0. The per-controller keys work.
+9. `result.json` carries **`tool_denials`**, the evidence the injection red-team needs.
+10. Live check 4 is verified by **the denied-tool-call record plus "no PR, no changed file"**, because Calico open source has no flow logs here.
+11. **publish trusts only `result.json`.** It clones into its own volume and runs `python -I` with a minimal environment. The agent's `git log --output=` could otherwise write a `filter.<x>.clean` command into a shared `.git/config`, which publish would have run beside the App key.
+12. **The agent cannot run git.** It reads previous values from `status.history`, events or ReplicaSets, and publish checks them against its own clone. This is the same finding as 11.
+13. **The Anthropic workspace monthly limit is the spend security boundary**, not `daily_budget_usd`. `cost_usd` comes from a file the investigate container writes, so a compromised run can under-report it.
+
+### Changes after first deploy (0.1.1 to 0.1.3)
+
+- **0.1.1:** stopped sending `$schema` to `claude --json-schema`. 0.1.0 rejected the schema, so claude never ran. Each failed run was charged the full per-run cap as an unknown cost, which produced phantom $3.00 charges.
+- **0.1.2:** run outcomes are kept on a Job annotation, so they survive pod deletion. Metric names may contain digits.
+- **0.1.3:** **one incident per workload.** The canary's ~10 alerts produced 10 issues on 0.1.2 and 2 on 0.1.3. Runs that query capitalised metric names are kept.
+  - Known gap: an alert arriving after its workload's Job has started is deduped, not appended to the issue, so an issue title names only the first alert.
+
+### Calibrated caps
+
+Measured over 39 runs that reported a cost: max $1.07 (a sweep), mean $0.47. Following the plan's rule (1.5x max, rounded up; daily 5x that):
+
+- `per_run_budget_usd` = 2.
+- `daily_budget_usd` = 10.
+- Anthropic workspace monthly limit raised from $60 to $100.
+
+A recheck on 2026-10-16 (18 runs in the 25h Job window) gave max $0.91, mean $0.51.
+
+### Kyverno decision
+
+`KyvernoPolicyNoPassResults` is live (#1371, `prometheusrule-kyverno.yaml`). It excludes four policies that measured zero passes for a known reason:
+
+- `dmz-enforce-node-placement`
+- `mutate-default-sa-automount`
+- `patch-shlink-backend-probes`
+- `restrict-default-namespace`
+
+The sweep's `inert-kyverno-policy` check was dropped in favour of the alert.
+
+### Live verification (2026-10-16)
+
+All five checks passed, as recorded in `docs/runbooks/triage-agent.md`. Shadow grading at close-out: 10 `shadow-correct`, 4 `shadow-wrong`.
+
+- **Wrong:**
+  - Two early sweep findings flagged backup exclusions that were documented. The check was fixed in #1383.
+  - Two `cpu-throttle-limit` proposals, for Loki and promtail, treated a log flood's symptom as a sizing problem.
+- **Correct, and notable:** the agent independently diagnosed two real outages that it was not built for:
+  - a zombie iSCSI session blocking a Longhorn attach;
+  - ext4 corruption on a config volume.
+
