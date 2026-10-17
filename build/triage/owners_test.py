@@ -267,3 +267,12 @@ def test_replicaset_confirming_read_errors_other_than_404_propagate():
     get_owner = kube_owner_lookup(core, _api(read_namespaced_replica_set=forbidden), _api())
     with pytest.raises(ApiException):
         get_owner("Pod", "ns", "radarr-7d9c8b6f5-x2x9q")
+
+
+def test_name_candidates_lists_every_fit_unconfirmed():
+    from triage.owners import name_candidates
+    assert name_candidates("Pod", "radarr-7d9c8b6f5-x2x9q") == [
+        ("Deployment", "radarr"), ("DaemonSet", "radarr-7d9c8b6f5")]
+    assert name_candidates("Pod", "backup-29345760-abcde")[0] == ("CronJob", "backup")
+    assert name_candidates("Job", "backup-29345760") == [("CronJob", "backup")]
+    assert name_candidates("Deployment", "radarr") == []

@@ -1,4 +1,5 @@
 """The dispatcher's decisions: what to queue, what to drop, and when to run it."""
+import dataclasses
 import json
 import logging
 import math
@@ -9,7 +10,8 @@ from prometheus_client import Counter, Gauge
 
 from . import dedup, jobs
 from .incident import SELF_NAMESPACE, Incident, from_alertmanager, sweep_incident
-from .owners import resolve
+from .issuebody import incident_title
+from .owners import RESOLVABLE, name_candidates, resolve
 
 log = logging.getLogger("triage.dispatcher")
 
@@ -101,7 +103,7 @@ class Dispatcher:
     def _enqueue(self, inc: Incident) -> str:
         active = [j for j in self.queue.list() if not jobs.finished(j)]
         job_exists = any(jobs.fp_of(j) == inc.fp12 for j in active)
-        issue = None
+        issue = raw = None
         if not job_exists and inc.source != "sweep":
             try:
                 raw = self.github.find_open_issue(self.policy.reports_repo, inc.fp12)
@@ -113,6 +115,8 @@ class Dispatcher:
                                         datetime.fromisoformat(raw["updated_at"].replace("Z", "+00:00")))
         action = dedup.decide(job_exists, issue, _utc(self.clock()),
                               timedelta(hours=self.policy.reinvestigate_after_hours))
+        if raw and action in (dedup.Action.RECENT, dedup.Action.COMMENT):
+            self._note_late_alerts(raw, inc)
         if action in (dedup.Action.INFLIGHT, dedup.Action.RECENT):
             EVENTS.labels(inc.source, action.value).inc()
             return action.value
@@ -130,6 +134,49 @@ class Dispatcher:
         EVENTS.labels(inc.source, action.value).inc()
         return action.value
 
+    def _note_late_alerts(self, raw: dict, inc: Incident) -> None:
+        """Record alerts that joined a workload's incident after its issue was filed.
+
+        The title is the record: it names every alert merged so far, so an alert that
+        Alertmanager re-sends is noted once. The title is set before the comment, so a
+        failure in between loses the comment rather than repeating it on every re-send.
+        A truncated title cannot be parsed and is left alone. Alerts arriving while the
+        Job is still queued land here on Alertmanager's next repeat: a suspended Job's
+        pod environment, which carries the incident, cannot be changed.
+        """
+        title = raw.get("title", "")
+        if not title.startswith("[") or "] " not in title:
+            return
+        known = title[1:title.index("] ")].split(", ")
+        new = [a for a in (inc.alerts or [inc.reason]) if a not in known]
+        if not new:
+            return
+        repo, number = self.policy.reports_repo, raw["number"]
+        when = _utc(self.clock()).strftime("%Y-%m-%d %H:%M UTC")
+        try:
+            self.github.set_title(repo, number, incident_title(dataclasses.replace(inc, alerts=known + new)))
+            self.github.comment(repo, number,
+                                f"Also firing on this workload as of {when}: "
+                                + ", ".join(f"`{a}`" for a in new)
+                                + ". Covered by this incident, not investigated separately.")
+        except Exception as e:
+            log.warning("could not note late alerts %s on issue #%s (%s: %s)",
+                        new, number, type(e).__name__, e)
+            return
+        EVENTS.labels(inc.source, "late_alert_noted").inc()
+        log.info("late_alert_noted: %s added to issue #%s (fp/%s)", ", ".join(new), number, inc.fp12)
+
+    def _match_fps(self, inc: Incident) -> list:
+        """The incident's fingerprint, then, only when its owner could not be resolved
+        (the workload is still a Pod, Job or ReplicaSet), the fingerprint of every
+        controller its name fits. See owners.name_candidates."""
+        fps = [inc.fp12]
+        kind, _, name = inc.workload.partition("/")
+        if kind in RESOLVABLE:
+            fps += [dataclasses.replace(inc, workload=f"{k}/{base}").fp12
+                    for k, base in name_candidates(kind, name)]
+        return fps
+
     def _still_firing(self, inc: Incident):
         """Whether any alert Alertmanager still holds maps to this incident: True, False,
         or None when Alertmanager cannot be asked.
@@ -145,12 +192,13 @@ class Dispatcher:
             log.warning("alertmanager re-check for fp/%s failed (%s: %s)", inc.fp12, type(e).__name__, e)
             return None
         unknown = False
+        fps = set(self._match_fps(inc))
         for other in from_alertmanager({"alerts": active}):
             # Namespace first: it is free, and owner lookup costs an API call per alert.
             if other.namespace != inc.namespace:
                 continue
             try:
-                if self._resolve_workload(other, strict=True).fp12 == inc.fp12:
+                if fps.intersection(self._match_fps(self._resolve_workload(other, strict=True))):
                     return True
             except Exception as e:
                 # An unresolved pod never matches its Deployment's fingerprint, so a
@@ -168,12 +216,20 @@ class Dispatcher:
             return "resolved_partial"
         # Alertmanager unreachable (None) still closes: no second resolve webhook would
         # arrive to do it later, and a later firing alert simply files a new incident.
+        fps = self._match_fps(inc)
         dropped = 0
         for j in self.queue.list():
-            if jobs.fp_of(j) == inc.fp12 and jobs.is_suspended(j) and not jobs.finished(j):
+            if jobs.fp_of(j) in fps and jobs.is_suspended(j) and not jobs.finished(j):
                 self.queue.delete(j.metadata.name)
                 dropped += 1
-        raw = self.github.find_open_issue(self.policy.reports_repo, inc.fp12)
+        raw = None
+        for fp in fps:
+            raw = self.github.find_open_issue(self.policy.reports_repo, fp)
+            if raw:
+                if fp != inc.fp12:
+                    log.info("resolve of %s %s matched issue #%s by name (fp/%s): its owner is gone",
+                             inc.namespace or "-", inc.workload, raw["number"], fp)
+                break
         if raw:
             when = _utc(self.clock()).strftime("%Y-%m-%d %H:%M UTC")
             self.github.comment(self.policy.reports_repo, raw["number"],

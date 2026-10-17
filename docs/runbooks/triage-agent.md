@@ -355,9 +355,11 @@ the PEM or App ID is wrong.
 | New incident | Issue `[<alertname>, …] <namespace>/<Kind>/<name>` in `triage-reports`, labels `fp/<12 hex>`, `class/<class>`, plus one Pushover message |
 | Same fingerprint, open issue updated **≥ 24h** ago | Re-investigated; the result is a **comment** on that issue, with no Pushover |
 | Same fingerprint, open issue updated < 24h ago | Dropped (`deduped_recent`) |
+| A new alert on a workload that already has an open issue | Its name is added to the issue title, with a comment `Also firing on this workload as of …` (`late_alert_noted`), once per alert name. One that arrives while the Job is still queued is noted on Alertmanager's next repeat |
 | Same fingerprint, Job already queued or running | Dropped (`deduped_inflight`) |
 | Alert resolves, nothing else firing on the workload | Dispatcher comments `Resolved at …`, closes the issue, deletes any queued Job for it. Open PRs are left alone |
 | Alert resolves, another alert on the workload still firing | Nothing closes (`resolved_partial`); the last one to resolve closes the issue |
+| Alert resolves after the whole app was deleted | Closes the issue anyway: with no controller left to confirm the pod's owner, the resolve falls back to the Deployment or CronJob its name fits, for matching an existing issue only (logged `matched issue #N by name`) |
 | Sweep | One issue per finding, `[sweep] <check>: <ns>/<object>`, labels `sweep`, `check/<check>`, `fp/<12 hex>`. At most 10 new per run; the rest are counted as `capped` and filed by a later sweep |
 | Namespace `triage` | Ignored (`ignored_self`); triage never diagnoses itself |
 
@@ -365,7 +367,7 @@ The fingerprint is `sha256(source, namespace, workload)` with the pod resolved t
 Deployment/StatefulSet/DaemonSet/CronJob, so five crash-looping pods of one Deployment are one
 incident, and so are the different alerts that one broken workload fires together
 (`KubePodCrashLooping`, `KubePodNotReady`, `KubeDeploymentReplicasMismatch`). The issue title
-lists the alerts that were firing when it was filed. An alert with no workload (cluster-level,
+lists every alert merged into the incident, including ones that started after it was filed. An alert with no workload (cluster-level,
 e.g. `etcdDatabaseHighFragmentationRatio`) keeps the alertname in its fingerprint, since nothing
 else tells two of them apart: `sha256(source, reason, namespace, "")`. Until 0.1.3 the alertname
 was always included, and the 2026-10-15 canary filed 10 issues for 2 workloads. The issue body carries `<!-- fp:<full hash> -->`, and dedup searches **open** issues by
@@ -461,14 +463,16 @@ A run whose cost is unknown (`cost_estimated: true`, or a crash) is charged at
 
 | Metric | |
 |---|---|
-| `triage_events_total{source,outcome}` | outcomes: `dispatched_new`, `dispatched_comment`, `deduped_inflight`, `deduped_recent`, `deduped_batch`, `dropped_queue_full`, `dropped_resolved`, `dropped_invalid`, `ignored_self`, `resolved`, `resolved_unmatched` |
+| `triage_events_total{source,outcome}` | outcomes: `dispatched_new`, `dispatched_comment`, `deduped_inflight`, `deduped_recent`, `deduped_batch`, `dropped_queue_full`, `dropped_resolved`, `dropped_invalid`, `ignored_self`, `resolved`, `resolved_unmatched`, `resolved_partial`, `late_alert_noted` |
 | `triage_jobs_24h{outcome}` | finished Jobs in the last 24h, by the outcomes above |
 | `triage_spend_usd_24h` | the figure the daily cap compares against |
 | `triage_queue_depth` | suspended Jobs waiting |
 | `triage_last_sweep_success_timestamp` | see Verification |
 
 `resolved_unmatched` counts resolves that matched no open issue and no queued Job. The alert was
-never filed: dropped, still being investigated, or keyed differently.
+never filed: dropped, still being investigated, or keyed differently. Until 0.1.4 a whole-app
+deletion also landed here, because the owner could not be confirmed once the Deployment was gone
+(the canary removal on 2026-10-17 left both canary issues open).
 
 ### Self-alerts
 

@@ -382,12 +382,16 @@ differ from the sections above, these win.
 12. **The agent cannot run git.** It reads previous values from `status.history`, events or ReplicaSets, and publish checks them against its own clone. This is the same finding as 11.
 13. **The Anthropic workspace monthly limit is the spend security boundary**, not `daily_budget_usd`. `cost_usd` comes from a file the investigate container writes, so a compromised run can under-report it.
 
-### Changes after first deploy (0.1.1 to 0.1.3)
+### Changes after first deploy (0.1.1 to 0.1.4)
 
 - **0.1.1:** stopped sending `$schema` to `claude --json-schema`. 0.1.0 rejected the schema, so claude never ran. Each failed run was charged the full per-run cap as an unknown cost, which produced phantom $3.00 charges.
 - **0.1.2:** run outcomes are kept on a Job annotation, so they survive pod deletion. Metric names may contain digits.
 - **0.1.3:** **one incident per workload.** The canary's ~10 alerts produced 10 issues on 0.1.2 and 2 on 0.1.3. Runs that query capitalised metric names are kept.
-  - Known gap: an alert arriving after its workload's Job has started is deduped, not appended to the issue, so an issue title names only the first alert.
+  - Known gap, closed in 0.1.4: an alert arriving after its workload's Job has started is deduped, not appended to the issue, so an issue title names only the first alert.
+- **0.1.4:**
+  - **Late alerts are recorded.** A new alert name on a workload with an open issue is added to the title and noted in a comment, once.
+  - **Deleting an app closes its issues.** When the owner cannot be confirmed on a resolve, the dispatcher also tries the controllers the pod's name fits, but only to match an issue that already exists. Removing the canary had left both of its issues open.
+  - **One command per shell call** is now stated in both prompts. 11 of the first 51 runs lost turns to compound commands (`cd /work/repo; grep …`, `… | head`), which are denied unless every part is on the allow list.
 
 ### Calibrated caps
 

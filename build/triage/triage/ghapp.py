@@ -159,6 +159,9 @@ class GitHub:
     def add_labels(self, repo, number, labels):
         return self._request("POST", f"/repos/{repo}/issues/{number}/labels", json={"labels": labels})
 
+    def set_title(self, repo, number, title):
+        return self._request("PATCH", f"/repos/{repo}/issues/{number}", json={"title": title})
+
     def close_issue(self, repo, number):
         return self._request("PATCH", f"/repos/{repo}/issues/{number}", json={"state": "closed"})
 

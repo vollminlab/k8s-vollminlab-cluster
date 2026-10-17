@@ -63,6 +63,9 @@ class FakeGitHub:
     def close_issue(self, repo, n):
         self.calls.append(("close", n))
 
+    def set_title(self, repo, n, title):
+        self.calls.append(("title", n, title))
+
 
 class FakeAlertmanager:
     """Alertmanager's active-alert set, driven by the same payloads the test posts to the
@@ -426,17 +429,53 @@ def test_resolve_after_pod_and_replicaset_are_gone_closes_the_same_issue():
     assert [c[:2] for c in gh.calls] == [("comment", 7), ("close", 7)]
 
 
-def test_forbidden_deployment_read_loses_the_resolve():
-    # Why the dispatcher's ClusterRole must grant `get` on deployments (and the other
-    # inferred controllers): without it the confirm is a 403, the lookup fails, the
-    # resolve is keyed on the Pod, and the open issue is never closed.
+def test_forbidden_deployment_read_falls_back_to_the_name_on_resolve(caplog):
+    # A 403 on the confirm still breaks owner lookup, and that still matters on the FIRING
+    # side (a new incident would be keyed on the Pod), which is why the dispatcher's
+    # ClusterRole grants `get` on deployments. On resolve, the name fallback reaches the
+    # Deployment's existing issue anyway.
     from kubernetes.client.exceptions import ApiException
     def forbidden(name, ns):
         raise ApiException(status=403)
     cluster = FakeCluster(deployment_read=forbidden)
+    with caplog.at_level("INFO", logger="triage.dispatcher"):
+        d, gh, result = _fire_then_resolve_after_replacement(cluster)
+    assert result == ["resolved"]
+    assert [c[:2] for c in gh.calls] == [("comment", 7), ("close", 7)]
+    assert any("matched issue #7 by name" in r.getMessage() for r in caplog.records)
+
+
+def test_resolve_after_the_whole_app_is_deleted_closes_its_issue():
+    # 2026-10-17: removing the canary pruned Deployment, ReplicaSet and pods together.
+    # Nothing was left to confirm the owner, so the resolve was keyed on the Pod and both
+    # canary issues stayed open.
+    cluster = FakeCluster()
+    del cluster.objs[("Deployment", "radarr")]
     d, gh, result = _fire_then_resolve_after_replacement(cluster)
-    assert result == ["resolved_unmatched"]
-    assert gh.calls == []
+    assert result == ["resolved"]
+    assert [c[:2] for c in gh.calls] == [("comment", 7), ("close", 7)]
+
+
+def test_resolve_after_deletion_drops_the_deployments_queued_job():
+    from triage.owners import kube_owner_lookup
+    cluster = FakeCluster()
+    d, _ = make(github=KeyedGitHub())
+    d.get_owner = kube_owner_lookup(cluster.core, cluster.apps, cluster.batch)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    [job] = d.queue.jobs
+    cluster.objs.clear()
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS, status="resolved"))) == ["resolved"]
+    assert d.queue.deleted == [job.metadata.name]
+
+
+def test_name_fallback_is_not_used_when_the_owner_resolves():
+    # A live Deployment is keyed exactly; its pods' names are never second-guessed.
+    gh = KeyedGitHub()
+    d, _ = make(github=gh)
+    from triage.dispatcher import Incident as I
+    inc = d._resolve_workload(I(source="alertmanager", reason="X", namespace="mediastack",
+                                workload="Pod/radarr-7d9c8b6f5-x2x9q"))
+    assert d._match_fps(inc) == [inc.fp12]
 
 
 def test_outcome_is_copied_onto_the_job_the_first_time_it_is_read():
@@ -599,3 +638,55 @@ def test_an_owner_lookup_failure_is_unknown_not_resolved():
     d.get_owner = broken
     assert d._still_firing(Incident.from_json(env_of(d.queue.jobs[0])["TRIAGE_INCIDENT"])) is None
     assert d.tick().startswith("started ")
+
+
+def _late(title, updated="2026-10-11T09:00:00Z", fail=False):
+    issue = {"number": 9, "updated_at": updated, "title": title}
+    gh = FakeGitHub(issue)
+    if fail:
+        def boom(*a):
+            raise RuntimeError("github down")
+        gh.set_title = boom
+    d, _ = make(github=gh, clock=lambda: datetime(2026, 10, 11, 10, tzinfo=timezone.utc).timestamp())
+    return d, gh
+
+
+def test_a_late_alert_is_added_to_the_issue_title_and_noted_once():
+    d, gh = _late("[KubePodCrashLooping] mediastack/Deployment/radarr")
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["deduped_recent"]
+    assert gh.calls[0] == ("title", 9, "[KubePodCrashLooping, KubePodNotReady] mediastack/Deployment/radarr")
+    assert gh.calls[1][:2] == ("comment", 9) and "`KubePodNotReady`" in gh.calls[1][2]
+    gh.issue["title"] = gh.calls[0][2]
+    gh.calls.clear()
+    assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["deduped_recent"]
+    assert gh.calls == []
+
+
+def test_an_alert_already_in_the_title_is_not_noted():
+    d, gh = _late("[KubePodCrashLooping] mediastack/Deployment/radarr")
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["deduped_recent"]
+    assert gh.calls == []
+
+
+def test_a_late_alert_is_also_noted_when_the_issue_is_reinvestigated():
+    d, gh = _late("[KubePodCrashLooping] mediastack/Deployment/radarr", updated="2026-10-09T09:00:00Z")
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["dispatched_comment"]
+    assert [c[:2] for c in gh.calls] == [("title", 9), ("comment", 9)]
+
+
+def test_a_truncated_title_is_left_alone():
+    d, gh = _late("[KubePodCrashLooping, KubePodNotReady, KubeDeploymentRepl")
+    ready = dict(CRASHLOOP_LABELS, alertname="KubeContainerWaiting")
+    assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["deduped_recent"]
+    assert gh.calls == []
+
+
+def test_a_github_failure_noting_a_late_alert_does_not_drop_the_event(caplog):
+    d, gh = _late("[KubePodCrashLooping] mediastack/Deployment/radarr", fail=True)
+    ready = dict(CRASHLOOP_LABELS, alertname="KubePodNotReady")
+    with caplog.at_level("WARNING", logger="triage.dispatcher"):
+        assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["deduped_recent"]
+    assert gh.calls == []
+    assert any("could not note late alerts" in r.getMessage() for r in caplog.records)
