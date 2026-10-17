@@ -145,3 +145,11 @@ def test_prompts_never_send_the_agent_to_a_denied_git_command():
         text = prompt.read_text()
         assert "git log" not in text and "git show" not in text, prompt.name
     assert "status.history[].chartVersion" in (HERE / "triage" / "prompts" / "incident.md").read_text()
+
+
+def test_both_prompts_say_one_command_per_shell_call():
+    # 11 of the first 51 runs lost turns to `cd /work/repo; grep ...` or `... | head`:
+    # a compound command is denied unless every part is allowed, and only the read verbs are.
+    for name in ("incident.md", "sweep.md"):
+        text = (HERE / "triage" / "prompts" / name).read_text()
+        assert "One command per shell call" in text and "Read, Grep and Glob" in text

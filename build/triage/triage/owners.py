@@ -45,6 +45,18 @@ def resolve(kind: str, namespace: str, name: str, get_owner, max_depth: int = 4)
     return kind, name
 
 
+def name_candidates(kind: str, name: str) -> list:
+    """Every controller a generated `kind/name` fits, UNCONFIRMED, most specific first.
+
+    For matching an issue that already exists, never for keying a new incident. When a
+    whole app is deleted its controller goes with its pods, so infer_owner can confirm
+    nothing and the resolve would be keyed on the Pod, never reaching the Deployment's
+    issue (the 2026-10-17 canary removal left both canary issues open this way).
+    """
+    return [(owner_kind, m["base"]) for pattern, owner_kind in _NAME_PATTERNS.get(kind, ())
+            if (m := pattern.match(name))]
+
+
 def _gone(namespace, name):
     return MISSING
 
