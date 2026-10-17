@@ -45,4 +45,3 @@ resources:
   - fantasy-kustomization.yaml
   - slate-builder-kustomization.yaml
   - triage-kustomization.yaml
-  - triage-canary-kustomization.yaml
