@@ -1274,7 +1274,7 @@ Exportarr instances for Radarr, Sonarr and SABnzbd are documented under Media St
 | Parameter | Value |
 |---|---|
 | Namespace | `triage` |
-| Image | `harbor.vollminlab.com/vollminlab/triage:0.1.3` (source `build/triage/`, tag `triage/vX.Y.Z` to release) |
+| Image | `harbor.vollminlab.com/vollminlab/triage:0.1.4` (source `build/triage/`, tag `triage/vX.Y.Z` to release) |
 | Dispatcher | Deployment `triage-dispatcher`, 1 replica, `Recreate`; container port 8080 (`/alertmanager`, `/sweep`, `/healthz`, `/metrics`) |
 | Per-incident Job | init `investigate` (Claude Code, Anthropic key, read-only `triage-agent` SA) → main `publish` (no LLM, GitHub App + Pushover) |
 | Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`), first child route with `continue: true`, every alert except `Watchdog` and `InfoInhibitor` (since 2026-10-14) |
@@ -1318,7 +1318,7 @@ Cluster-level scheduled maintenance outside the storage and backup namespaces.
 | `velero-pvb-healer` | `velero` | `alpine/kubectl:1.33.4` | `*/10 * * * *` | See Backup |
 | `velero-backup-content-guard` | `velero` | `alpine/kubectl:1.33.4` | `0 9 * * *` | See Backup |
 | `vcenter-credential-age` | `monitoring` | `alpine:3.23.4` | `17 8 * * 1` | See Monitoring |
-| `triage-sweep` | `triage` | `harbor.vollminlab.com/vollminlab/triage:0.1.3` | `30 7 * * *` | Asks the triage dispatcher for the nightly silent-failure sweep. See Monitoring → triage |
+| `triage-sweep` | `triage` | `harbor.vollminlab.com/vollminlab/triage:0.1.4` | `30 7 * * *` | Asks the triage dispatcher for the nightly silent-failure sweep. See Monitoring → triage |
 
 **A merged, Ready, reconciled CronJob is not a working CronJob.** `velero-pvb-healer` ran and exited
 137 on *every* invocation for one PR cycle while Flux reported success throughout. After any CronJob
