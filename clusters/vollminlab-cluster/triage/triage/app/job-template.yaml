@@ -32,7 +32,7 @@ spec:
         # HOME and scratch are on investigate-work, which publish never mounts; the only
         # thing it hands over is /result/result.json.
         - name: investigate
-          image: harbor.vollminlab.com/vollminlab/triage:0.1.3
+          image: harbor.vollminlab.com/vollminlab/triage:0.1.4
           # -I: isolated mode. No cwd, PYTHONPATH or user site-packages on sys.path.
           command: ["python", "-I", "-u", "-m", "triage.investigate"]
           env:
@@ -69,7 +69,7 @@ spec:
         # key. Reads result.json from a read-only mount, clones the repo itself into its
         # own /publish, and never sees investigate's checkout, HOME or /tmp.
         - name: publish
-          image: harbor.vollminlab.com/vollminlab/triage:0.1.3
+          image: harbor.vollminlab.com/vollminlab/triage:0.1.4
           command: ["python", "-I", "-u", "-m", "triage.publish"]
           env:
             - name: HOME
