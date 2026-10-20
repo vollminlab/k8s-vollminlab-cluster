@@ -957,15 +957,17 @@ spec:
               promtail rate limit. Those lines are not in Loki. Find out why the pod is
               logging this much; a stuck retry loop is the usual cause.
         - alert: PromtailDroppingEntries
+          # Grouped by `pod` (the promtail pod, one per node), not `host`: on this metric
+          # `host` is the Loki push URL, so it named Loki instead of the node.
           # Promtail gave up delivering batches to Loki (retries exhausted). Seen on
           # k8sworker04 during Loki outages: 2,508 entries lost with nothing alerting.
           expr: |
-            sum by (host, reason) (increase(promtail_dropped_entries_total[15m])) > 0
+            sum by (pod, reason) (increase(promtail_dropped_entries_total[15m])) > 0
           labels:
             severity: warning
           annotations:
-            summary: "Promtail on {{ $labels.host }} dropped log entries ({{ $labels.reason }})"
+            summary: "Promtail pod {{ $labels.pod }} dropped log entries ({{ $labels.reason }})"
             description: >-
-              {{ $value | humanize }} entries from {{ $labels.host }} never reached Loki in
+              {{ $value | humanize }} entries from {{ $labels.pod }} never reached Loki in
               the last 15m, reason {{ $labels.reason }}. Usually Loki is down, OOM-looping
               or rejecting pushes: check `kubectl get pod -n monitoring loki-0`.
