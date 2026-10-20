@@ -12,9 +12,9 @@ tests:
         values: '0+500x20'
       - series: 'logentry_dropped_lines_by_label_total{label_name="pod", label_value="quiet-xyz", instance="10.0.0.1:3101"}'
         values: '7x20'
-      - series: 'promtail_dropped_entries_total{host="k8sworker04", reason="ingester_error", instance="10.0.0.2:3101"}'
+      - series: 'promtail_dropped_entries_total{host="loki.monitoring.svc.cluster.local:3100", pod="promtail-aaaaa", reason="ingester_error", instance="10.0.0.2:3101"}'
         values: '0x10 100x10'
-      - series: 'promtail_dropped_entries_total{host="k8sworker01", reason="ingester_error", instance="10.0.0.3:3101"}'
+      - series: 'promtail_dropped_entries_total{host="loki.monitoring.svc.cluster.local:3100", pod="promtail-bbbbb", reason="ingester_error", instance="10.0.0.3:3101"}'
         values: '3x20'
     alert_rule_test:
       - eval_time: 15m
@@ -30,10 +30,10 @@ tests:
       - eval_time: 15m
         alertname: PromtailDroppingEntries
         exp_alerts:
-          - exp_labels: {severity: warning, host: k8sworker04, reason: ingester_error}
+          - exp_labels: {severity: warning, pod: promtail-aaaaa, reason: ingester_error}
             exp_annotations:
-              summary: "Promtail on k8sworker04 dropped log entries (ingester_error)"
+              summary: "Promtail pod promtail-aaaaa dropped log entries (ingester_error)"
               description: >-
-                100 entries from k8sworker04 never reached Loki in
+                100 entries from promtail-aaaaa never reached Loki in
                 the last 15m, reason ingester_error. Usually Loki is down, OOM-looping
                 or rejecting pushes: check `kubectl get pod -n monitoring loki-0`.
