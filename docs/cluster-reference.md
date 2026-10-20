@@ -1277,7 +1277,7 @@ Exportarr instances for Radarr, Sonarr and SABnzbd are documented under Media St
 | Image | `harbor.vollminlab.com/vollminlab/triage:0.1.4` (source `build/triage/`, tag `triage/vX.Y.Z` to release) |
 | Dispatcher | Deployment `triage-dispatcher`, 1 replica, `Recreate`; container port 8080 (`/alertmanager`, `/sweep`, `/healthz`, `/metrics`) |
 | Per-incident Job | init `investigate` (Claude Code, Anthropic key, read-only `triage-agent` SA) → main `publish` (no LLM, GitHub App + Pushover) |
-| Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`), first child route with `continue: true`, every alert except `Watchdog` and `InfoInhibitor` (since 2026-10-14) |
+| Triggers | CronJob `triage-sweep` `30 7 * * *`; Alertmanager webhook route `triage` (in the 1Password item `Alertmanager Config`), first child route with `continue: true`, every alert except `Watchdog` and `InfoInhibitor` (since 2026-10-14); a final matcher-less `pushover` route keeps non-critical alerts on Pushover (since 2026-10-20) |
 | Reports | private repo `vollminlab/triage-reports`; one issue per fingerprint, label `fp/<12 hex>` |
 | Policy | ConfigMap `triage-policy` from `triage/triage/app/policy.yaml`: model, caps, and the `shadow`/`live` mode per fix class |
 | Alerts | `TriageDispatcherDown`, `TriageSweepStale`, `TriageAgentErrors`, `TriagePublishFailing` |
