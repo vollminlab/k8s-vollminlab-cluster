@@ -12,6 +12,29 @@ data:
     config:
       clients:
         - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+      snippets:
+        # Replaces the chart's default list, so cri must stay first.
+        pipelineStages:
+          - cri: {}
+          # Trivy scan Jobs dump ~44k lines in ~6s (peak 10k lines/s), ~1,360 pods a day,
+          # 13% of all Loki bytes over 14d. trivy-operator reads the reports through the
+          # Kubernetes API, so the Loki copy is redundant, and it would trip the limit
+          # below on every scan.
+          - match:
+              selector: '{namespace="trivy-system", pod=~"scan-vulnerabilityreport-.+"}'
+              action: drop
+              drop_counter_reason: trivy_scan_report
+          # Runaway guard, one token bucket per pod (lines/s, not bytes). Normal 1-minute
+          # peak per pod over 14d: 711 lines/s (velero), 680 (longhorn-manager). The
+          # 2026-10-15..17 longhorn-manager flood ran at ~4,900 lines/s for ~34h and put
+          # ~15 GB of junk in the loki bucket, filling MinIO. Loki's own limits did not
+          # stop it: 2.3 MB/s is under its 3 MB per-stream limit. Dropped lines are
+          # counted and alerted on (PromtailRateLimitingPod).
+          - limit:
+              rate: 1000
+              burst: 20000
+              by_label_name: pod
+              drop: true
 
     tolerations:
       - key: node-role.kubernetes.io/control-plane
@@ -32,6 +55,16 @@ data:
       limits:
         cpu: 200m
         memory: 512Mi
+
+    # Nothing scraped promtail before 2026-10-20, so drops were invisible: promtail on
+    # k8sworker04 had silently dropped 2,508 entries during Loki outages. Keep only the
+    # delivery and drop counters; promtail's per-file series would churn with every pod.
+    serviceMonitor:
+      enabled: true
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'logentry_dropped_lines.*|promtail_dropped_(entries|bytes)_total|promtail_sent_(entries|bytes)_total|promtail_batch_retries_total'
+          action: keep
 
     podLabels:
       app: promtail

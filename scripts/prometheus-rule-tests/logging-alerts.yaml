@@ -1,0 +1,39 @@
+# PromtailRateLimitingPod names the pod whose lines the limit stage dropped, and stays
+# quiet for a pod with no drops. PromtailDroppingEntries fires on any delivery drop.
+rule_files:
+  - rules/monitoring-vollminlab-custom-rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'logentry_dropped_lines_by_label_total{label_name="pod", label_value="runaway-abc", instance="10.0.0.1:3101"}'
+        values: '0+500x20'
+      - series: 'logentry_dropped_lines_by_label_total{label_name="pod", label_value="quiet-xyz", instance="10.0.0.1:3101"}'
+        values: '7x20'
+      - series: 'promtail_dropped_entries_total{host="k8sworker04", reason="ingester_error", instance="10.0.0.2:3101"}'
+        values: '0x10 100x10'
+      - series: 'promtail_dropped_entries_total{host="k8sworker01", reason="ingester_error", instance="10.0.0.3:3101"}'
+        values: '3x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: PromtailRateLimitingPod
+        exp_alerts:
+          - exp_labels: {severity: warning, pod: runaway-abc}
+            exp_annotations:
+              summary: "Promtail is dropping logs from runaway-abc: it is logging over 1000 lines/s"
+              description: >-
+                5k lines from runaway-abc were dropped in 10m by the
+                promtail rate limit. Those lines are not in Loki. Find out why the pod is
+                logging this much; a stuck retry loop is the usual cause.
+      - eval_time: 15m
+        alertname: PromtailDroppingEntries
+        exp_alerts:
+          - exp_labels: {severity: warning, host: k8sworker04, reason: ingester_error}
+            exp_annotations:
+              summary: "Promtail on k8sworker04 dropped log entries (ingester_error)"
+              description: >-
+                100 entries from k8sworker04 never reached Loki in
+                the last 15m, reason ingester_error. Usually Loki is down, OOM-looping
+                or rejecting pushes: check `kubectl get pod -n monitoring loki-0`.
