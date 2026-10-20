@@ -39,7 +39,10 @@ spec:
         - alert: KyvernoPolicyNoPassResults
           expr: |
             count by (policy_name) (
-              kyverno_policy_rule_info_total{policy_name!~"dmz-enforce-node-placement|inject-resource-requirements|mutate-default-sa-automount|patch-shlink-backend-probes|restrict-default-namespace"} == 1
+              kyverno_policy_rule_info_total{
+                policy_name!~"dmz-enforce-node-placement|inject-resource-requirements|mutate-default-sa-automount",
+                policy_name!~"patch-shlink-backend-probes|restrict-default-namespace"
+              } == 1
             )
             unless
             count by (policy_name) (increase(kyverno_policy_results_total{rule_result="pass"}[23h]) > 0)
