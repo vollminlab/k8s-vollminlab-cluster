@@ -932,3 +932,40 @@ spec:
               Collection) and jobservice health; a manual GC frees orphaned blobs.
               If GC is healthy and the volume is still filling, the working set has
               genuinely grown — check per-project size before expanding again.
+
+    # Log shipping. Promtail is scraped from 2026-10-20 (promtail values, metricRelabelings
+    # keep only these counters). Before that a drop anywhere in the log path was invisible.
+    - name: logging
+      rules:
+        - alert: PromtailRateLimitingPod
+          # The per-pod `limit` stage (1000 lines/s, burst 20000) is dropping a pod's
+          # lines. Normal peaks are under 711 lines/s, so this means a runaway logger,
+          # like the 2026-10-15 longhorn-manager flood (~4,900 lines/s for 34h).
+          expr: |
+            sum by (pod) (
+              label_replace(
+                increase(logentry_dropped_lines_by_label_total{label_name="pod"}[10m]),
+                "pod", "$1", "label_value", "(.*)"
+              )
+            ) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Promtail is dropping logs from {{ $labels.pod }}: it is logging over 1000 lines/s"
+            description: >-
+              {{ $value | humanize }} lines from {{ $labels.pod }} were dropped in 10m by the
+              promtail rate limit. Those lines are not in Loki. Find out why the pod is
+              logging this much; a stuck retry loop is the usual cause.
+        - alert: PromtailDroppingEntries
+          # Promtail gave up delivering batches to Loki (retries exhausted). Seen on
+          # k8sworker04 during Loki outages: 2,508 entries lost with nothing alerting.
+          expr: |
+            sum by (host, reason) (increase(promtail_dropped_entries_total[15m])) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Promtail on {{ $labels.host }} dropped log entries ({{ $labels.reason }})"
+            description: >-
+              {{ $value | humanize }} entries from {{ $labels.host }} never reached Loki in
+              the last 15m, reason {{ $labels.reason }}. Usually Loki is down, OOM-looping
+              or rejecting pushes: check `kubectl get pod -n monitoring loki-0`.
