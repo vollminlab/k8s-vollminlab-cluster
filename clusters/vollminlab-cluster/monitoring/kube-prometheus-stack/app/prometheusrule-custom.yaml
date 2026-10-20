@@ -161,16 +161,31 @@ spec:
           # series is stable. Only pod-less KSM metrics need this treatment; the other
           # one on this cluster is kube_cronjob_status_last_successful_time, fixed the
           # same way in prometheusrule-gitops.yaml.
+          #
+          # Jobs owned by a CronJob are excluded (2026-10-20). A failed Job object lives
+          # until newer failures push it out of failedJobsHistoryLimit, so one transient
+          # failure pinned this alert on while every later run succeeded: pihole-watchdog
+          # for 40h, slate-builder-tick for 2.5 days. Every CronJob had to remember a
+          # ttlSecondsAfterFinished workaround. CronJob health is instead judged by the
+          # `cronjobs` group: CronJobNotSucceeding (the latest run failed and nothing has
+          # succeeded since) and CronJobFailingRepeatedly (a quarter of a day's runs failed).
           expr: |
-            max by (namespace, job_name) (kube_job_failed{namespace!="velero"}) > 0
-              or
-            max by (namespace, job_name) (kube_job_failed{namespace="velero", job_name!~".*-kopia-maintain.*"}) > 0
+            (
+              max by (namespace, job_name) (kube_job_failed{namespace!="velero"}) > 0
+                or
+              max by (namespace, job_name) (kube_job_failed{namespace="velero", job_name!~".*-kopia-maintain.*"}) > 0
+            )
+            unless on (namespace, job_name)
+            max by (namespace, job_name) (kube_job_owner{owner_kind="CronJob"})
           for: 15m
           labels:
             severity: warning
           annotations:
             summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed to complete"
-            description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} failed. Removing failed job after investigation should clear this alert."
+            description: >-
+              Job {{ $labels.namespace }}/{{ $labels.job_name }} failed. Removing failed job after
+              investigation should clear this alert. Jobs created by a CronJob are covered by
+              CronJobNotSucceeding and CronJobFailingRepeatedly instead.
 
         - alert: VeleroBackupMetricMissing
           expr: |
@@ -281,6 +296,43 @@ spec:
               failure live:
               `kubectl create job -n {{ $labels.namespace }} --from=cronjob/{{ $labels.cronjob }} {{ $labels.cronjob }}-diag`.
 
+        # The other half of KubeJobFailed's CronJob exclusion. CronJobNotSucceeding only
+        # sees the LATEST run, so a frequent job that fails every other run never fires it.
+        # This counts distinct failed Jobs per CronJob over 23h (Prometheus keeps 24h)
+        # against the Jobs it created in that window. max_over_time keeps a Job counted
+        # after it is deleted. Both thresholds must hold: a quarter of runs failed, and at
+        # least 3 of them, so one failed daily run is left to CronJobNotSucceeding.
+        # Measured 2026-10-20 over 18 CronJobs: the worst real day was slate-builder-tick
+        # with 6 upstream errors in ~144 runs (4%), well under the threshold.
+        - alert: CronJobFailingRepeatedly
+          expr: |
+            (
+              count by (namespace, cronjob) (
+                label_replace(
+                  (max by (namespace, job_name) (max_over_time(kube_job_failed{condition="true"}[23h])) > 0)
+                  * on (namespace, job_name) group_left (owner_name)
+                  max by (namespace, job_name, owner_name) (max_over_time(kube_job_owner{owner_kind="CronJob"}[23h])),
+                  "cronjob", "$1", "owner_name", "(.*)"
+                )
+              ) >= 3
+            )
+            / on (namespace, cronjob)
+            count by (namespace, cronjob) (
+              label_replace(
+                max by (namespace, job_name, owner_name) (max_over_time(kube_job_owner{owner_kind="CronJob"}[23h])),
+                "cronjob", "$1", "owner_name", "(.*)"
+              )
+            )
+            >= 0.25
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} failed {{ $value | humanizePercentage }} of its runs in the last 23h"
+            description: >-
+              At least 3 Jobs failed and they are at least a quarter of the Jobs this CronJob
+              created in 23h, even though some runs succeed. Look at a recent failed Job:
+              `kubectl get jobs -n {{ $labels.namespace }} | grep {{ $labels.cronjob }}`.
     - name: node-disk
       rules:
         - alert: NodeDiskSpaceLow
