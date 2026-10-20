@@ -24,12 +24,19 @@ spec:
               # component name, so they cannot be targeted by this selector.
               # Rules for them existed here but could never fire; they are
               # covered by a PolicyException instead.
+              #
+              # longhorn-ui was removed 2026-10-20 and moved to a postRenderers patch on
+              # the longhorn HelmRelease. A mutate only acts when the object is admitted,
+              # and nothing wrote to the longhorn-ui Deployment between this policy
+              # starting to work (#1104, 08-18) and the time of writing, so its pods ran
+              # with no resources for two months. The chart has no resources key for the
+              # UI. The CSI Deployments stay here because longhorn-manager creates them
+              # at runtime, outside Helm.
               selector:
                 matchExpressions:
                   - key: app
                     operator: In
                     values:
-                      - longhorn-ui
                       - csi-attacher
                       - csi-provisioner
                       - csi-resizer
@@ -40,7 +47,7 @@ spec:
       #   csi-provisioner   52.7Mi / 53.9Mi   -> request  64Mi, limit 128Mi
       #   csi-resizer       67.9Mi / 68.6Mi   -> request  80Mi, limit 160Mi
       #   csi-snapshotter   61.7Mi / 63.6Mi   -> request  80Mi, limit 160Mi
-      #   longhorn-ui        4.8Mi /  6.0Mi   -> request  16Mi, limit  32Mi
+      #   longhorn-ui        (moved to the HelmRelease, see the selector comment)
       #   longhorn-manager 564.9Mi / 607.1Mi  -> request 640Mi, limit 1Gi
       #   pre-pull-share-…   0.5Mi /   4.2Mi  -> request  16Mi, limit 32Mi
       #
@@ -135,25 +142,6 @@ spec:
                           limits:
                             cpu: "100m"
                             memory: "160Mi"
-          - list: "request.object.spec.template.spec.containers || `[]`"
-            preconditions:
-              all:
-                - key: "{{element.name}}"
-                  operator: Equals
-                  value: longhorn-ui
-            patchStrategicMerge:
-              spec:
-                template:
-                  spec:
-                    containers:
-                      - (name): longhorn-ui
-                        resources:
-                          requests:
-                            cpu: "5m"
-                            memory: "16Mi"
-                          limits:
-                            cpu: "20m"
-                            memory: "32Mi"
           # The longhorn-manager DaemonSet has a SECOND container that had no block
           # here at all. require-resources demands every container declare requests
           # and a memory limit, so without this the DaemonSet could not satisfy the

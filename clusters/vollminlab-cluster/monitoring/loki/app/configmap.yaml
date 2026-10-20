@@ -40,6 +40,27 @@ data:
 
       limits_config:
         retention_period: 720h
+        # Query-side OOM guards (2026-10-20). Five of the six OOM kills since 10-15 came
+        # seconds after one ad-hoc query that read 7.5-160 GB of chunks and took Loki from
+        # 270-460 MiB to its limit in under 30s; the sixth was MinIO being down. A normal
+        # full day across every namespace is 1.6-1.9 GB, and a normal 15m split ~20 MB.
+        # Both limits are checked from the index before any chunk is fetched, so a query
+        # over them is rejected with an error instead of killing the process. The ruler
+        # evaluates locally and is not subject to them.
+        max_query_bytes_read: 20GB      # whole query: ~10 normal days of everything
+        max_querier_bytes_read: 1GB     # per 15m split: ~50x normal; a flood split is over it
+        max_query_parallelism: 8
+        tsdb_max_query_parallelism: 16
+
+      querier:
+        # Was 4. Each concurrent sub-query decompresses chunks into memory at once.
+        max_concurrent: 2
+
+      ingester:
+        wal:
+          # Was the 4GB default, four times the old container limit. Replay past this
+          # flushes to the store instead of holding everything in memory.
+          replay_memory_ceiling: 768MB
 
       compactor:
         retention_enabled: true
@@ -87,19 +108,26 @@ data:
             secretKeyRef:
               name: loki-minio-credentials
               key: secret-key
+        # Go's heap otherwise grows past the container limit before collecting; at 90%
+        # of the limit it collects harder instead of being OOM-killed.
+        - name: GOMEMLIMIT
+          value: 1843MiB
 
       persistence:
         enabled: true
         storageClass: longhorn
         size: 5Gi
 
+      # Measured 30d (2026-10-20): working set p50 476 / p99 610 MiB normally, p99 857 MiB
+      # during the 10-15..17 log flood; query spikes finish inside one scrape interval, so
+      # real peaks are higher. CPU sat at the 1-core limit (19.5% of periods throttled), and
+      # a throttled process under GOMEMLIMIT spirals, so there is no CPU limit (kyverno.md).
       resources:
         requests:
-          cpu: 50m
-          memory: 512Mi
-        limits:
-          cpu: 1000m
+          cpu: 100m
           memory: 1Gi
+        limits:
+          memory: 2Gi
 
       podLabels:
         app: loki

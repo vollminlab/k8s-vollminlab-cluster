@@ -23,3 +23,30 @@ spec:
     - kind: ConfigMap
       name: longhorn-values
       valuesKey: values.yaml
+  # The chart has no resources key for the UI (1.12.1: templates/deployment-ui.yaml sets
+  # none, longhornUI.* has no resources), so declare them here. This used to be a Kyverno
+  # mutate, which only acts on admission and never reached this Deployment: it ran with
+  # no resources from 2026-08-17 to 2026-10-20. Measured 30d: memory max 4.9Mi, CPU max
+  # 0.3m. No CPU limit, per .claude/rules/kyverno.md.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: longhorn-ui
+            patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: longhorn-ui
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: longhorn-ui
+                        resources:
+                          requests:
+                            cpu: 5m
+                            memory: 16Mi
+                          limits:
+                            memory: 32Mi
