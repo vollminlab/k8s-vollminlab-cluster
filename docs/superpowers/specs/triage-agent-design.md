@@ -71,7 +71,7 @@ The investigate and publish containers share one Job and exactly one `emptyDir`,
 - Private GitHub repo `vollminlab/triage-reports`, created via tofu in `github-admin` per the branch-protection model, not the UI.
 - GitHub App `vollminlab-triage`: Issues read/write on `triage-reports`; Contents and Pull requests write on `k8s-vollminlab-cluster`. Installed on those two repos only.
 - 1Password items, all tagged Homelab: `Triage Anthropic API Key`, `Triage GitHub App` (`app_id`, `installation_id`, `private_key`) and `Triage Pushover` (`token`, `user`). Each is consumed by an ExternalSecret in `triage`.
-- Alertmanager: a `triage` webhook receiver added as a `continue: true` route alongside the existing Pushover route. Pushover behaviour is unchanged.
+- Alertmanager: a `triage` webhook receiver added as a `continue: true` route alongside the existing Pushover route. Pushover behaviour is unchanged. *(2026-10-20: it was not. `continue: true` never falls back to the parent receiver, so a final catch-all `pushover` route was added; see the runbook's routing trap.)*
 - **No Flux notification-controller wiring.** Flux failures already reach Alertmanager through `FluxResourceNotReady` and `TerraformResourceNotReady` (`prometheusrule-gitops.yaml`, built on kube-state-metrics' `gotk_resource_info`). An earlier draft added a Flux `Provider` and `Alert` on the mistaken premise that Flux failures notify nowhere. It was dropped as a redundant second path.
 - **Prerequisite: Kyverno metrics scraping** (see *Detection split*).
 
@@ -256,7 +256,7 @@ New PrometheusRules:
 
 **The daily cap is not a security boundary.** The spend it sums is each Job's `cost_usd`, which publish copies from `result.json`, and `result.json` is written inside the investigate container. That figure is trustworthy only for honest failures (a turn limit, a budget cap, an API error, a timeout charged at the per-run cap). A compromised investigation controls the file and can under-report its cost, down to zero, so the daily cap cannot bound what an attacker spends. The boundary is the **Anthropic workspace's monthly spend limit** (plan Task 6), which Anthropic enforces outside anything the agent can reach, together with the per-run `--max-budget-usd` the CLI enforces. Task 6 is therefore mandatory before Phase 5, not optional hardening.
 
-**Self-loop guard:** events whose namespace is `triage` are ignored (counted as `ignored_self`). Those alerts still reach Pushover through the existing route.
+**Self-loop guard:** events whose namespace is `triage` are ignored (counted as `ignored_self`). Those alerts still reach Pushover through the final catch-all `pushover` route.
 
 ---
 
