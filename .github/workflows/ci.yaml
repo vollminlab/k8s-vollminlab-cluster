@@ -728,6 +728,33 @@ jobs:
             fi
             echo "  ✅ $RELEASE_NAME renders and strict-parses cleanly"
 
+            # Apply the HelmRelease's postRenderers, as helm-controller does, so the
+            # dry-run sees what Flux actually applies. Before 2026-10-20 they were
+            # skipped, so a chart object that only gets its resources from a
+            # post-render patch (longhorn-ui, #1400) was dry-run without them and
+            # rejected by require-resources. Only `kustomize.patches` is used today;
+            # any other postRenderer field fails loudly here rather than being
+            # silently ignored.
+            PR_COUNT=$(yq eval '[.spec.postRenderers[]?] | length' "$file")
+            if [[ "$PR_COUNT" != "0" ]]; then
+              PR_OTHER=$(yq eval '[.spec.postRenderers[]? | (.kustomize // {}) | keys | .[] | select(. != "patches")] | length' "$file")
+              if [[ "$PR_OTHER" != "0" ]]; then
+                echo "❌ $RELEASE_NAME: postRenderers uses a kustomize field other than patches; teach this step to apply it"
+                RENDER_FAILED=1
+                continue
+              fi
+              yq eval '{"resources": ["rendered.yaml"], "patches": [.spec.postRenderers[].kustomize.patches[]]}' "$file" \
+                > "$RENDER_DIR/kustomization.yaml"
+              if ! kustomize build "$RENDER_DIR" > "$RENDER_DIR/post-rendered.yaml"; then
+                echo "❌ $RELEASE_NAME: postRenderers patches do not apply to the rendered chart"
+                RENDER_FAILED=1
+                continue
+              fi
+              mv "$RENDER_DIR/post-rendered.yaml" "$RENDER_DIR/rendered.yaml"
+              printf 'resources:\n  - rendered.yaml\n' > "$RENDER_DIR/kustomization.yaml"
+              echo "  ✅ $RELEASE_NAME: applied $(yq eval '[.spec.postRenderers[].kustomize.patches[]] | length' "$file") postRenderers patch(es)"
+            fi
+
             # Drop nodePort before the dry-run. nodePort is allocated cluster-wide,
             # not per namespace, and this repo pins it deliberately (minecraft on
             # 32565). So the value in the rendered manifest is by definition already
