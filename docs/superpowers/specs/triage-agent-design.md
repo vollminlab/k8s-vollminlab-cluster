@@ -405,9 +405,10 @@ A recheck on 2026-10-16 (18 runs in the 25h Job window) gave max $0.91, mean $0.
 
 ### Kyverno decision
 
-`KyvernoPolicyNoPassResults` is live (#1371, `prometheusrule-kyverno.yaml`). It excludes four policies that measured zero passes for a known reason:
+`KyvernoPolicyNoPassResults` is live (#1371, `prometheusrule-kyverno.yaml`). It excludes policies that measured zero passes for a known reason:
 
 - `dmz-enforce-node-placement`
+- `inject-resource-requirements` (added 2026-10-20: acts only on admission of six Longhorn workloads, which can go a day without one)
 - `mutate-default-sa-automount`
 - `patch-shlink-backend-probes`
 - `restrict-default-namespace`
