@@ -21,7 +21,7 @@ spec:
         #
         # 23h, not 24h: Prometheus keeps 24h, so a 24h range is truncated at the edge.
         #
-        # Excluded: four policies measured quiet but working on 2026-10-15. Each had
+        # Excluded: policies measured quiet but working on 2026-10-15. Each had
         # zero admission passes in 23h for a known reason:
         # - dmz-enforce-node-placement and mutate-default-sa-automount act only when a
         #   DMZ pod or a ServiceAccount is created. Their PolicyReports show passes (1, 3).
@@ -29,11 +29,20 @@ spec:
         #   It has no PolicyReport results; the live pod carries its patched probes.
         # - restrict-default-namespace is an unconditional deny matched to `default`, so
         #   by construction it can only fail or skip, never pass.
+        # - inject-resource-requirements (added 2026-10-20) is a mutate that acts only when
+        #   one of six labelled longhorn-system workloads is admitted. Measured over 10
+        #   days: 342 passes, every one an admission UPDATE, in bursts with multi-hour gaps.
+        #   It went quiet after 2026-10-17 ~02:00 once the CSI pods settled, and the alert
+        #   fired 24h later. The live csi-* and longhorn-manager objects carry exactly the
+        #   resources it injects, so it is working (triage-reports #55).
         # An excluded policy is unmonitored by this rule. Re-measure before adding one.
         - alert: KyvernoPolicyNoPassResults
           expr: |
             count by (policy_name) (
-              kyverno_policy_rule_info_total{policy_name!~"dmz-enforce-node-placement|mutate-default-sa-automount|patch-shlink-backend-probes|restrict-default-namespace"} == 1
+              kyverno_policy_rule_info_total{
+                policy_name!~"dmz-enforce-node-placement|inject-resource-requirements|mutate-default-sa-automount",
+                policy_name!~"patch-shlink-backend-probes|restrict-default-namespace"
+              } == 1
             )
             unless
             count by (policy_name) (increase(kyverno_policy_results_total{rule_result="pass"}[23h]) > 0)
