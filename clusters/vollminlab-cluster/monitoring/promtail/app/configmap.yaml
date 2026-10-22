@@ -24,8 +24,21 @@ data:
               selector: '{namespace="trivy-system", pod=~"scan-vulnerabilityreport-.+"}'
               action: drop
               drop_counter_reason: trivy_scan_report
+          # Every Velero backup logs one info line per item, tagged backup=velero/<name>:
+          # ~50k lines for daily-full and daily-b2, most of them in the first seconds, which
+          # overran the limit below every night (9,726 dropped at 04:00 on 2026-10-22).
+          # Velero already uploads that exact log to the bucket, complete, for every backup
+          # (`velero backup logs <name>`), so the Loki copy is redundant. Only info lines
+          # are dropped; warnings and errors, and every line without a backup= field
+          # (repo maintenance, which the VeleroRepoMaintenanceNotStarting Loki rule reads),
+          # still reach Loki.
+          - match:
+              selector: '{namespace="velero", container="velero"} |= "level=info" |= " backup=velero/"'
+              action: drop
+              drop_counter_reason: velero_backup_item_log
           # Runaway guard, one token bucket per pod (lines/s, not bytes). Normal 1-minute
-          # peak per pod over 14d: 711 lines/s (velero), 680 (longhorn-manager). The
+          # peak per pod over 14d: 711 lines/s (velero), 680 (longhorn-manager). A 1-minute
+          # average hid velero's backup-start burst, handled by the drop above. The
           # 2026-10-15..17 longhorn-manager flood ran at ~4,900 lines/s for ~34h and put
           # ~15 GB of junk in the loki bucket, filling MinIO. Loki's own limits did not
           # stop it: 2.3 MB/s is under its 3 MB per-stream limit. Dropped lines are
