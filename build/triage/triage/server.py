@@ -101,6 +101,7 @@ def main():
         policy=policy, queue=jobs.JobQueue(batch), template=template, github=github,
         get_owner=kube_owner_lookup(core, apps, batch),
         active_alerts=lambda: alertmanager.active_alerts(session),
+        held_alerts=lambda: alertmanager.active_alerts(session, include_muted=True),
         notify=pushover.send,
         read_outcome=lambda name: jobs.read_outcome(core, jobs.NAMESPACE, name),
     )

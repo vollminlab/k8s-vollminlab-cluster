@@ -237,3 +237,33 @@ def test_secondary_rate_limit_403_is_not_retried_on_creates():
     with pytest.raises(requests.HTTPError):
         GitHub(lambda: "t", session=s, sleep=lambda _: None).create_issue("o/r", "t", "b", [])
     assert len(s.calls) == 1
+
+
+def test_recent_closed_issue_asks_for_the_newest_closed_one_and_skips_pull_requests():
+    s = FakeSession(Resp(200, [{"number": 3, "pull_request": {}}, {"number": 2}]))
+    gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
+    assert gh.find_recent_closed_issue("o/r", "abc") == {"number": 2}
+    params = s.calls[0][2]["params"]
+    assert (params["labels"], params["state"], params["sort"], params["direction"]) == (
+        "fp/abc", "closed", "updated", "desc")
+
+
+def test_no_recent_closed_issue_returns_none():
+    gh = GitHub(lambda: "t", session=FakeSession(Resp(200, [])), sleep=lambda _: None)
+    assert gh.find_recent_closed_issue("o/r", "x") is None
+
+
+def test_list_open_issues_pages_until_a_short_page_and_drops_pull_requests():
+    full = [{"number": n} for n in range(100)]
+    s = FakeSession(Resp(200, full), Resp(200, [{"number": 100}, {"number": 101, "pull_request": {}}]))
+    gh = GitHub(lambda: "t", session=s, sleep=lambda _: None)
+    assert [i["number"] for i in gh.list_open_issues("o/r")] == list(range(101))
+    assert [c[2]["params"]["page"] for c in s.calls] == [1, 2]
+    assert s.calls[0][2]["params"]["state"] == "open"
+
+
+def test_reopen_patches_state_open():
+    s = FakeSession(Resp(200, {"number": 4}))
+    GitHub(lambda: "t", session=s, sleep=lambda _: None).reopen_issue("o/r", 4)
+    assert s.calls[0][0] == "PATCH" and s.calls[0][1].endswith("/repos/o/r/issues/4")
+    assert s.calls[0][2]["json"] == {"state": "open"}

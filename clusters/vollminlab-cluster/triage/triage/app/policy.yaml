@@ -9,6 +9,9 @@ per_run_budget_usd: 2
 daily_budget_usd: 10
 queue_cap: 10
 reinvestigate_after_hours: 24
+# A recurrence of an issue closed within this window reopens it instead of filing a new
+# issue and paying for a fresh run (the velero alert filed six in three days, 10-21..23).
+recur_window_hours: 168
 job_deadline_seconds: 2400
 reports_repo: vollminlab/triage-reports
 cluster_repo: vollminlab/k8s-vollminlab-cluster
