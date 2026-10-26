@@ -29,3 +29,8 @@ def test_rejects_bad_mode():
 def test_rejects_deadline_too_short_for_publish():
     with pytest.raises(ValueError, match="job_deadline_seconds"):
         make_policy(job_deadline_seconds=300)
+
+
+def test_recur_window_defaults_to_a_week_and_is_configurable():
+    assert make_policy().recur_window_hours == 168
+    assert make_policy(recur_window_hours=48).recur_window_hours == 48

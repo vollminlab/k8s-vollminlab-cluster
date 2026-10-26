@@ -359,9 +359,11 @@ the PEM or App ID is wrong.
 | Same fingerprint, open issue updated < 24h ago | Dropped (`deduped_recent`) |
 | A new alert on a workload that already has an open issue | Its name is added to the issue title, with a comment `Also firing on this workload as of …` (`late_alert_noted`), once per alert name. One that arrives while the Job is still queued is noted on Alertmanager's next repeat |
 | Same fingerprint, Job already queued or running | Dropped (`deduped_inflight`) |
+| Same fingerprint, no open issue, but one **closed within 7 days** (`recur_window_hours`) | Reopened with a comment `Recurred at …`, instead of a new issue. Its age for the 24h rule is when it was closed: closed < 24h ago gives no new run (`reopened_recent`), older is re-investigated as a comment (`reopened_comment`). Since 0.1.5; before that the 2026-10-21..23 velero alert filed six issues and six paid runs |
 | Alert resolves, nothing else firing on the workload | Dispatcher comments `Resolved at …`, closes the issue, deletes any queued Job for it. Open PRs are left alone |
 | Alert resolves, another alert on the workload still firing | Nothing closes (`resolved_partial`); the last one to resolve closes the issue |
 | Alert resolves after the whole app was deleted | Closes the issue anyway: with no controller left to confirm the pod's owner, the resolve falls back to the Deployment or CronJob its name fits, for matching an existing issue only (logged `matched issue #N by name`) |
+| Open incident issue, but Alertmanager holds no alert for it | Closed by the reconciler with a comment `Closed at …: Alertmanager no longer holds any alert` (`closed_stale`). See below |
 | Sweep | One issue per finding, `[sweep] <check>: <ns>/<object>`, labels `sweep`, `check/<check>`, `fp/<12 hex>`. At most 10 new per run; the rest are counted as `capped` and filed by a later sweep |
 | Namespace `triage` | Ignored (`ignored_self`); triage never diagnoses itself |
 
@@ -373,11 +375,22 @@ lists every alert merged into the incident, including ones that started after it
 e.g. `etcdDatabaseHighFragmentationRatio`) keeps the alertname in its fingerprint, since nothing
 else tells two of them apart: `sha256(source, reason, namespace, "")`. Until 0.1.3 the alertname
 was always included, and the 2026-10-15 canary filed 10 issues for 2 workloads. The issue body carries `<!-- fp:<full hash> -->`, and dedup searches **open** issues by
-the `fp/<12 hex>` label. Closing an issue therefore re-arms its fingerprint.
+the `fp/<12 hex>` label, then (since 0.1.5) **closed** ones: a closed issue is reopened if it
+was closed within `recur_window_hours`, and only after that does the fingerprint file a new issue.
 
 "Updated" is GitHub's `updated_at`. Any human comment or label change restarts the 24h window.
 
-Sweep findings get no resolve event. Close them by hand when fixed. A finding that persists after
+**The reconciler** (since 0.1.5) runs from the scheduling loop every 15 minutes. A resolve
+webhook is the normal close path, and two cases never send one: an alert that resolves **while
+silenced** (Alertmanager never notifies a muted alert, so MinIO #45 sat open for 10 days after
+its alert cleared), and an app deleted along with its pods. The reconciler lists open issues
+carrying an `fp/` label and no `sweep`/`check/*` label, and closes each one that has been
+untouched for 30 minutes, has no Job queued or running, and matches no alert Alertmanager holds.
+**Silenced and inhibited alerts count as held**, so silencing a live alert never closes its
+issue. The whole round is skipped if Alertmanager cannot be reached or any held alert's owner
+cannot be looked up, since that alert might be the one keeping an issue open.
+
+Sweep findings get no resolve event, and the reconciler leaves them alone. Close them by hand when fixed. A finding that persists after
 you close it is filed again by the next sweep.
 
 Status labels publish adds:
@@ -465,7 +478,7 @@ A run whose cost is unknown (`cost_estimated: true`, or a crash) is charged at
 
 | Metric | |
 |---|---|
-| `triage_events_total{source,outcome}` | outcomes: `dispatched_new`, `dispatched_comment`, `deduped_inflight`, `deduped_recent`, `deduped_batch`, `dropped_queue_full`, `dropped_resolved`, `dropped_invalid`, `ignored_self`, `resolved`, `resolved_unmatched`, `resolved_partial`, `late_alert_noted` |
+| `triage_events_total{source,outcome}` | outcomes: `dispatched_new`, `dispatched_comment`, `deduped_inflight`, `deduped_recent`, `reopened_recent`, `reopened_comment`, `deduped_batch`, `dropped_queue_full`, `dropped_resolved`, `dropped_invalid`, `ignored_self`, `resolved`, `resolved_unmatched`, `resolved_partial`, `late_alert_noted`; source `reconcile`: `closed_stale` |
 | `triage_jobs_24h{outcome}` | finished Jobs in the last 24h, by the outcomes above |
 | `triage_spend_usd_24h` | the figure the daily cap compares against |
 | `triage_queue_depth` | suspended Jobs waiting |
@@ -514,6 +527,7 @@ print(parse_policy(yaml.safe_load(open('clusters/vollminlab-cluster/triage/triag
 | `daily_budget_usd` | 10 | Rolling-24h hold on starting Jobs. Accounting, not a security boundary |
 | `queue_cap` | 10 | Waiting Jobs before new events are dropped |
 | `reinvestigate_after_hours` | 24 | How old an open issue's last update must be before a recurrence is re-investigated (as a comment). Also governs sweep re-comments |
+| `recur_window_hours` | 168 | A closed issue for the same fingerprint closed within this window is reopened rather than re-filed. Optional; defaults to 168 |
 | `job_deadline_seconds` | 2400 | The Job's `activeDeadlineSeconds`. Minimum 600. investigate gets this minus 300 s (publish) minus 120 s (startup) minus clone time, and does not start claude with ≤ 60 s left |
 | `reports_repo` | `vollminlab/triage-reports` | Where issues go. The App must be installed there |
 | `cluster_repo` | `vollminlab/k8s-vollminlab-cluster` | Cloned by both containers; PR target |

@@ -49,13 +49,29 @@ class FakeQueue:
 
 
 class FakeGitHub:
-    def __init__(self, issue=None, fail=False):
+    def __init__(self, issue=None, fail=False, closed=None, open_issues=None):
         self.issue, self.fail, self.calls = issue, fail, []
+        self.closed, self.open_issues, self.reopen_fails = closed, open_issues or [], False
 
     def find_open_issue(self, repo, fp12):
         if self.fail:
             raise RuntimeError("github down")
         return self.issue
+
+    def find_recent_closed_issue(self, repo, fp12):
+        if self.fail:
+            raise RuntimeError("github down")
+        return self.closed
+
+    def reopen_issue(self, repo, n):
+        if self.reopen_fails:
+            raise RuntimeError("github down")
+        self.calls.append(("reopen", n))
+
+    def list_open_issues(self, repo):
+        if self.fail:
+            raise RuntimeError("github down")
+        return list(self.open_issues)
 
     def comment(self, repo, n, body):
         self.calls.append(("comment", n, body))
@@ -73,13 +89,19 @@ class FakeAlertmanager:
     API unreachable; `muted` keeps the set empty whatever is posted."""
     def __init__(self, muted=False):
         self.active, self.down, self.muted, self.calls = {}, False, muted, 0
+        # Everything Alertmanager still holds, silenced or not: a muted alert is held.
+        self.held = {}
 
     def observe(self, payload):
         for a in payload.get("alerts", []):
             key = a.get("fingerprint") or repr(sorted(a["labels"].items()))
             if a.get("status") == "resolved":
                 self.active.pop(key, None)
-            elif not self.muted:
+                self.held.pop(key, None)
+                continue
+            self.held[key] = {"labels": a["labels"], "fingerprint": a.get("fingerprint", ""),
+                              "startsAt": a.get("startsAt", ""), "status": {"state": "active"}}
+            if not self.muted:
                 self.active[key] = {"labels": a["labels"], "fingerprint": a.get("fingerprint", ""),
                                     "startsAt": a.get("startsAt", ""), "status": {"state": "active"}}
 
@@ -88,6 +110,11 @@ class FakeAlertmanager:
         if self.down:
             raise ConnectionError("alertmanager down")
         return list(self.active.values())
+
+    def held_alerts(self):
+        if self.down:
+            raise ConnectionError("alertmanager down")
+        return list(self.held.values())
 
 
 def other_workload(name, **extra):
@@ -105,6 +132,7 @@ def make(github=None, firing=True, outcomes=None, policy=None, clock=None, queue
         github=github or FakeGitHub(),
         get_owner=lambda kind, ns, name: OWNERS.get((kind, name)),
         active_alerts=am.alerts,
+        held_alerts=am.held_alerts,
         notify=lambda title, msg, url=None: notes.append(title),
         read_outcome=lambda name: (outcomes or {}).get(name),
         clock=clock or (lambda: NOW),
@@ -690,3 +718,177 @@ def test_a_github_failure_noting_a_late_alert_does_not_drop_the_event(caplog):
         assert d.handle_alertmanager(am_payload(am_alert(ready))) == ["deduped_recent"]
     assert gh.calls == []
     assert any("could not note late alerts" in r.getMessage() for r in caplog.records)
+
+
+# ---- recurrence: a recently closed issue is reopened, not re-filed --------------------
+
+def iso(offset_seconds):
+    """NOW shifted by `offset_seconds`, in GitHub's timestamp format."""
+    return datetime.fromtimestamp(NOW + offset_seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def closed_issue(closed_ago_hours, number=7):
+    at = iso(-closed_ago_hours * 3600)
+    return {"number": number, "title": "[KubePodCrashLooping] mediastack/Deployment/radarr",
+            "updated_at": at, "closed_at": at}
+
+
+def test_recurrence_within_a_day_of_closing_reopens_without_investigating():
+    gh = FakeGitHub(closed=closed_issue(1))
+    d, _ = make(github=gh)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["reopened_recent"]
+    assert d.queue.jobs == []
+    assert gh.calls[0] == ("reopen", 7)
+    assert gh.calls[1][0] == "comment" and "Recurred" in gh.calls[1][2]
+
+
+def test_recurrence_after_a_day_reopens_and_reinvestigates_on_the_same_issue():
+    gh = FakeGitHub(closed=closed_issue(72))
+    d, _ = make(github=gh)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["reopened_comment"]
+    assert ("reopen", 7) in gh.calls
+    assert env_of(d.queue.jobs[0])["TRIAGE_EXISTING_ISSUE"] == "7"
+
+
+def test_issue_closed_more_than_a_week_ago_is_not_reopened():
+    gh = FakeGitHub(closed=closed_issue(8 * 24))
+    d, _ = make(github=gh)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["dispatched_new"]
+    assert gh.calls == []
+    assert env_of(d.queue.jobs[0])["TRIAGE_EXISTING_ISSUE"] == ""
+
+
+def test_recurrence_window_comes_from_policy():
+    gh = FakeGitHub(closed=closed_issue(72))
+    d, _ = make(github=gh, policy=make_policy(recur_window_hours=48))
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["dispatched_new"]
+
+
+def test_failed_reopen_files_a_new_issue_rather_than_dropping_the_alert(caplog):
+    gh = FakeGitHub(closed=closed_issue(1))
+    gh.reopen_fails = True
+    d, _ = make(github=gh)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["dispatched_new"]
+    assert "could not reopen" in caplog.text
+
+
+def test_open_issue_wins_over_a_closed_one():
+    gh = FakeGitHub(issue={"number": 9, "updated_at": iso(-3600)}, closed=closed_issue(1))
+    d, _ = make(github=gh)
+    assert d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS))) == ["deduped_recent"]
+    assert ("reopen", 7) not in gh.calls
+
+
+def test_sweep_never_reopens():
+    gh = FakeGitHub(closed=closed_issue(1))
+    d, _ = make(github=gh)
+    assert d.handle_sweep() == "dispatched_new"
+    assert gh.calls == []
+
+
+# ---- reconcile: close issues whose alert Alertmanager no longer holds ---------------
+
+RADARR_FP = Incident(source="alertmanager", reason="KubePodCrashLooping", namespace="mediastack",
+                     workload="Deployment/radarr").fp12
+
+
+def open_issue(fp=RADARR_FP, number=4, updated_ago_minutes=60, labels=()):
+    return {"number": number, "updated_at": iso(-updated_ago_minutes * 60),
+            "labels": [{"name": f"fp/{fp}"}] + [{"name": n} for n in labels]}
+
+
+def reconcile_closed(gh):
+    return [c[1] for c in gh.calls if c[0] == "close"]
+
+
+def test_reconcile_closes_an_issue_whose_alert_is_gone():
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh)
+    assert d.reconcile() == 1
+    assert reconcile_closed(gh) == [4]
+    comment = next(c for c in gh.calls if c[0] == "comment")
+    assert comment[1] == 4 and "no longer" in comment[2]
+
+
+def test_reconcile_keeps_an_issue_whose_alert_is_silenced_but_still_firing():
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh, firing=False)          # muted: firing, but not "active" to the API
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.queue.jobs.clear()
+    assert d.reconcile() == 0
+    assert reconcile_closed(gh) == []
+
+
+def test_reconcile_skips_recently_updated_issues():
+    gh = FakeGitHub(open_issues=[open_issue(updated_ago_minutes=10)])
+    d, _ = make(github=gh)
+    assert d.reconcile() == 0
+
+
+def test_reconcile_skips_issues_with_a_queued_or_running_job():
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.am.held.clear()                             # alert gone, but its Job is still queued
+    assert d.reconcile() == 0
+
+
+def test_reconcile_never_touches_sweep_findings():
+    gh = FakeGitHub(open_issues=[open_issue(labels=("sweep", "check/unprotected-pvc"))])
+    d, _ = make(github=gh)
+    assert d.reconcile() == 0
+
+
+def test_reconcile_does_nothing_when_alertmanager_is_down():
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh)
+    d.am.down = True
+    assert d.reconcile() == 0
+    assert gh.calls == []
+
+
+def test_reconcile_skips_the_round_when_an_owner_lookup_fails(caplog):
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.queue.jobs.clear()
+
+    def broken(kind, ns, name):
+        raise RuntimeError("apiserver down")
+    d.get_owner = broken
+    assert d.reconcile() == 0
+    assert "skipping" in caplog.text
+
+
+def test_reconcile_matches_an_issue_filed_by_name_after_the_owner_is_gone():
+    # The Deployment was filed normally; now its pods' owners cannot be found. The
+    # name fallback must still map the pod's alert onto the Deployment's issue.
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh)
+    d.handle_alertmanager(am_payload(am_alert(CRASHLOOP_LABELS)))
+    d.queue.jobs.clear()
+    d.get_owner = lambda kind, ns, name: None
+    assert d.reconcile() == 0
+
+
+def test_tick_reconciles_at_most_every_fifteen_minutes():
+    t = [NOW]
+    gh = FakeGitHub(open_issues=[open_issue()])
+    d, _ = make(github=gh, clock=lambda: t[0])
+    d.tick()
+    assert reconcile_closed(gh) == [4]
+    gh.calls.clear()
+    t[0] += 600
+    d.tick()
+    assert gh.calls == []
+    t[0] += 301
+    d.tick()
+    assert reconcile_closed(gh) == [4]
+
+
+def test_tick_survives_a_reconcile_failure(caplog):
+    gh = FakeGitHub(open_issues=[open_issue()])
+    gh.fail = True
+    d, _ = make(github=gh)
+    assert d.tick() == "idle"
+    assert "reconcile failed" in caplog.text

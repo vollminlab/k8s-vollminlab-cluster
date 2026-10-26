@@ -148,6 +148,29 @@ class GitHub:
                               params={"labels": f"fp/{fp12}", "state": "open", "per_page": 5})
         return items[0] if items else None
 
+    def find_recent_closed_issue(self, repo: str, fp12: str):
+        """The most recently updated closed issue for the fingerprint, or None."""
+        items = self._request("GET", f"/repos/{repo}/issues",
+                              params={"labels": f"fp/{fp12}", "state": "closed", "sort": "updated",
+                                      "direction": "desc", "per_page": 5})
+        # The issues endpoint also returns pull requests; triage never labels one fp/.
+        items = [i for i in items or [] if "pull_request" not in i]
+        return items[0] if items else None
+
+    def list_open_issues(self, repo: str) -> list:
+        """Every open issue (not pull request) in the repo, up to 300."""
+        out = []
+        for page in (1, 2, 3):
+            items = self._request("GET", f"/repos/{repo}/issues",
+                                  params={"state": "open", "per_page": 100, "page": page}) or []
+            out += [i for i in items if "pull_request" not in i]
+            if len(items) < 100:
+                break
+        return out
+
+    def reopen_issue(self, repo, number):
+        return self._request("PATCH", f"/repos/{repo}/issues/{number}", json={"state": "open"})
+
     def create_issue(self, repo, title, body, labels):
         return self._request("POST", f"/repos/{repo}/issues", retry_unsafe=False,
                              json={"title": title, "body": body, "labels": labels})
