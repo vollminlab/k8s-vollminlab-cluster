@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: partly-labelled
+  namespace: apps
+  labels: {app: mine, env: production, category: apps}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}

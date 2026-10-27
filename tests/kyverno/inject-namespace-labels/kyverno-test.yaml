@@ -1,0 +1,11 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: inject-namespace-labels
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/inject-namespace-labels.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - {policy: inject-namespace-labels, rule: inject-namespace-labels, kind: Deployment, resources: [apps/unlabelled], patchedResources: patched.yaml, result: pass}

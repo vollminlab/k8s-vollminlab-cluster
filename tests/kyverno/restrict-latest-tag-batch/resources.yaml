@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pinned-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: pinned-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: latest-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:latest"}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: latest-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:latest"}

@@ -1,0 +1,12 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-loadbalancer
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-loadbalancer.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-loadbalancer-services, rule: block-lb-except-nginx, kind: Service, resources: [apps/internal], result: pass}
+  - {policy: restrict-loadbalancer-services, rule: block-lb-except-nginx, kind: Service, resources: [apps/exposed], result: fail}
+  - {policy: restrict-loadbalancer-services, rule: block-lb-except-nginx, kind: Service, resources: [ingress-nginx/ingress-nginx-controller], result: skip}

@@ -1,0 +1,9 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Value
+metadata:
+  name: values
+namespaceSelector:
+  - name: apps
+    labels: {kubernetes.io/metadata.name: apps}
+  - name: kube-system
+    labels: {kubernetes.io/metadata.name: kube-system}

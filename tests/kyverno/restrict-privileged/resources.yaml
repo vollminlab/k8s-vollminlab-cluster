@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: no-security-context, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unprivileged, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - name: c
+          image: "harbor.vollminlab.com/vollminlab/x:1.0.0"
+          securityContext: {privileged: false, runAsNonRoot: true}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: privileged, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - name: c
+          image: "harbor.vollminlab.com/vollminlab/x:1.0.0"
+          securityContext: {privileged: true}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: csi-node, namespace: longhorn-system}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - name: c
+          image: "docker.io/longhornio/x:1.0.0"
+          securityContext: {privileged: true}

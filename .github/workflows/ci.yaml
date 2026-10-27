@@ -179,6 +179,42 @@ jobs:
           promtool --version | head -1
           ./scripts/test-prometheus-rules.sh
 
+      # Unconditional, in this job, for the same reasons as the checks above. A policy
+      # test must run when the POLICY changes as much as when its fixtures do, and an
+      # inert policy (foreach.list not rooted at request.object, #1104/#1109) changes
+      # nothing a path filter could key on. The CLI is pinned to the cluster's Kyverno
+      # version (v1.19.0), not to the older CLI the policy-validation job uses, so the
+      # tests evaluate what admission actually runs. The wrapper exists because
+      # `kyverno test` alone passes an inert policy; see its docstring.
+      - name: Unit-test Kyverno policies
+        env:
+          KYVERNO_VERSION: "1.19.0"
+          KYVERNO_SHA256: "f5b4dc73c8e2f3f66e8e0034dc370e6eb6c4617eff7d5ae3838d2200034eb421"
+        run: |
+          set -euo pipefail
+          ./scripts/ci-ensure-pyyaml.sh
+          tarball="kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          timeout 120 curl -fsSLo "/tmp/$tarball" "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/$tarball"
+          echo "${KYVERNO_SHA256}  /tmp/$tarball" | sha256sum -c -
+          mkdir -p /tmp/kyverno-test-cli
+          tar -xzf "/tmp/$tarball" -C /tmp/kyverno-test-cli kyverno
+          ./scripts/test-kyverno-policies.py /tmp/kyverno-test-cli/kyverno
+
+      # The shell CronJobs' own unit tests (*_test.sh beside each script). Unconditional
+      # and in this job for the same reasons. The runner has dash but no busybox, and
+      # apt-get hangs here (see the yamllint step), so busybox comes as the upstream
+      # static binary, checksum-pinned.
+      - name: Unit-test shell CronJob scripts
+        env:
+          BUSYBOX_VERSION: "1.35.0"
+          BUSYBOX_SHA256: "6e123e7f3202a8c1e9b1f94d8941580a25135382b99e8d3e34fb858bba311348"
+        run: |
+          set -euo pipefail
+          timeout 60 curl -fsSLo /tmp/busybox "https://busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
+          echo "${BUSYBOX_SHA256}  /tmp/busybox" | sha256sum -c -
+          chmod +x /tmp/busybox
+          BUSYBOX=/tmp/busybox ./scripts/test-shell-scripts.sh
+
       - name: Get changed files
         id: get-changed-files
         run: |

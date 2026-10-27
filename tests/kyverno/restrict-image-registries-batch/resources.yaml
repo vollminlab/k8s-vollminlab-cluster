@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: approved-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - {name: i, image: "ghcr.io/org/init:1.0.0"}
+      containers:
+        - {name: c, image: "nginx:1.27.0"}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: approved-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - {name: i, image: "ghcr.io/org/init:1.0.0"}
+          containers:
+            - {name: c, image: "nginx:1.27.0"}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: bad-main-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "registry.example.com/org/x:1.0.0"}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: bad-main-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "registry.example.com/org/x:1.0.0"}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: bad-init-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - {name: i, image: "gcr.io/org/init:1.0.0"}
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: bad-init-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - {name: i, image: "gcr.io/org/init:1.0.0"}
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}

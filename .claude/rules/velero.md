@@ -208,7 +208,8 @@ emit a Kubernetes Event, and stop.
 `NODE_AGENT_SELECTOR` (`name=node-agent`), `DRY_RUN` (`false`).
 
 **Tests:** `sh heal_test.sh` uses pure-shell stubs and needs no cluster. Must pass under both `dash`
-and `busybox ash` (the image is `alpine/kubectl`). Not wired into CI, same as `longhorn-mount-healer`.
+and `busybox ash` (the image is `alpine/kubectl`). CI runs it under both shells, with every other
+`*_test.sh`, via `scripts/test-shell-scripts.sh`.
 
 ```bash
 # Did it actually run, or just exist? Check exit codes, not the CronJob's Ready status.
