@@ -1,0 +1,17 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-image-registries-batch
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-image-registries-batch.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-job-containers, kind: Job, resources: [apps/approved-job, apps/bad-init-job], result: pass}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-job-containers, kind: Job, resources: [apps/bad-main-job], result: fail}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-job-init-containers, kind: Job, resources: [apps/approved-job], result: pass}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-job-init-containers, kind: Job, resources: [apps/bad-init-job], result: fail}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-cronjob-containers, kind: CronJob, resources: [apps/approved-cron, apps/bad-init-cron], result: pass}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-cronjob-containers, kind: CronJob, resources: [apps/bad-main-cron], result: fail}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-cronjob-init-containers, kind: CronJob, resources: [apps/approved-cron], result: pass}
+  - {policy: restrict-image-registries-batch, rule: restrict-image-registries-cronjob-init-containers, kind: CronJob, resources: [apps/bad-init-cron], result: fail}

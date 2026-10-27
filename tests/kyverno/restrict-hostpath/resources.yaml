@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: no-volumes, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: emptydir, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: hostpath, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: host, hostPath: {path: /var/lib}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: node-agent, namespace: velero}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "docker.io/velero/velero:v1.0.0"}
+      volumes:
+        - {name: host, hostPath: {path: /var/lib/kubelet/pods}}

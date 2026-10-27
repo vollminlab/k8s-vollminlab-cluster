@@ -559,7 +559,7 @@ ticket *before* the VolumeSnapshotContent exists and a single pass would cancel 
 snapshot.
 
 Tests: `sh reap_test.sh` (pure-shell stubs, no cluster needed). Must pass under `dash` and
-`busybox ash`. Not wired into CI, same as `longhorn-mount-healer`.
+`busybox ash`. CI runs it under both via `scripts/test-shell-scripts.sh`.
 
 ### longhorn-mount-healer
 

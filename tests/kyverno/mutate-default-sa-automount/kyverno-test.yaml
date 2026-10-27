@@ -1,0 +1,11 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: mutate-default-sa-automount
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/mutate-default-sa-automount.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - {policy: mutate-default-sa-automount, rule: disable-default-sa-automount, kind: ServiceAccount, resources: [apps/default], patchedResources: patched.yaml, result: pass}

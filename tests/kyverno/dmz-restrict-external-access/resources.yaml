@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: plain
+  namespace: apps
+  labels: {app: x}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: external
+  namespace: apps
+  labels: {app: x, external-access: "true"}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: egress
+  namespace: apps
+  labels: {app: x, internet-egress: "true"}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: game-server
+  namespace: dmz
+  labels: {app: x, external-access: "true", internet-egress: "true"}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}

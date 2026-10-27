@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csi-attacher
+  namespace: longhorn-system
+  labels: {app: csi-attacher}
+spec:
+  selector: {matchLabels: {app: csi-attacher}}
+  template:
+    metadata: {labels: {app: csi-attacher}}
+    spec:
+      containers:
+        - name: csi-attacher
+          image: "docker.io/longhornio/csi-attacher:v1.0.0"
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 100m, memory: 128Mi}
