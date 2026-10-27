@@ -16,10 +16,13 @@ re-measured live. The date above is unchanged because the rest of the document w
 Two facts measured on 2026-10-27 reorder the plan. Neither was known when Phase 8 was written.
 
 1. **Kubernetes 1.34 reached upstream end-of-life on 2026-10-27**, and every node runs v1.34.8. →
-   **7.1** (#1193), now three hops to 1.37.
+   **7.1 hop 3, to 1.35** (#1193). First, Calico 3.29.1 → 3.31: 3.29 is tested only on
+   1.29–1.32, so it is already outside its range on 1.34.
 2. **ingress-nginx is retired upstream.** Its repo is archived, the last release was 2026-03-19,
-   and the cluster runs that final release as its internet-facing edge. → **Phase 7.5**
-   (#1413), decoupled from Cilium.
+   and the cluster runs that final release as its internet-facing edge. Its support table stops at
+   **1.35**, and no release will ever add 1.36. → **Phase 7.5** (#1413), decoupled from Cilium and
+   **required before hop 4**.
+   - Then hops 4 and 5 (1.36, 1.37), each gated on component releases listed in 7.1.
 3. **Cilium 8a** (#1190) after both. Nothing forces it: Calico works, and its main draws (Hubble,
    eBPF policy, avoiding the IPIP `rp_filter` trap) are improvements, not fixes.
 4. **8b / 8c** stay blocked on their own design work (UDM BGP; forward-auth and shlink on Gateway API).
@@ -486,9 +489,18 @@ already off it (on 1.34.8), so that deadline is cleared. Hops 3–4 remain.
 **Measured 2026-10-27: 1.34 is end-of-life as of today** (endoflife.date). The cluster is on
 v1.34.8, behind even the last 1.34 patch (v1.34.12). Upstream is now 1.35.9, 1.36.5 and **1.37.1**
 (1.37 shipped 2026-08-26), so the cluster is three minors behind and outside upstream support. That
-adds a fifth hop. Every infrastructure component needs a compatibility check against each target
-**before** the hop that needs it; Calico (tigera-operator v1.36.2) is the likeliest to already be
-outside its tested range.
+adds a fifth hop. Every infrastructure component was checked against each target on 2026-10-27 (sources are in
+#1193). All 9 nodes are on cgroup v2, which 1.35's kubelet now requires. The gates:
+
+| Before hop | Required | Why |
+| --- | --- | --- |
+| 3 (1.35) | Calico 3.29.1 → **3.31** | 3.29 is tested on 1.29–1.32 only; already out of range on 1.34 |
+| 4 (1.36) | Phase 7.5 done; Flux → 2.9; Calico → 3.32; **Kyverno 1.20** (not yet released) | ingress-nginx stops at 1.35; Flux 2.8 and Kyverno 1.19 stop at 1.35 |
+| 5 (1.37) | containerd 2.2 → 2.3+ on every node; Calico → 3.33; Flux → 2.10; descheduler → 0.37; cert-manager 1.22 and a Longhorn release tested on 1.37 (neither released yet) | per each project's published matrix |
+
+Calico goes one minor per hop: 3.33 can only be reached from 3.31 or 3.32. **1.37 is realistically
+not reachable on supported versions before about December 2026**, and that is fine: 1.36 is
+supported to 2027-06-28.
 
 **Earlier measurement (2026-08-22):** all 9 nodes on **v1.34.8**; latest upstream release was **v1.36.4**
 (v1.35.8 and a v1.34.11 patch also available). The cluster is two minors behind, still inside the
@@ -566,9 +578,9 @@ it urgent independently of Cilium.
 (lowest-risk apps first, forward-auth apps once one is proven end to end), then move the MetalLB
 VIP and the `cloudflared-nginx` origin, and decommission ingress-nginx.
 
-**Sequencing:** after 7.1, so the controller is validated once against the final Kubernetes version.
-If the 7.1 compatibility check finds that ingress-nginx v1.15.1 does not support a target hop, this
-moves ahead of that hop instead.
+**Sequencing: between 7.1 hop 3 (1.35) and hop 4 (1.36).** The ingress-nginx support table covers
+Kubernetes 1.31–1.35. With the project archived, 1.36 will never be added, so hop 4 cannot proceed
+on a supported edge until this is done.
 
 ---
 
