@@ -8,6 +8,25 @@ Living document tracking planned infrastructure work. Update status as projects 
 app directories in this document were re-measured on that date. Where a status was wrong it has
 been corrected in place with the evidence; see the "Corrections" note at the end.
 
+**Partially re-checked 2026-10-27:** Phase 7 node versions, 7.1 and the ingress-nginx status were
+re-measured live. The date above is unchanged because the rest of the document was not re-read.
+
+## Current priority order (set 2026-10-27)
+
+Two facts measured on 2026-10-27 reorder the plan. Neither was known when Phase 8 was written.
+
+1. **Kubernetes 1.34 reached upstream end-of-life on 2026-10-27**, and every node runs v1.34.8. →
+   **7.1 hop 3, to 1.35** (#1193). First, Calico 3.29.1 → 3.31: 3.29 is tested only on
+   1.29–1.32, so it is already outside its range on 1.34.
+2. **ingress-nginx is retired upstream.** Its repo is archived, the last release was 2026-03-19,
+   and the cluster runs that final release as its internet-facing edge. Its support table stops at
+   **1.35**, and no release will ever add 1.36. → **Phase 7.5** (#1413), decoupled from Cilium and
+   **required before hop 4**.
+   - Then hops 4 and 5 (1.36, 1.37), each gated on component releases listed in 7.1.
+3. **Cilium 8a** (#1190) after both. Nothing forces it: Calico works, and its main draws (Hubble,
+   eBPF policy, avoiding the IPIP `rp_filter` trap) are improvements, not fixes.
+4. **8b / 8c** stay blocked on their own design work (UDM BGP; forward-auth and shlink on Gateway API).
+
 ---
 
 ## Phase 1 — Foundations (Prerequisite for everything else)
@@ -432,12 +451,17 @@ Controlled fault injection for resilience testing (pod kill, network partition, 
 
 ## Phase 7 — Node Maintenance Window
 
-**Status:** `in-progress`
+**Status:** `in-progress` — **urgent as of 2026-10-27** (see 7.1)
 **Risk:** Medium. Rolling node reboots; cluster stays available if done one node at a time
 
 Normalize all nodes to current versions before the CNI migration. Three sub-items sequenced to allow bundling reboots efficiently.
 
-**Current state (2026-08-22, verified all 9 nodes via live `kubectl get nodes`):**
+**Re-measured 2026-10-27:** Kubernetes still v1.34.8 on all 9 nodes, but **kernels have drifted**:
+k8scp01-03, k8sworker02, k8sworker04 and k8sworker06 run 6.8.0-139; k8sworker01 and k8sworker05 run
+6.8.0-137; k8sworker03 runs 6.8.0-147. Normalize the kernel in the same drain windows as the 7.1 hops
+rather than as a separate pass. The table below is the 2026-08-22 state and is kept for history.
+
+**State as of 2026-08-22 (verified all 9 nodes via live `kubectl get nodes`):**
 
 K8s, kernel, containerd **and Ubuntu patch level are now uniform cluster-wide**. The control-plane
 userspace drift noted in the 2026-06-12 pass is closed. The only remaining Phase 7 work is the
@@ -459,10 +483,26 @@ Kubernetes version itself (7.1, issue **#1193**).
 
 **Status:** `in-progress` — tracked as issue **#1193**
 
-Upgrade all nodes through four minor-version hops. K8s 1.33 goes EOL 2026-06-28; the cluster is
+Upgrade all nodes through five minor-version hops (the fifth added 2026-10-27). K8s 1.33 goes EOL 2026-06-28; the cluster is
 already off it (on 1.34.8), so that deadline is cleared. Hops 3–4 remain.
 
-**Measured 2026-08-22:** all 9 nodes on **v1.34.8**; latest upstream release is **v1.36.4**
+**Measured 2026-10-27: 1.34 is end-of-life as of today** (endoflife.date). The cluster is on
+v1.34.8, behind even the last 1.34 patch (v1.34.12). Upstream is now 1.35.9, 1.36.5 and **1.37.1**
+(1.37 shipped 2026-08-26), so the cluster is three minors behind and outside upstream support. That
+adds a fifth hop. Every infrastructure component was checked against each target on 2026-10-27 (sources are in
+#1193). All 9 nodes are on cgroup v2, which 1.35's kubelet now requires. The gates:
+
+| Before hop | Required | Why |
+| --- | --- | --- |
+| 3 (1.35) | Calico 3.29.1 → **3.31** | 3.29 is tested on 1.29–1.32 only; already out of range on 1.34 |
+| 4 (1.36) | Phase 7.5 done; Flux → 2.9; Calico → 3.32; **Kyverno 1.20** (not yet released) | ingress-nginx stops at 1.35; Flux 2.8 and Kyverno 1.19 stop at 1.35 |
+| 5 (1.37) | containerd 2.2 → 2.3+ on every node; Calico → 3.33; Flux → 2.10; descheduler → 0.37; cert-manager 1.22 and a Longhorn release tested on 1.37 (neither released yet) | per each project's published matrix |
+
+Calico goes one minor per hop: 3.33 can only be reached from 3.31 or 3.32. **1.37 is realistically
+not reachable on supported versions before about December 2026**, and that is fine: 1.36 is
+supported to 2027-06-28.
+
+**Earlier measurement (2026-08-22):** all 9 nodes on **v1.34.8**; latest upstream release was **v1.36.4**
 (v1.35.8 and a v1.34.11 patch also available). The cluster is two minors behind, still inside the
 N-2 support window, but 1.34 leaves support when 1.37 ships. **Do this before Phase 8a (#1190)**:
 8a's acceptance includes revalidating all 19 NetworkPolicy files, which is worth doing once against
@@ -472,8 +512,9 @@ the final Kubernetes version.
 | --- | --- | --- | --- |
 | 1 | 1.33.12 | Manual node-by-node | `done` — 2026-05-19 |
 | 2 | 1.34.8 | Ansible `k8s-upgrade.yml` | `done` — all 9 nodes |
-| 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` — target available (v1.35.8) |
-| 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` — target available (v1.36.4) |
+| 3 | 1.35.x | Ansible `k8s-upgrade.yml` | `planned` — **next**; target v1.35.9, supported to 2027-02-28 |
+| 4 | 1.36.x | Ansible `k8s-upgrade.yml` | `planned` — target v1.36.5, supported to 2027-06-28 |
+| 5 | 1.37.x | Ansible `k8s-upgrade.yml` | `planned` — added 2026-10-27; target v1.37.1, supported to 2027-10-28 |
 
 Playbook hardening from hop 1: `serial: 1`, `--disable-eviction` on all drain commands, Longhorn volume health gate after each uncordon (waits for zero degraded volumes before proceeding to next node).
 
@@ -487,7 +528,12 @@ All 9 nodes are on containerd **v2.2.4** (docker.com apt repo). The 6 workers we
 
 ### 7.3 Kernel and OS normalization
 
-**Status:** `done` — verified 2026-08-22
+**Status:** `in-progress` — **reopened 2026-10-27.** It was uniform on 2026-08-22 and has since
+drifted to three kernels (6.8.0-137, -139, -147; per-node list under Phase 7). Close it again in the
+7.1 drain windows. Normal unattended patching will keep reintroducing drift, so "uniform" needs
+re-measuring at each window rather than recording once.
+
+*Previous status:* `done` — verified 2026-08-22
 
 > **Verified 2026-08-22, live `kubectl get nodes` across all 9 nodes:** Ubuntu **24.04.4**, kernel
 > **6.8.0-137-generic**, containerd **v2.2.4**, uniform everywhere. The control-plane userspace
@@ -506,6 +552,38 @@ Do not bundle 7.2/7.3 with the Cilium migration. Use separate maintenance window
 
 ---
 
+## Phase 7.5 — Replace ingress-nginx (retired upstream)
+
+**Status:** `planned` — controller selection in progress. Tracked as **#1413**. Added 2026-10-27.
+**Risk:** Medium. It is the cluster's only HTTP edge (LAN VIP and Cloudflare tunnel origin), but it
+can be migrated side by side with no big-bang window.
+
+**Why now:** `kubernetes/ingress-nginx` is retired. The repo is archived and the last releases were
+cut 2026-03-19. The cluster runs that final release (controller v1.15.1, chart 4.15.1) as its
+internet-facing edge, and it will get no further security fixes. Until this date the replacement was
+reachable only through Phase 8c, which is blocked on Gateway API design problems. The retirement makes
+it urgent independently of Cilium.
+
+**What the replacement must cover (measured 2026-10-27):**
+
+- 38 `Ingress` objects, all `ingressClassName: nginx`.
+- Authentik forward-auth on 23 of them (`auth-url`, `auth-signin`, `auth-response-headers`, and the
+  `auth-snippet` that sets `X-Forwarded-Host`), including both `forward_single` providers.
+- Path-split Ingresses that carve an unauthenticated path out of an authenticated host.
+- `shlink-ingress-controller` reconciles only `Ingress`. **A controller that keeps using `Ingress`
+  objects avoids 8c's second blocker entirely.** One that needs `HTTPRoute` must first teach that
+  controller about Gateway API.
+
+**Approach:** run the new controller under a second ingress class, move Ingresses one at a time
+(lowest-risk apps first, forward-auth apps once one is proven end to end), then move the MetalLB
+VIP and the `cloudflared-nginx` origin, and decommission ingress-nginx.
+
+**Sequencing: between 7.1 hop 3 (1.35) and hop 4 (1.36).** The ingress-nginx support table covers
+Kubernetes 1.31–1.35. With the project archived, 1.36 will never be added, so hop 4 cannot proceed
+on a supported edge until this is done.
+
+---
+
 ## Phase 8 — CNI Migration (Calico → Cilium)
 
 **Status:** `planned` — **split into 8a / 8b / 8c on 2026-08-22.** As originally written this phase
@@ -514,9 +592,9 @@ rather than migration work.
 
 | Sub-phase | Scope | Issue | State |
 | --- | --- | --- | --- |
-| **8a** | Cilium CNI only — keep MetalLB, keep nginx | **#1190** | executable now |
+| **8a** | Cilium CNI only — keep MetalLB and the ingress controller | **#1190** | after 7.1 and 7.5 (reordered 2026-10-27) |
 | **8b** | Cilium L4LB + BGP, drop MetalLB (supersedes 3.2) | **#1191** | blocked on UDM router config |
-| **8c** | Gateway API, decommission nginx-ingress | **#1192** | blocked — see below |
+| **8c** | Gateway API adoption (optional) | **#1192** | blocked — see below. Decommissioning ingress-nginx moved to **7.5** on 2026-10-27; 8c is no longer the path off it |
 
 **Two blockers 8c must clear before any `HTTPRoute` migration:**
 
