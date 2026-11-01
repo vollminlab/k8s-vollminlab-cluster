@@ -1,0 +1,10 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: dmz-enforce-node-placement
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/dmz-enforce-node-placement.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: dmz-enforce-node-placement, rule: add-dmz-node-selector, kind: Pod, resources: [dmz/game-server], patchedResources: patched.yaml, result: pass}

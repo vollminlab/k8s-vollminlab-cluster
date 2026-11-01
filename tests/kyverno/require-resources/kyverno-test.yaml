@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-resources
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/require-resources.yaml
+resources:
+  - resources.yaml
+results:
+  - policy: require-resources
+    rule: require-limits
+    kind: Deployment
+    resources: [apps/good]
+    result: pass
+  - policy: require-resources
+    rule: require-limits
+    kind: Deployment
+    resources: [apps/no-cpu-request, apps/second-container-no-limit]
+    result: fail
+  - policy: require-resources
+    rule: require-limits
+    kind: Deployment
+    resources: [flux-system/flux-controller]
+    result: skip

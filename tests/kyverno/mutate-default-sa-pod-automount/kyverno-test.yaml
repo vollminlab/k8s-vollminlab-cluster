@@ -1,0 +1,12 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: mutate-default-sa-pod-automount
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/mutate-default-sa-pod-automount.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - {policy: mutate-default-sa-pod-automount, rule: disable-pod-automount-for-default-sa, kind: Pod, resources: [apps/default-sa], patchedResources: patched.yaml, result: pass}
+  - {policy: mutate-default-sa-pod-automount, rule: disable-pod-automount-for-default-sa, kind: Pod, resources: [apps/own-sa], result: skip}

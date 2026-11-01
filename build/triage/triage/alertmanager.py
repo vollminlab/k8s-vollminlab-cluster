@@ -4,15 +4,19 @@ import requests
 URL = "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093"
 
 
-def active_alerts(session=requests, base: str = URL) -> list:
+def active_alerts(session=requests, base: str = URL, include_muted: bool = False) -> list:
     """Every active, unsilenced, uninhibited alert, in the API v2 shape.
 
     Raises on any failure. The dispatcher's two callers fail in opposite directions
     (tick starts the Job anyway; a resolve still closes the issue), so the choice is
     theirs. An empty list means nothing is firing, so a malformed body must not become one.
+
+    `include_muted` also returns silenced and inhibited alerts: still firing, only not
+    notified. The reconciler needs those, so a silence never closes a live incident.
     """
+    muted = "true" if include_muted else "false"
     r = session.get(f"{base}/api/v2/alerts",
-                    params={"active": "true", "silenced": "false", "inhibited": "false"}, timeout=15)
+                    params={"active": "true", "silenced": muted, "inhibited": muted}, timeout=15)
     r.raise_for_status()
     alerts = r.json()
     if not isinstance(alerts, list):

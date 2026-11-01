@@ -184,6 +184,12 @@ def test_prompts_embed_the_incident_and_the_checklist():
     assert "empty-selector-backup" in s and "{{CHECKLIST}}" not in s
 
 
+def test_incident_prompt_anchors_on_the_firing_occurrence():
+    # #63/#65: two backups an hour apart, and the agent analysed the earlier one.
+    p = investigate.render_prompt(INC, make_policy())
+    assert "started_at" in p.split("<incident>")[0]
+
+
 def test_main_always_writes_result_and_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setattr(investigate, "WORK", tmp_path / "work")
     monkeypatch.setattr(investigate, "RESULT", tmp_path / "result" / "result.json")

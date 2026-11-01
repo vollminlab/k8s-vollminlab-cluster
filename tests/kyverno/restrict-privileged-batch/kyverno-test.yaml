@@ -1,0 +1,15 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-privileged-batch
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-privileged-batch.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-privileged-batch, rule: block-privileged-job, kind: Job, resources: [apps/unprivileged-job], result: pass}
+  - {policy: restrict-privileged-batch, rule: block-privileged-job, kind: Job, resources: [apps/privileged-job], result: fail}
+  - {policy: restrict-privileged-batch, rule: block-privileged-job, kind: Job, resources: [kube-system/system-job], result: skip}
+  - {policy: restrict-privileged-batch, rule: block-privileged-cronjob, kind: CronJob, resources: [apps/unprivileged-cron], result: pass}
+  - {policy: restrict-privileged-batch, rule: block-privileged-cronjob, kind: CronJob, resources: [apps/privileged-cron], result: fail}
+  - {policy: restrict-privileged-batch, rule: block-privileged-cronjob, kind: CronJob, resources: [kube-system/system-cron], result: skip}

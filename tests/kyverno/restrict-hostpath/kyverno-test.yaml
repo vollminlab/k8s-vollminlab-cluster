@@ -1,0 +1,12 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-hostpath
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-hostpath.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-hostpath-usage, rule: disallow-hostpath-except-system, kind: Deployment, resources: [apps/no-volumes, apps/emptydir], result: pass}
+  - {policy: restrict-hostpath-usage, rule: disallow-hostpath-except-system, kind: Deployment, resources: [apps/hostpath], result: fail}
+  - {policy: restrict-hostpath-usage, rule: disallow-hostpath-except-system, kind: DaemonSet, resources: [velero/node-agent], result: skip}

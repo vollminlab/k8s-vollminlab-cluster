@@ -1,0 +1,10 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: inject-resource-requirements
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/inject-resource-requirements.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: inject-resource-requirements, rule: inject-resource-requirements, kind: Deployment, resources: [longhorn-system/csi-attacher], patchedResources: patched.yaml, result: pass}

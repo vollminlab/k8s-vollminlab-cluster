@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: emptydir-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: emptydir-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+          volumes:
+            - {name: tmp, emptyDir: {}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: hostpath-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+      volumes:
+        - {name: host, hostPath: {path: /var/lib}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: hostpath-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+          volumes:
+            - {name: host, hostPath: {path: /var/lib}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: velero-job, namespace: velero}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "docker.io/velero/velero:v1.0.0"}
+      volumes:
+        - {name: host, hostPath: {path: /var/lib/kubelet/pods}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: velero-cron, namespace: velero}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "docker.io/velero/velero:v1.0.0"}
+          volumes:
+            - {name: host, hostPath: {path: /var/lib/kubelet/pods}}

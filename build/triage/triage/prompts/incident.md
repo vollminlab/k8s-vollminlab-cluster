@@ -23,6 +23,12 @@ Your job: find the root cause of ONE incident, and say how sure you are.
 - Verify the premise. An alert can be stale or wrong. Check the object's CURRENT state before
   explaining why it is broken. If it is healthy now, say so, keep confidence below high and
   propose no patch.
+- Investigate the occurrence that fired. The incident's started_at is when THIS alert began.
+  Anchor every query window on it (start a few minutes before, end after). Recurring jobs
+  such as backups, CronJobs and compactions run many times a day and look alike, so an
+  earlier run with the same name is not this one: name the run you examined and confirm
+  its start time matches started_at. If the numbers you found belong to a different run,
+  say so rather than reporting them as this incident's.
 - Measure before concluding. Query metrics and logs with triage-query, which takes exactly
   a target (vm, vm-lt or loki) and one path; curl and wget are denied. Encode spaces as %20.
   History, 30 days (vm) or 395 days (vm-lt):

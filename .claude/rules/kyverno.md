@@ -206,4 +206,25 @@ kubectl describe policyreport -n [namespace]
 
 ## CI enforcement
 
-The same Kyverno policies run in CI (`kyverno-cli test`) before any PR can merge. A manifest that passes CI should pass in-cluster.
+Two separate things run in CI:
+
+- **Manifests against policies.** The `policy-validation` job runs `kyverno apply` over the
+  manifests a PR changes. It uses CLI v1.12.1 and skips the `apiCall` policies, so it is a
+  coarse check, not proof of what admission does.
+- **Policies against their own tests**, on every PR. `tests/kyverno/<policy>/` holds a
+  `kyverno-test.yaml` per policy, run by `scripts/test-kyverno-policies.py` with the CLI
+  pinned to the cluster's version (v1.19.0).
+
+**`kyverno test` alone cannot catch an inert policy.** Against a copy of `require-resources`
+with its `foreach.list` un-rooted, it reports every row Pass, including those expecting a
+fail, with reason `Excluded`. A rule that produced no result satisfies any expectation. The
+wrapper closes that: an `Excluded` row fails unless declared `result: skip`; every validate
+rule needs an evaluated pass and an evaluated fail (an unconditional `deny: {}` needs only the
+fail); every mutate rule needs an evaluated pass against `patchedResources`; and every policy
+under `policies/` needs a test. **A new policy, or a new rule in one, fails CI until a test
+covers it.** A changed rule is only as covered as its existing fixtures.
+
+Fixture names must be unique within one test. The CLI matches expected results by
+namespace/name and ignores `kind`, so a Pod and a Deployment sharing a name pick up each
+other's expectations and produce spurious `Excluded` rows. Run locally with
+`scripts/test-kyverno-policies.py <path-to-kyverno-1.19.0>`.

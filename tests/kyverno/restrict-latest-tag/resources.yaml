@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: pinned, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: latest, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: ok, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:latest"}

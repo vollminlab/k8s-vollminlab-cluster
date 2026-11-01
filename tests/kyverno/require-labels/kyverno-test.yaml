@@ -1,0 +1,17 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-labels
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/require-labels.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - {policy: require-standard-labels, rule: require-labels-on-controllers, kind: Deployment, resources: [apps/labelled], result: pass}
+  - {policy: require-standard-labels, rule: require-labels-on-controllers, kind: Deployment, resources: [apps/pod-template-unlabelled], result: fail}
+  - {policy: require-standard-labels, rule: require-labels-on-controllers, kind: Deployment, resources: [kube-system/system], result: skip}
+  - {policy: require-standard-labels, rule: require-labels-on-pods, kind: Pod, resources: [apps/labelled-pod], result: pass}
+  - {policy: require-standard-labels, rule: require-labels-on-pods, kind: Pod, resources: [apps/missing-category], result: fail}
+  - {policy: require-standard-labels, rule: require-labels-on-namespaces, kind: Namespace, resources: [apps], result: pass}
+  - {policy: require-standard-labels, rule: require-labels-on-namespaces, kind: Namespace, resources: [unlabelled], result: fail}

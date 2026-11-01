@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: labelled
+  namespace: apps
+  labels: {app: x, env: production, category: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x, env: production, category: apps}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-template-unlabelled
+  namespace: apps
+  labels: {app: x, env: production, category: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: system, namespace: kube-system}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: c, image: "registry.k8s.io/x:1.0.0"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: labelled-pod
+  namespace: apps
+  labels: {app: x, env: production, category: apps}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-category
+  namespace: apps
+  labels: {app: x, env: production}
+spec:
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels: {app: x, env: production, category: apps}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unlabelled

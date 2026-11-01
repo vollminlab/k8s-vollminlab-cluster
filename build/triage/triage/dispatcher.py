@@ -26,10 +26,23 @@ LAST_SWEEP = Gauge("triage_last_sweep_success_timestamp",
 OUTCOMES = ("issue_created", "commented", "sweep_ok", "agent_error", "publish_failed", "job_crashed",
             "outcome_lost")
 DAY = 86400
+# How often open issues are checked against what Alertmanager still holds, and how long
+# an issue must sit untouched before that check may close it (covers a webhook in flight).
+RECONCILE_SECONDS = 900
+RECONCILE_GRACE_SECONDS = 1800
 
 
 def _utc(ts: float) -> datetime:
     return datetime.fromtimestamp(ts, timezone.utc)
+
+
+def _parse(ts: str) -> datetime:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def _ago(then: datetime, now: float) -> str:
+    minutes = int((now - then.timestamp()) // 60)
+    return f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m"
 
 
 def _failed(job) -> bool:
@@ -38,10 +51,14 @@ def _failed(job) -> bool:
 
 class Dispatcher:
     def __init__(self, policy, queue, template, github, get_owner, active_alerts, notify, read_outcome,
-                 clock=time.time):
+                 clock=time.time, held_alerts=None):
         self.policy, self.queue, self.template, self.github = policy, queue, template, github
         self.get_owner, self.active_alerts, self.notify, self.read_outcome = get_owner, active_alerts, notify, read_outcome
+        # Every alert Alertmanager holds, silenced and inhibited included. None disables
+        # the reconciler.
+        self.held_alerts = held_alerts
         self.clock = clock
+        self._last_reconcile = 0.0
         self._queue_full_alerted = False
         self._budget_alerted_at = 0.0
         self._spend_24h = 0.0
@@ -110,16 +127,24 @@ class Dispatcher:
             except Exception as e:
                 log.warning("issue lookup for fp/%s failed (%s); dispatching as new", inc.fp12, e)
                 raw = None
+            reopened = False
+            if raw is None:
+                raw = self._reopen_recurrence(inc)
+                reopened = raw is not None
             if raw:
-                issue = dedup.OpenIssue(raw["number"],
-                                        datetime.fromisoformat(raw["updated_at"].replace("Z", "+00:00")))
+                issue = dedup.OpenIssue(raw["number"], _parse(raw["updated_at"]))
+        else:
+            reopened = False
         action = dedup.decide(job_exists, issue, _utc(self.clock()),
                               timedelta(hours=self.policy.reinvestigate_after_hours))
         if raw and action in (dedup.Action.RECENT, dedup.Action.COMMENT):
             self._note_late_alerts(raw, inc)
+        outcome = action.value
+        if reopened:
+            outcome = {dedup.Action.RECENT: "reopened_recent", dedup.Action.COMMENT: "reopened_comment"}[action]
         if action in (dedup.Action.INFLIGHT, dedup.Action.RECENT):
-            EVENTS.labels(inc.source, action.value).inc()
-            return action.value
+            EVENTS.labels(inc.source, outcome).inc()
+            return outcome
         waiting = [j for j in active if jobs.is_suspended(j)]
         if len(waiting) >= self.policy.queue_cap:
             EVENTS.labels(inc.source, "dropped_queue_full").inc()
@@ -131,8 +156,39 @@ class Dispatcher:
         existing = issue.number if action is dedup.Action.COMMENT else None
         self.queue.create(jobs.build_job(self.template, inc, existing,
                                          self.policy.job_deadline_seconds, int(self.clock())))
-        EVENTS.labels(inc.source, action.value).inc()
-        return action.value
+        EVENTS.labels(inc.source, outcome).inc()
+        return outcome
+
+    def _reopen_recurrence(self, inc: Incident):
+        """Reopen the incident's issue if it was closed within the recurrence window, and
+        return it; else None. A flapping alert then keeps one issue and the usual
+        reinvestigate rule, instead of a new issue and a paid run on every recurrence
+        (the 2026-10-21..23 velero alert filed six). Its age for that rule is when it was
+        closed. Any failure returns None: filing a new issue beats dropping the alert."""
+        repo = self.policy.reports_repo
+        try:
+            raw = self.github.find_recent_closed_issue(repo, inc.fp12)
+        except Exception as e:
+            log.warning("closed-issue lookup for fp/%s failed (%s); filing as new", inc.fp12, e)
+            return None
+        if not raw or not raw.get("closed_at"):
+            return None
+        closed = _parse(raw["closed_at"])
+        if _utc(self.clock()) - closed > timedelta(hours=self.policy.recur_window_hours):
+            return None
+        when = _utc(self.clock()).strftime("%Y-%m-%d %H:%M UTC")
+        try:
+            self.github.reopen_issue(repo, raw["number"])
+            self.github.comment(repo, raw["number"],
+                                f"Recurred at {when}: " + ", ".join(f"`{a}`" for a in (inc.alerts or [inc.reason]))
+                                + f" firing again, {_ago(closed, self.clock())} after this was closed. Reopened "
+                                "instead of filing a new issue.")
+        except Exception as e:
+            log.warning("could not reopen issue #%s for fp/%s (%s: %s); filing as new",
+                        raw["number"], inc.fp12, type(e).__name__, e)
+            return None
+        log.info("reopened issue #%s: fp/%s recurred", raw["number"], inc.fp12)
+        return dict(raw, updated_at=raw["closed_at"])
 
     def _note_late_alerts(self, raw: dict, inc: Incident) -> None:
         """Record alerts that joined a workload's incident after its issue was filed.
@@ -246,10 +302,77 @@ class Dispatcher:
         EVENTS.labels("alertmanager", "resolved").inc()
         return "resolved"
 
+    # ---- reconcile ---------------------------------------------------------------
+
+    def reconcile(self) -> int:
+        """Close open incident issues that nothing in Alertmanager maps to any more, and
+        return how many were closed.
+
+        A resolve webhook is the normal close path, and two cases never send one: an
+        alert that resolves while silenced, and an app deleted along with its pods.
+        Silenced and inhibited alerts count as still firing. The round is skipped if
+        Alertmanager cannot be asked or any alert's owner cannot be looked up: an alert
+        we cannot place might be the one keeping an issue open.
+        """
+        if self.held_alerts is None:
+            return 0
+        repo, now = self.policy.reports_repo, self.clock()
+        candidates = []
+        for issue in self.github.list_open_issues(repo):
+            names = [lb["name"] for lb in issue.get("labels", [])]
+            fps = [n[3:] for n in names if n.startswith("fp/")]
+            if not fps or "sweep" in names or any(n.startswith("check/") for n in names):
+                continue
+            if now - _parse(issue["updated_at"]).timestamp() < RECONCILE_GRACE_SECONDS:
+                continue
+            candidates.append((issue["number"], fps[0]))
+        if not candidates:
+            return 0
+        busy = {jobs.fp_of(j) for j in self.queue.list() if not jobs.finished(j)}
+        try:
+            held = self.held_alerts()
+        except Exception as e:
+            log.warning("reconcile skipped: alertmanager unreachable (%s: %s)", type(e).__name__, e)
+            return 0
+        live = set()
+        for inc in from_alertmanager({"alerts": held}):
+            try:
+                live.update(self._match_fps(self._resolve_workload(inc, strict=True)))
+            except Exception as e:
+                log.warning("reconcile skipping this round: owner lookup for %s %s failed (%s: %s)",
+                            inc.namespace or "-", inc.workload, type(e).__name__, e)
+                return 0
+        closed = 0
+        when = _utc(now).strftime("%Y-%m-%d %H:%M UTC")
+        for number, fp in candidates:
+            if fp in live or fp in busy:
+                continue
+            self.github.comment(repo, number,
+                                f"Closed at {when}: Alertmanager no longer holds any alert for this incident, "
+                                "silenced ones included. It resolved without a resolve notification (for "
+                                "example while silenced, or its workload was deleted). If it recurs within "
+                                f"{self.policy.recur_window_hours}h this issue is reopened.")
+            self.github.close_issue(repo, number)
+            EVENTS.labels("reconcile", "closed_stale").inc()
+            log.info("reconcile closed issue #%s (fp/%s): no alert held", number, fp)
+            closed += 1
+        return closed
+
+    def _maybe_reconcile(self, now: float) -> None:
+        if now - self._last_reconcile < RECONCILE_SECONDS:
+            return
+        self._last_reconcile = now
+        try:
+            self.reconcile()
+        except Exception as e:
+            # Housekeeping: never let it stop Jobs from being scheduled.
+            log.warning("reconcile failed (%s: %s); retrying in %ss", type(e).__name__, e, RECONCILE_SECONDS)
+
     # ---- scheduling --------------------------------------------------------------
 
     def tick(self) -> str:
         now = self.clock()
+        self._maybe_reconcile(now)
         all_jobs = self.queue.list()
         self._account(all_jobs, now)
         active = [j for j in all_jobs if not jobs.finished(j)]

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata: {name: game-server, namespace: dmz}
+spec:
+  nodeSelector: {role: dmz}
+  tolerations:
+    - {key: dmz, operator: Exists, effect: NoSchedule}
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}

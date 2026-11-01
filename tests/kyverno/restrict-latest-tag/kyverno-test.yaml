@@ -1,0 +1,11 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-latest-tag
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-latest-tag.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-latest-tag, rule: restrict-latest-tag-containers, kind: Deployment, resources: [apps/pinned], result: pass}
+  - {policy: restrict-latest-tag, rule: restrict-latest-tag-containers, kind: Deployment, resources: [apps/latest], result: fail}

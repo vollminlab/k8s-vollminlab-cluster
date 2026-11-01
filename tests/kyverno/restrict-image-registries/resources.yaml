@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: approved, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      initContainers:
+        - {name: init, image: "ghcr.io/org/init:1.0.0"}
+      containers:
+        - {name: harbor, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}
+        - {name: shortname, image: "nginx:1.27.0"}
+        - {name: library, image: "library/busybox:1.36"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unapproved, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers:
+        - {name: ok, image: "quay.io/org/x:1.0.0"}
+        - {name: bad, image: "registry.example.com/org/x:1.0.0"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unapproved-init, namespace: apps}
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      initContainers:
+        - {name: bad, image: "gcr.io/org/init:1.0.0"}
+      containers:
+        - {name: ok, image: "quay.io/org/x:1.0.0"}

@@ -1,0 +1,13 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Value
+metadata:
+  name: values
+namespaceSelector:
+  - name: apps
+    labels: {kubernetes.io/metadata.name: apps}
+policies:
+  - name: inject-namespace-labels
+    rules:
+      - name: inject-namespace-labels
+        values:
+          nsLabels: {app: apps, env: production, category: apps}

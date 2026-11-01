@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: unprivileged-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", securityContext: {privileged: false}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: unprivileged-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", securityContext: {privileged: false}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: privileged-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", securityContext: {privileged: true}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: privileged-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", securityContext: {privileged: true}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: system-job, namespace: kube-system}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "registry.k8s.io/x:1.0.0", securityContext: {privileged: true}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: system-cron, namespace: kube-system}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "registry.k8s.io/x:1.0.0", securityContext: {privileged: true}}

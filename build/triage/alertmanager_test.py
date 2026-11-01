@@ -41,3 +41,9 @@ def test_a_non_list_body_is_an_error_not_an_empty_alert_set():
     # An empty list means "nothing firing" and closes issues; garbage must not read as that.
     with pytest.raises(ValueError):
         active_alerts(S({"error": "x"}))
+
+
+def test_include_muted_also_returns_silenced_and_inhibited_alerts():
+    s = S([])
+    active_alerts(s, include_muted=True)
+    assert s.params == {"active": "true", "silenced": "true", "inhibited": "true"}

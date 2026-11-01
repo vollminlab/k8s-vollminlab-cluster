@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Pod
+metadata: {name: default-sa, namespace: apps}
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0"}

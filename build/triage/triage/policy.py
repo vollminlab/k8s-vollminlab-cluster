@@ -16,6 +16,7 @@ class Policy:
     daily_budget_usd: float
     queue_cap: int
     reinvestigate_after_hours: int
+    recur_window_hours: int
     job_deadline_seconds: int
     reports_repo: str
     cluster_repo: str
@@ -46,6 +47,8 @@ def parse_policy(raw: dict) -> Policy:
         daily_budget_usd=float(raw["daily_budget_usd"]),
         queue_cap=int(raw["queue_cap"]),
         reinvestigate_after_hours=int(raw["reinvestigate_after_hours"]),
+        # A closed issue recurring within this window is reopened instead of re-filed.
+        recur_window_hours=int(raw.get("recur_window_hours", 168)),
         job_deadline_seconds=deadline,
         reports_repo=str(raw["reports_repo"]),
         cluster_repo=str(raw["cluster_repo"]),

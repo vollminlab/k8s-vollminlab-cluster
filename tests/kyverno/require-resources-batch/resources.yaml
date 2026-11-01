@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata: {name: good-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 32Mi}}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: good-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 32Mi}}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: no-limit-job, namespace: apps}
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", resources: {requests: {cpu: 10m, memory: 16Mi}}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: no-limit-cron, namespace: apps}
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - {name: c, image: "harbor.vollminlab.com/vollminlab/x:1.0.0", resources: {requests: {cpu: 10m, memory: 16Mi}}}

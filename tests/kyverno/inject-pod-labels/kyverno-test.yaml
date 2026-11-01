@@ -1,0 +1,11 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: inject-pod-labels
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/inject-pod-labels.yaml
+resources:
+  - resources.yaml
+variables: values.yaml
+results:
+  - {policy: inject-pod-labels, rule: inject-pod-labels, kind: Pod, resources: [apps/partly-labelled], patchedResources: patched.yaml, result: pass}

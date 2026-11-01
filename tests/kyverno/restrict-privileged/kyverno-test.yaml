@@ -1,0 +1,12 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-privileged
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/restrict-privileged.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: restrict-privileged, rule: block-privileged, kind: Deployment, resources: [apps/no-security-context, apps/unprivileged], result: pass}
+  - {policy: restrict-privileged, rule: block-privileged, kind: Deployment, resources: [apps/privileged], result: fail}
+  - {policy: restrict-privileged, rule: block-privileged, kind: DaemonSet, resources: [longhorn-system/csi-node], result: skip}

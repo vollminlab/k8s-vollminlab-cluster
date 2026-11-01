@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: good
+  namespace: apps
+spec:
+  selector: {matchLabels: {app: good}}
+  template:
+    metadata: {labels: {app: good}}
+    spec:
+      containers:
+        - name: c
+          image: harbor.vollminlab.com/vollminlab/x:1.0.0
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-cpu-request
+  namespace: apps
+spec:
+  selector: {matchLabels: {app: bad}}
+  template:
+    metadata: {labels: {app: bad}}
+    spec:
+      containers:
+        - name: c
+          image: harbor.vollminlab.com/vollminlab/x:1.0.0
+          resources:
+            requests: {memory: 16Mi}
+            limits: {memory: 32Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: second-container-no-limit
+  namespace: apps
+spec:
+  selector: {matchLabels: {app: bad}}
+  template:
+    metadata: {labels: {app: bad}}
+    spec:
+      containers:
+        - name: ok
+          image: harbor.vollminlab.com/vollminlab/x:1.0.0
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 32Mi}
+        - name: sidecar
+          image: harbor.vollminlab.com/vollminlab/x:1.0.0
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flux-controller
+  namespace: flux-system
+  labels: {app.kubernetes.io/part-of: flux}
+spec:
+  selector: {matchLabels: {app: flux}}
+  template:
+    metadata: {labels: {app: flux}}
+    spec:
+      containers:
+        - name: c
+          image: ghcr.io/fluxcd/x:1.0.0

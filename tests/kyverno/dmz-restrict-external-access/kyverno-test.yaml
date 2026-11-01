@@ -1,0 +1,15 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: dmz-restrict-external-access
+policies:
+  - ../../../clusters/vollminlab-cluster/kyverno/kyverno/policies/dmz-restrict-external-access.yaml
+resources:
+  - resources.yaml
+results:
+  - {policy: dmz-restrict-external-access, rule: restrict-external-access-label, kind: Pod, resources: [apps/plain, apps/egress], result: pass}
+  - {policy: dmz-restrict-external-access, rule: restrict-external-access-label, kind: Pod, resources: [apps/external], result: fail}
+  - {policy: dmz-restrict-external-access, rule: restrict-external-access-label, kind: Pod, resources: [dmz/game-server], result: skip}
+  - {policy: dmz-restrict-external-access, rule: restrict-internet-egress-label, kind: Pod, resources: [apps/plain, apps/external], result: pass}
+  - {policy: dmz-restrict-external-access, rule: restrict-internet-egress-label, kind: Pod, resources: [apps/egress], result: fail}
+  - {policy: dmz-restrict-external-access, rule: restrict-internet-egress-label, kind: Pod, resources: [dmz/game-server], result: skip}
