@@ -29,6 +29,8 @@ data:
           category: ci
       spec:
         serviceAccountName: github-actions-runner
+        # See priorityclass.yaml: runners yield first when a node is full.
+        priorityClassName: ci-runner-preemptible
         affinity:
           podAntiAffinity:
             preferredDuringSchedulingIgnoredDuringExecution:
