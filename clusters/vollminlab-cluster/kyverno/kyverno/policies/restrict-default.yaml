@@ -52,6 +52,7 @@ spec:
                 - BackgroundScanReport
                 - ClusterBackgroundScanReport
                 - ClusterSecretStore
+                - PriorityClass
       validate:
         message: "Do not deploy resources into the 'default' namespace."
         deny: {}

@@ -1,0 +1,23 @@
+# Runners are the first thing the scheduler may evict when a node is full.
+#
+# victoria-metrics-lt-backup can only run on k8sworker01 (its volume is a local
+# PV pinned there), and that node's memory requests sit near 97%. On 2026-11-02
+# and 11-04 an idle standby runner (768Mi) was the difference: the backup pod
+# stayed Pending on NodeResourcesFit for its whole 2h activeDeadlineSeconds.
+#
+# Every other pod in the cluster runs at the default priority 0, so a pending pod
+# of any kind may now preempt a runner. That costs at worst one CI retry; an idle
+# runner is simply recreated elsewhere by ARC. preemptionPolicy: Never means a
+# runner can never evict anything itself.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ci-runner-preemptible
+  labels:
+    app: arc-runners
+    env: production
+    category: ci
+value: -100
+globalDefault: false
+preemptionPolicy: Never
+description: "GitHub Actions runners: evicted first when a node is full; never preempt others."

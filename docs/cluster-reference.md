@@ -965,9 +965,10 @@ per-namespace port table.
 | Scale set name | vollminlab |
 | GitHub scope | org (github.com/vollminlab) |
 | Auth | GitHub App (ExternalSecret: `arc-githubapp-secret`) |
-| Min runners | 4 |
+| Min runners | 2 |
 | Max runners | 10 |
-| Runner image | `ghcr.io/actions/actions-runner:2.332.0` |
+| Runner image | `ghcr.io/actions/actions-runner:2.337.0` |
+| Priority | `ci-runner-preemptible` (-100, `preemptionPolicy: Never`): evicted first when a node is full, so pinned workloads like `victoria-metrics-lt-backup` can schedule |
 | DinD sidecar | `docker:29-dind` (privileged, tcp://localhost:2375) |
 | Runner CPU | req: 500m, limits: 2000m |
 | Runner memory | req: 512Mi, limits: 2Gi |

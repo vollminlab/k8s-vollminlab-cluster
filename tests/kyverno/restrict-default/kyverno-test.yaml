@@ -9,3 +9,4 @@ resources:
 results:
   - {policy: restrict-default-namespace, rule: block-default-namespace, kind: ConfigMap, resources: [default/stray], result: fail}
   - {policy: restrict-default-namespace, rule: block-default-namespace, kind: ConfigMap, resources: [apps/placed], result: skip}
+  - {policy: restrict-default-namespace, rule: block-default-namespace, kind: PriorityClass, resources: [default/low-priority], result: skip}
