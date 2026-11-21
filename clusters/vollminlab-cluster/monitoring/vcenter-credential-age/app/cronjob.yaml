@@ -59,7 +59,7 @@ spec:
                 - name: ACCOUNT
                   value: prometheus-exporter@vsphere.local
                 - name: ROTATED_AT
-                  value: "2026-08-18"
+                  value: "2026-11-15"
                 # vCenter SSO Local Password Policy PasswordLifetimeDays.
                 # Read it back with: govc sso.lpp.info
                 - name: LIFETIME_DAYS
