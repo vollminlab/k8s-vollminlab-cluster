@@ -2,7 +2,7 @@
 
 `vmware-exporter` authenticates to vCenter as **`prometheus-exporter@vsphere.local`**. That is an
 SSO local account, and the vsphere.local **Local Password Policy** expires passwords after
-`PasswordLifetimeDays` (90 as of 2026-08-18). When it lapses, the exporter's scrape fails and
+`PasswordLifetimeDays` (90, re-checked 2026-11-15). When it lapses, the exporter's scrape fails and
 `TargetDown` fires.
 
 ## Why this is a manual rotation
@@ -61,6 +61,15 @@ Confirm which account you are touching first — there are three similar 1Passwo
    `-_.!@#%` so nothing downstream needs escaping. Check the live policy with `govc sso.lpp.info`.
 
 2. **Set it in vCenter** as administrator. This is the *only* vSphere write required:
+
+   govc fails with `x509: certificate signed by unknown authority` because vCenter's cert is
+   issued by its own VMCA. Don't reach for `GOVC_INSECURE=1`, since the administrator password
+   is on that connection. The CA bundle is served unauthenticated at
+   `https://vcenter.vollminlab.com/certs/download.zip`: concatenate its `certs/lin/*.0` files
+   into one PEM and point `GOVC_TLS_CA_CERTS` at it.
+
+   You cannot set the current password again to reset the clock:
+   `ProhibitedPreviousPasswordsCount` is 5.
 
    ```bash
    govc sso.user.update -p '<new>' prometheus-exporter
