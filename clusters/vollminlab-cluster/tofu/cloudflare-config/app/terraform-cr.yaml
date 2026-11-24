@@ -10,7 +10,7 @@ metadata:
     category: core
 spec:
   interval: 10m
-  approvePlan: auto
+  approvePlan: ""  # manual for the provider 5.25 -> 5.29 bump; back to auto after (docs/runbooks/tofu-provider-bumps.md)
   path: ./terraform/cloudflare
   sourceRef:
     kind: GitRepository
