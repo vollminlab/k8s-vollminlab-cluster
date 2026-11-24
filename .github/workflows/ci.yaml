@@ -1528,6 +1528,12 @@ jobs:
   #
   # Deliberately generic over build/*: a second image needs no CI change, which
   # removes the "added an image, forgot to wire CI" failure mode entirely.
+  #
+  # Scoped by content, on PRs and pushes alike: an image is built only when its own
+  # directory or this workflow changed. Building all of them unconditionally was 60%
+  # of all runner time (621 of 1028 min over 41 days) while 6 of 51 merged PRs
+  # touched build/. The skip happens inside the job, never via a workflow `paths:`
+  # filter, so the check always reports (see the #1171 note at the top).
   build-images:
     name: Build In-House Images
     runs-on: ${{ vars.CI_RUNNER || 'vollminlab' }}
@@ -1535,16 +1541,50 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Build every image under build/ and run its tests
+      - name: Build changed images under build/ and run their tests
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          found=0
+
+          # Same diff range as validate-changes. Anything that cannot name a base
+          # (workflow_dispatch, a new branch, a force push whose old sha is gone)
+          # builds everything: an unknown change set must not read as an empty one.
+          base="" head=HEAD
+          if [ "$EVENT" = pull_request ]; then
+            base=$PR_BASE head=$PR_HEAD
+          elif [ "$EVENT" = push ] && [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            base=$PUSH_BEFORE
+          fi
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$base" "$head")
+          else
+            echo "no usable diff base for $EVENT: building every image"
+            changed=ALL
+          fi
+          # The build recipe lives in this file, so changing it rebuilds everything.
+          if [ "$changed" != ALL ] && printf '%s\n' "$changed" | grep -qx '.github/workflows/ci.yaml'; then
+            echo "ci.yaml changed: building every image"
+            changed=ALL
+          fi
+
+          found=0 built=0
           for df in build/*/Dockerfile; do
             dir=$(dirname "$df")
             name=$(basename "$dir")
             found=$((found + 1))
+            if [ "$changed" != ALL ] && ! printf '%s\n' "$changed" | grep -q "^$dir/"; then
+              echo "$name: unchanged, skipped"
+              continue
+            fi
+            built=$((built + 1))
             echo "::group::$name"
 
             docker build -t "ci-build-$name:${{ github.sha }}" "$dir"
@@ -1583,4 +1623,4 @@ jobs:
             echo "::error::no build/*/Dockerfile found — this job would pass without building anything"
             exit 1
           fi
-          echo "built $found image(s)"
+          echo "built $built of $found image(s)"
