@@ -28,7 +28,7 @@
 #   - Every exposed service authenticates for itself (Authentik forward-auth,
 #     native OIDC, or the app's own login).
 #   - The Cloudflare Managed Free Ruleset stays on, and is landing blocks.
-#   - ai_bots_protection stays on "block".
+#   - AI training crawlers stay blocked (ai_training = "block").
 #
 # NOTE: the Cloudflare Terraform API token needs the **Bot Management Write**
 # permission group (zone scope) for this resource. Without it every plan and
@@ -37,8 +37,18 @@
 #
 # Free plan — the sbfm_* attributes are Pro and above, and must stay unset.
 # Attributes not listed here (content_bots_protection, crawler_protection,
-# is_robots_txt_managed, cf_robots_variant) are already at their defaults and
-# are deliberately left unmanaged.
+# is_robots_txt_managed, cf_robots_variant, aisearch, ai_user, ai_agents) are
+# already at their defaults and are deliberately left unmanaged. All are
+# Optional+Computed, so leaving them unset keeps the live value without a diff.
+#
+# AI Crawl Control, 2026-11-23: Cloudflare split the single ai_bots_protection
+# switch into per-category fields (ai_training, aisearch, ai_user, ai_agents)
+# and migrated this zone. ai_bots_protection now reads back "disabled" whatever
+# is written, so setting it fails every apply with "Provider produced
+# inconsistent result". Do not set it again. The migration also mapped our old
+# "block" to ai_training = "disallow", which is only a robots.txt request, so
+# ai_training is pinned to "block" below to restore an actual block. The new
+# fields need provider >= 5.27.
 # ---------------------------------------------------------------------------
 
 resource "cloudflare_bot_management" "vollminlab" {
@@ -48,6 +58,7 @@ resource "cloudflare_bot_management" "vollminlab" {
 
   # Pinned to the values measured live on 2026-08-21 so this resource cannot
   # silently reset them.
-  enable_js          = true
-  ai_bots_protection = "block"
+  enable_js = true
+
+  ai_training = "block"
 }
